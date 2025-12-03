@@ -211,7 +211,6 @@ const ESQLEditorInternal = function ESQLEditor({
           setCodeStateOnSubmission(currentValue);
         }
 
-        // TODO: add rest of options
         if (currentValue) {
           telemetryService.trackQuerySubmitted({
             source,
