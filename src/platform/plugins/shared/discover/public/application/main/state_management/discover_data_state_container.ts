@@ -39,6 +39,7 @@ import { AbortReason } from '@kbn/kibana-utils-plugin/common';
 import { getESQLStatsQueryMeta } from '@kbn/esql-utils';
 import { isEqual, sortBy } from 'lodash';
 import type { DiscoverServices } from '../../../build_services';
+import { tabTrace } from './tab_trace';
 import type { DiscoverSearchSessionManager } from './discover_search_session';
 import { FetchStatus } from '../../types';
 import { validateTimeRange } from './utils/validate_time_range';
@@ -183,6 +184,8 @@ export function getDataStateContainer({
   const fetchChart$ = new ReplaySubject<DiscoverLatestFetchDetails | null>(1);
   const disableNextFetchOnStateChange$ = new BehaviorSubject(false);
   let numberOfFetches = 0;
+  // PoC #274834: requested but not yet delivered to the subscription.
+  let undeliveredRequests = 0;
   let unsubscribeIsRequested = false;
 
   /**
@@ -280,6 +283,12 @@ export function getDataStateContainer({
       .pipe(
         mergeMap(async ({ options }) => {
           numberOfFetches += 1;
+          undeliveredRequests = Math.max(0, undeliveredRequests - 1);
+          tabTrace('fetch$:delivered', getCurrentTab().id, {
+            numberOfFetches,
+            undeliveredRequests,
+            options,
+          });
           if (unsubscribeIsRequested) {
             unsubscribeIsRequested = false;
             subscription.unsubscribe();
@@ -595,6 +604,12 @@ export function getDataStateContainer({
       .subscribe();
 
     return () => {
+      // PoC #274834: branch:'dropped' with undelivered>0 on a tab that later hangs confirms candidate #1.
+      tabTrace('subscribe:teardown', getCurrentTab().id, {
+        branch: numberOfFetches > 0 ? 'dropped' : 'deferred',
+        numberOfFetches,
+        undelivered: undeliveredRequests,
+      });
       if (numberOfFetches > 0) {
         subscription.unsubscribe();
       } else {
@@ -605,12 +620,20 @@ export function getDataStateContainer({
   }
 
   const fetchQuery = async () => {
+    undeliveredRequests += 1;
+    const traceTabId = getCurrentTab().id;
     const query = getCurrentTab().appState.query;
     const { currentDataView$ } = selectTabRuntimeState(runtimeStateManager, getCurrentTab().id);
     const currentDataView = currentDataView$.getValue();
 
+    tabTrace('fetchQuery:requested', traceTabId, {
+      isEsql: isOfAggregateQueryType(query),
+      undelivered: undeliveredRequests,
+    });
+
     if (isOfAggregateQueryType(query)) {
       const nextDataView = await getEsqlDataView(query, currentDataView, services);
+      tabTrace('fetchQuery:esqlDataViewResolved', traceTabId);
       if (nextDataView !== currentDataView) {
         internalState.dispatch(
           injectCurrentTab(internalStateActions.assignNextDataView)({ dataView: nextDataView })
@@ -619,20 +642,24 @@ export function getDataStateContainer({
     }
 
     refetch$.next(undefined);
+    tabTrace('fetchQuery:emitted', traceTabId);
 
     return refetch$;
   };
 
   const fetchMore = () => {
+    undeliveredRequests += 1;
     refetch$.next('fetch_more');
     return refetch$;
   };
 
   const reset = () => {
+    tabTrace('reset', getCurrentTab().id);
     sendResetMsg(dataSubjects, getInitialFetchStatus());
   };
 
   const cancel = (reason: AbortReason = AbortReason.CANCELED) => {
+    tabTrace('cancel', getCurrentTab().id, { reason });
     const { cascadedDocumentsFetcher$ } = selectTabRuntimeState(
       runtimeStateManager,
       getCurrentTab().id

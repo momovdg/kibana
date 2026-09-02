@@ -42,6 +42,7 @@ import {
   selectTabRuntimeState,
 } from './runtime_state';
 import { createContextAwarenessToolkit } from './context_awareness_toolkit';
+import { registerTabTraceSnapshot } from '../tab_trace';
 import {
   PROFILE_APP_STATE_DEFAULT_FIELDS,
   TabsBarVisibility,
@@ -766,6 +767,32 @@ export const createInternalStateStore = (
     devTools: {
       name: 'DiscoverInternalState',
     },
+  });
+
+  // PoC #274834 diagnostics. Delete with the branch.
+  const { runtimeStateManager } = options;
+  registerTabTraceSnapshot(() => {
+    const state = internalState.getState();
+    return {
+      selectedTabId: state.tabs.unsafeCurrentId,
+      allIds: state.tabs.allIds,
+      recentlyClosedTabIds: state.tabs.recentlyClosedTabIds,
+      tabs: state.tabs.allIds.map((tabId) => {
+        const tab = state.tabs.byId[tabId];
+        const runtime = runtimeStateManager.tabs.byId[tabId];
+        const container = runtime?.dataStateContainer$.getValue();
+        return {
+          id: tabId,
+          label: tab?.label,
+          fetchStatus: container?.data$.main$.getValue().fetchStatus ?? null,
+          forceFetchOnSelect: tab?.forceFetchOnSelect ?? null,
+          initializationStatus: tab?.initializationState?.initializationStatus ?? null,
+          hasDataStateContainer: Boolean(container),
+          totalHitsStatus: container?.data$.totalHits$.getValue().fetchStatus ?? null,
+          documentsStatus: container?.data$.documents$.getValue().fetchStatus ?? null,
+        };
+      }),
+    };
   });
 
   return internalState;

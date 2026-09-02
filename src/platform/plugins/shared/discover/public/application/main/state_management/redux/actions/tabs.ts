@@ -17,6 +17,7 @@ import type { TabItem } from '@kbn/unified-tabs';
 import type { DiscoverSession } from '@kbn/saved-search-plugin/common';
 import type { UISession } from '@kbn/data-plugin/public/search/session/sessions_mgmt/types';
 import type { OpenInNewTabParams } from '../../../../../context_awareness/types';
+import { tabTrace } from '../../tab_trace';
 import { ProfileStateType, type ProfileStateMap } from '../../../../../../common/context_awareness';
 import { createDataSource } from '../../../../../../common/data_sources/utils';
 import type { DiscoverAppState, TabState } from '../types';
@@ -74,6 +75,14 @@ export const setTabs: InternalStateThunkActionCreator<
     const removedTabs = discoverSessionChanged
       ? previousTabs
       : differenceBy(previousTabs, params.allTabs, differenceIterateeByTabId);
+    // PoC #274834: any id here that the test never closed was clobbered by a stale items snapshot.
+    if (removedTabs.length) {
+      tabTrace('updateTabs:removedTabs', undefined, {
+        removed: removedTabs.map((t) => t.id),
+        incoming: params.allTabs.map((t) => t.id),
+        previous: previousTabs.map((t) => t.id),
+      });
+    }
     const addedTabs = discoverSessionChanged
       ? params.allTabs
       : differenceBy(params.allTabs, previousTabs, differenceIterateeByTabId);
@@ -152,6 +161,11 @@ export const updateTabs: InternalStateThunkActionCreator<
     { services, runtimeStateManager, tabsStorageManager, urlStateStorage, searchSessionManager }
   ) {
     const currentState = getState();
+    tabTrace('updateTabs:enter', undefined, {
+      incoming: items.map((t) => t.id),
+      inRedux: selectAllTabs(currentState).map((t) => t.id),
+      selected: selectedItem?.id,
+    });
     const currentTab = selectTab(currentState, currentState.tabs.unsafeCurrentId);
     const currentTabRuntimeState = selectTabRuntimeState(runtimeStateManager, currentTab.id);
 
@@ -249,6 +263,7 @@ export const updateTabs: InternalStateThunkActionCreator<
 
     // If changing tabs, stop syncing the current tab before updating any URL state
     if (selectedTabHasChanged) {
+      tabTrace('stopSyncing', currentTab.id);
       dispatch(stopSyncing({ tabId: currentTab.id }));
     }
 
@@ -315,6 +330,7 @@ export const updateTabs: InternalStateThunkActionCreator<
 
         dispatch(initializeAndSync({ tabId: nextTab.id }));
 
+        tabTrace('forceFetchOnSelect:read', nextTab.id, { value: nextTab.forceFetchOnSelect });
         if (nextTab.forceFetchOnSelect) {
           nextTabDataStateContainer.reset();
           dispatch(fetchData({ tabId: nextTab.id }));
@@ -332,6 +348,8 @@ export const updateTabs: InternalStateThunkActionCreator<
       dispatch(discardFlyoutsOnTabChange());
     }
 
+    // PoC #274834: elapsed time since updateTabs:enter is the stale window.
+    tabTrace('setTabs:dispatch', selectedTab.id, { ids: updatedTabs.map((t) => t.id) });
     dispatch(
       setTabs({
         allTabs: updatedTabs,
