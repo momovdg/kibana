@@ -20,8 +20,9 @@ const base = createPlaywrightConfig({
 
 const config: PlaywrightTestConfig = {
   ...base,
-  // 20 repeats to surface the timing-sensitive race. Each run is ≤3 min,
-  // 2 workers → ~30 min worst-case on CI.
+  // Round 2: 20 repeats each of run A (original test, 60s budget, expected to
+  // fail often — the point is the afterEach dump) and run B (healing probe,
+  // ≤4 min budget). 2 workers → ~30-40 min worst-case on CI.
   repeatEach: 20,
   // Only the diagnostic spec. Setup/teardown projects carry their own
   // testMatch for global.setup.ts / global.teardown.ts and are unaffected.
