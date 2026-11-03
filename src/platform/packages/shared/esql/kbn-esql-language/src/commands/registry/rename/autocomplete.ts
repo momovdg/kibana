@@ -17,6 +17,8 @@ import {
   getNewUserDefinedColumnSuggestion,
 } from '../complete_items';
 import { columnExists } from '../../definitions/utils/autocomplete/helpers';
+import { locateCursor } from '../../../language/shared/cursor_location/cursor_location';
+import { getFirstName, getPosition, RenamePosition } from './utils';
 
 export async function autocomplete(
   query: string,
@@ -25,42 +27,37 @@ export async function autocomplete(
   context?: ICommandContext,
   cursorPosition?: number
 ): Promise<ISuggestionItem[]> {
-  const innerText = query.substring(0, cursorPosition);
-  if (/(?:rename|,)\s+\S+\s+a$/i.test(innerText)) {
-    return [asCompletionItem];
-  }
+  const location = context?.cursorLocation ?? locateCursor(query, cursorPosition ?? query.length);
 
-  // If the left side of the rename is a column that exists, we suggest the 'AS' completion item.
-  // If it doesn't exist, we suggest the '=' completion item.
-  const match = innerText.match(/(?:rename|,)\s+(\S+)\s+a?$/i);
-  if (match) {
-    const leftSideOfRename = match[1];
-    return columnExists(leftSideOfRename, context) ? [asCompletionItem] : [assignCompletionItem];
-  }
-
-  if (/(?:rename|,)\s+\S+\s+a?$/i.test(innerText)) {
-    return [asCompletionItem, assignCompletionItem];
-  }
-
-  if (/rename(?:\s+\S+\s+(as|=)\s+\S+\s*,)*\s+\S+\s+(as|=)\s+[^\s,]+\s+$/i.test(innerText)) {
-    return [...newLineAndPipeCompleteItems, { ...commaCompleteItem, text: ', ' }];
-  }
-
-  if (/as\s+$/i.test(innerText)) {
-    return [];
-  }
-
-  const suggestions =
+  const getColumnSuggestions = async () =>
     (await callbacks?.getByType?.('any', [], {
       advanceCursor: true,
       openSuggestions: true,
     })) ?? [];
 
-  if (!/=\s+$/i.test(innerText)) {
-    suggestions.push(
-      getNewUserDefinedColumnSuggestion(callbacks?.getSuggestedUserDefinedColumnName?.() || '')
-    );
-  }
+  switch (getPosition(location)) {
+    case RenamePosition.TYPING_AS:
+      return [asCompletionItem];
 
-  return suggestions;
+    // An existing column is renamed with AS; an unknown name is a new name assigned with `=`.
+    case RenamePosition.AFTER_FIRST_NAME:
+      return columnExists(getFirstName(location), context)
+        ? [asCompletionItem]
+        : [assignCompletionItem];
+
+    case RenamePosition.AFTER_CLAUSE:
+      return [...newLineAndPipeCompleteItems, { ...commaCompleteItem, text: ', ' }];
+
+    case RenamePosition.AFTER_AS:
+      return [];
+
+    case RenamePosition.AFTER_ASSIGN:
+      return getColumnSuggestions();
+
+    case RenamePosition.NAME:
+      return [
+        ...(await getColumnSuggestions()),
+        getNewUserDefinedColumnSuggestion(callbacks?.getSuggestedUserDefinedColumnName?.() || ''),
+      ];
+  }
 }

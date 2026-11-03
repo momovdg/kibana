@@ -26,6 +26,8 @@ export interface ExpectedRule {
    * one, e.g. a time unit after `NOW() - 1 `.
    */
   continuation: boolean;
+  /** For a continuation, the slot's text typed before the cursor, e.g. `a.b`; otherwise empty. */
+  text: string;
 }
 
 export interface CursorLocation {
@@ -39,6 +41,8 @@ export interface CursorLocation {
   commandCanEnd: boolean;
   /** The word being typed, if any. */
   partial?: { text: string; start: number };
+  /** Type of the last token before the cursor, or before the word being typed. */
+  previousTokenType?: number;
   /** The cursor is inside a comment; no candidates are collected. */
   inComment: boolean;
 }

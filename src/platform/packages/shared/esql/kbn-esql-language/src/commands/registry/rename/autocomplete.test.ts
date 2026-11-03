@@ -65,4 +65,30 @@ describe('RENAME Autocomplete', () => {
   it('suggests pipe and comma after complete expression', async () => {
     await renameExpectSuggestions('from a | rename field AS foo ', ['| ', ', ', '\n']);
   });
+
+  describe('positions the grammar resolves', () => {
+    it('reads a backtick-quoted name as one name', async () => {
+      await renameExpectSuggestions('from a | rename `my field` ', ['= ']);
+      await renameExpectSuggestions('from a | rename `my field` A', ['AS ']);
+      await renameExpectSuggestions('from a | rename `any#Char$Field` ', ['AS ']);
+    });
+
+    it('suggests names while a backtick-quoted name is still open', async () => {
+      await renameExpectSuggestions('from a | rename `my ', [' = ', ...getFieldNamesByType('any')]);
+    });
+
+    it('ignores comments between the parts of a clause', async () => {
+      await renameExpectSuggestions('from a | rename textField /* note */ ', ['AS ']);
+      await renameExpectSuggestions('from a | rename textField /* note */ AS /* note */ ', []);
+    });
+
+    it('suggests only columns right after =', async () => {
+      await renameExpectSuggestions('from a | rename field =', getFieldNamesByType('any'));
+    });
+
+    it('handles clauses split across lines', async () => {
+      await renameExpectSuggestions('from a\n| rename textField\n  ', ['AS ']);
+      await renameExpectSuggestions('from a\n| rename textField\n  AS foo\n  ', ['| ', ', ', '\n']);
+    });
+  });
 });
