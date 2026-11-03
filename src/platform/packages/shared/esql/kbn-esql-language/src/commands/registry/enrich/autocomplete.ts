@@ -8,8 +8,8 @@
  */
 import type { ESQLAstAllCommands, ESQLSource } from '@elastic/esql/types';
 import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
-import { findPreviousWord } from '../../definitions/utils/autocomplete/helpers';
 import { buildFieldsDefinitions } from '../../definitions/utils/functions';
+import { locateCursor } from '../../../language/shared/cursor_location/cursor_location';
 import { getOperatorSuggestions } from '../../definitions/utils/operators';
 import { unescapeColumnName } from '../../definitions/utils/shared';
 import {
@@ -25,6 +25,7 @@ import {
   buildPoliciesDefinitions,
   getPolicyMetadata,
   getPosition,
+  getWithClauseFirstWord,
   modeSuggestions,
   noPoliciesAvailableSuggestion,
   onSuggestion,
@@ -38,8 +39,8 @@ export async function autocomplete(
   context?: ICommandContext,
   cursorPosition?: number
 ): Promise<ISuggestionItem[]> {
-  const innerText = query.substring(0, cursorPosition);
-  const pos = getPosition(innerText, command);
+  const location = context?.cursorLocation ?? locateCursor(query, cursorPosition ?? query.length);
+  const pos = getPosition(location);
   const policies = context?.policies ?? new Map<string, ESQLPolicy>();
   const columnMap = context?.columns ?? new Map<string, ESQLColumnData>();
 
@@ -128,7 +129,7 @@ export async function autocomplete(
         return [];
       }
 
-      const word = findPreviousWord(innerText);
+      const word = getWithClauseFirstWord(location);
       if (policyMetadata.enrichFields.includes(unescapeColumnName(word))) {
         // complete field name
         return [...newLineAndPipeCompleteItems, withAutoSuggest(commaCompleteItem)];

@@ -131,6 +131,8 @@ const emptyLocation = (offset: number, inComment: boolean): CursorLocation => ({
   expectedTokens: new Set(),
   expectedRules: [],
   commandCanEnd: false,
+  whitespaceBefore: false,
+  skippedText: '',
   inComment,
 });
 
@@ -148,10 +150,11 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
   const eof = allTokens[allTokens.length - 1];
   const lastToken: Token | undefined = allTokens[allTokens.length - 2];
 
-  // The lexer emits nothing for an unterminated string or quoted name, so whatever follows the
-  // last token is still being typed.
+  // The lexer emits nothing for an unterminated string or quoted name, or for characters it
+  // cannot match, so whatever follows the last token is still being typed.
   const lexedEnd = lastToken ? lastToken.stop + 1 : 0;
-  const untokenized = textBeforeCursor.slice(lexedEnd).trimStart();
+  const tail = textBeforeCursor.slice(lexedEnd);
+  const untokenized = tail.trimStart();
 
   const inLineComment =
     lastToken !== undefined &&
@@ -162,20 +165,36 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
   }
 
   // The caret is the word being typed when the cursor touches one, otherwise the next token.
+  // Untokenized characters directly after a word (e.g. the `:` of `_any:`) belong to that word.
   const isTypingWord =
-    !untokenized &&
     lastToken !== undefined &&
     isVisible(lastToken) &&
-    lastToken.stop + 1 === offset &&
-    /\w$/.test(lastToken.text);
+    /\w$/.test(lastToken.text) &&
+    tail === untokenized;
   const caret = isTypingWord ? lastToken : eof;
 
   let partial: CursorLocation['partial'];
   if (isTypingWord) {
-    partial = { text: lastToken.text, start: lastToken.start };
+    partial = { text: lastToken.text + tail, start: lastToken.start };
   } else if (untokenized) {
     partial = { text: untokenized, start: offset - untokenized.length };
   }
+
+  const previousToken = allTokens.slice(0, caret.tokenIndex).findLast(isVisible);
+
+  // Between the previous token and the caret there are only hidden tokens (whitespace,
+  // comments) and characters the lexer dropped.
+  let skippedText = '';
+  let whitespaceBefore = false;
+  let position = previousToken ? previousToken.stop + 1 : 0;
+  for (const hidden of allTokens.slice((previousToken?.tokenIndex ?? -1) + 1, caret.tokenIndex)) {
+    skippedText += textBeforeCursor.slice(position, hidden.start);
+    whitespaceBefore = true;
+    position = hidden.stop + 1;
+  }
+  const beforeCaret = textBeforeCursor.slice(position, partial ? partial.start : offset);
+  whitespaceBefore = whitespaceBefore || /\s/.test(beforeCaret);
+  skippedText = (skippedText + beforeCaret).replace(/\s+/g, '');
 
   // Lexical nesting only: a pipe inside parentheses belongs to a nested query, which is part
   // of the enclosing command.
@@ -229,8 +248,6 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     commandCanEnd = expectedTokens.has(grammar.pipe);
   }
 
-  const previousToken = allTokens.slice(0, caret.tokenIndex).findLast(isVisible);
-
   const { ruleNames } = grammar;
   const expectedRules: ExpectedRule[] = [...candidates.rules].map(
     ([ruleIndex, { callStack, startTokenIndex }]) => {
@@ -270,6 +287,8 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     commandCanEnd,
     partial,
     previousTokenType: previousToken?.type,
+    whitespaceBefore,
+    skippedText,
     inComment: false,
   };
 };

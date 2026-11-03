@@ -43,6 +43,10 @@ export interface CursorLocation {
   partial?: { text: string; start: number };
   /** Type of the last token before the cursor, or before the word being typed. */
   previousTokenType?: number;
+  /** Whitespace or a comment separates the previous token from the cursor or the word typed. */
+  whitespaceBefore: boolean;
+  /** Characters the lexer dropped between the previous token and the cursor, e.g. a stray `:`. */
+  skippedText: string;
   /** The cursor is inside a comment; no candidates are collected. */
   inComment: boolean;
 }
