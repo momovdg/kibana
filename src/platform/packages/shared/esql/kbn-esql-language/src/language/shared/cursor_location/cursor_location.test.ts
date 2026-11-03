@@ -10,7 +10,7 @@
 import { Parser } from '@elastic/esql';
 import { Token } from 'antlr4';
 import { esqlCommandRegistry } from '../../../commands/registry';
-import { locateCursor } from './cursor_location';
+import { getTokenType, locateCursor } from './cursor_location';
 
 const { symbolicNames } = Parser.create('').parser;
 
@@ -201,6 +201,44 @@ describe('locateCursor', () => {
       const expectedRule = locate(text).expectedRules.find((candidate) => candidate.rule === rule);
 
       expect(expectedRule?.continuation).toBe(expected);
+    });
+
+    it.each([
+      ['FROM a | RENAME a.b ', 'a.b'],
+      ['FROM a | RENAME `my field` ', '`my field`'],
+      ['FROM a | RENAME x /* note */ ', 'x'],
+    ])('at %j has the typed text %j', (text, slotText) => {
+      const expectedRule = locate(text).expectedRules.find(({ continuation }) => continuation);
+
+      expect(expectedRule?.text).toBe(slotText);
+    });
+
+    it('has no text for a slot that starts at the cursor', () => {
+      const [expectedRule] = locate(' FROM a | KEEP x,  ').expectedRules;
+
+      expect(expectedRule.text).toBe('');
+    });
+  });
+
+  describe('previousTokenType', () => {
+    it.each([
+      ['FROM a | RENAME x AS ', 'AS'],
+      ['FROM a | RENAME x /* note */ = ', 'ASSIGN'],
+      ['FROM a | KEEP x, y', 'COMMA'],
+      ['FROM a | ', 'PIPE'],
+    ])('at %j is %s', (text, tokenName) => {
+      expect(locate(text).previousTokenType).toBe(getTokenType(tokenName));
+    });
+
+    it('is undefined at the start of the query', () => {
+      expect(locate('').previousTokenType).toBeUndefined();
+    });
+  });
+
+  describe('getTokenType', () => {
+    it('returns the grammar token type for a name', () => {
+      expect(getTokenType('PIPE')).toBe(symbolicNames.indexOf('PIPE'));
+      expect(getTokenType('EOF')).toBe(Token.EOF);
     });
   });
 
