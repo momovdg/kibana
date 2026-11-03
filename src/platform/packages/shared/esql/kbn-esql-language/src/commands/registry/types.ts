@@ -25,6 +25,7 @@ import type { SupportedDataType } from '../definitions/types';
 import type { EditorExtensions } from './options/recommended_queries';
 import type { SuggestionCategory } from '../../language/autocomplete/utils/sorting/types';
 import type { ReplacementRangeStrategy } from '../../language/autocomplete/utils/prefix_range';
+import type { CursorLocation } from '../../language/shared/cursor_location/types';
 
 // This is a subset of the Monaco's editor CompletitionItemKind type
 export type ItemKind =
@@ -228,6 +229,8 @@ export interface ICommandContext {
   isFieldsBrowserEnabled?: boolean;
   unmappedFieldsStrategy?: UnmappedFieldsStrategy;
   isTimeseriesSource?: boolean;
+  /** What the grammar allows at the cursor, computed once per suggestion request. */
+  cursorLocation?: CursorLocation;
 }
 /**
  * This is a list of locations within an ES|QL query.

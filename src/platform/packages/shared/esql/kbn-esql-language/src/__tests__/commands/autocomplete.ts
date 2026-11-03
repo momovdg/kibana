@@ -45,6 +45,7 @@ import { mockContext, getMockCallbacks } from './context_fixtures';
 import { getSafeInsertText } from '../../commands/definitions/utils';
 import { timeUnitsToSuggest } from '../../commands/definitions/constants';
 import { findAutocompleteAstPosition } from '../../language/shared/parse_for_autocomplete_query';
+import { locateCursor } from '../../language/shared/cursor_location/cursor_location';
 import { FUNCTIONS_TO_IGNORE } from '../../commands/registry/eval/autocomplete';
 import { attachReplacementRanges } from '../../language/autocomplete/utils/prefix_range';
 
@@ -95,7 +96,12 @@ export const suggest = async (
     throw new Error(`${commandName.toUpperCase()} command not found in the parsed query`);
   }
 
-  const contextWithRoot = { ...context, rootAst: root };
+  // Mirror what `suggest()` hands to command autocompletes.
+  const contextWithRoot = {
+    ...context,
+    rootAst: root,
+    cursorLocation: locateCursor(query, cursorPosition),
+  };
 
   const suggestions = await autocomplete(
     query,
