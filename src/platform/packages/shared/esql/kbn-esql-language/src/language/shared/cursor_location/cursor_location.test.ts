@@ -235,6 +235,32 @@ describe('locateCursor', () => {
     });
   });
 
+  describe('characters the lexer drops', () => {
+    it('keeps them in the word they directly follow', () => {
+      const { partial, expectedRules } = locate('FROM a | ENRICH _any:');
+
+      expect(partial).toEqual({ text: '_any:', start: 16 });
+      expect(expectedRules.map(({ rule }) => rule)).toEqual(['enrichPolicyName']);
+    });
+
+    it('reports them as skipped text between the previous token and the cursor', () => {
+      expect(locate('FROM a | ENRICH _any: ').skippedText).toBe(':');
+      expect(locate('FROM a | ENRICH _any ').skippedText).toBe('');
+    });
+  });
+
+  describe('whitespaceBefore', () => {
+    it.each([
+      ['FROM a | KEEP x, ', true],
+      ['FROM a | KEEP x,', false],
+      ['FROM a | KEEP x, y', true],
+      ['FROM a | KEEP x,y', false],
+      ['FROM a | KEEP x,/* c */', true],
+    ])('at %j is %s', (text, expected) => {
+      expect(locate(text).whitespaceBefore).toBe(expected);
+    });
+  });
+
   describe('getTokenType', () => {
     it('returns the grammar token type for a name', () => {
       expect(getTokenType('PIPE')).toBe(symbolicNames.indexOf('PIPE'));

@@ -192,4 +192,55 @@ describe('ENRICH Autocomplete', () => {
       ]);
     });
   });
+
+  describe('positions the grammar resolves', () => {
+    const matchFieldSuggestions = () =>
+      getFieldNamesByType('any', true).map((v) =>
+        needsEscaping(v) ? `\`${v.replace(/`/g, '\\`')}\` ` : `${v} `
+      );
+
+    it('suggests policies, not modes, for a policy name containing an underscore', async () => {
+      await enrichExpectSuggestions('from a | enrich my_pol', expectedPolicyNameSuggestions);
+    });
+
+    it('suggests nothing while the ENRICH keyword is typed', async () => {
+      await enrichExpectSuggestions('from a | enrich', []);
+    });
+
+    it('ignores comments between the parts of the command', async () => {
+      await enrichExpectSuggestions(
+        'from a | enrich policy /* c */ on /* d */ ',
+        matchFieldSuggestions()
+      );
+      await enrichExpectSuggestions('from a | enrich policy /* c */ on b /* d */ ', [
+        '\n',
+        'WITH ',
+        '| ',
+      ]);
+      await enrichExpectSuggestions('from a | enrich policy on b with /* c */ ', [
+        ' = ',
+        ...getPolicyFields('policy'),
+      ]);
+    });
+
+    it('suggests nothing inside a comment', async () => {
+      await enrichExpectSuggestions('from a | enrich policy /* c', []);
+    });
+
+    it('suggests enrich fields right after = without a space', async () => {
+      await enrichExpectSuggestions('from a | enrich policy on b with col0=', [
+        ...getPolicyFields('policy'),
+      ]);
+    });
+
+    it('waits for a space after a comma in the first WITH clause too', async () => {
+      await enrichExpectSuggestions('from a | enrich policy with otherField,', []);
+    });
+
+    it('handles clauses split across lines', async () => {
+      await enrichExpectSuggestions('from a\n| enrich policy\n  on b\n  with col0 = ', [
+        ...getPolicyFields('policy'),
+      ]);
+    });
+  });
 });
