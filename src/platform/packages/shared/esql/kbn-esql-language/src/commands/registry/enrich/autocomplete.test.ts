@@ -245,6 +245,27 @@ describe('ENRICH Autocomplete', () => {
     });
   });
 
+  describe('a policy with a mode', () => {
+    it('suggests its match fields after ON', async () => {
+      await enrichExpectSuggestions(
+        'from a | enrich _any:policy on ',
+        getFieldNamesByType('any', true).map((v) =>
+          needsEscaping(v) ? `\`${v.replace(/`/g, '\\`')}\` ` : `${v} `
+        )
+      );
+    });
+
+    it('suggests its enrich fields after WITH', async () => {
+      await enrichExpectSuggestions('from a | enrich _coordinator:policy with ', [
+        ' = ',
+        ...getPolicyFields('policy'),
+      ]);
+      await enrichExpectSuggestions('from a | enrich _remote:policy on b with col0 = ', [
+        ...getPolicyFields('policy'),
+      ]);
+    });
+  });
+
   describe('policy names after a mode', () => {
     it.each([
       ['from a | enrich _any:', ''],
