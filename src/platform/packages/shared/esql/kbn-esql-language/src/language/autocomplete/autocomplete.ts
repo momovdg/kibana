@@ -22,6 +22,7 @@ import type {
 } from '../../commands/registry/types';
 import { getControlSuggestionIfSupported } from '../../commands/definitions/utils';
 import { getAutocompleteCursorContext } from '../shared/parse_for_autocomplete_query';
+import { locateCursor } from '../shared/cursor_location/cursor_location';
 import { getFromCommandHelper } from '../shared/resources_helpers';
 import { getCommandContext } from './get_command_context';
 import { mapRecommendedQueriesFromExtensions } from './recommended_queries_helpers';
@@ -315,6 +316,7 @@ async function getSuggestionsWithinCommandExpression(
     isFieldsBrowserEnabled: canSuggestResourceBrowser && !isInsideSubquery,
     unmappedFieldsStrategy,
     isTimeseriesSource: isTimeseriesSourceCommand(commands.filter((cmd) => cmd.type === 'command')),
+    cursorLocation: locateCursor(fullText, offset ?? fullText.length),
   };
 
   // Wrap getColumnsByType so the fields browser option is injected from context;
