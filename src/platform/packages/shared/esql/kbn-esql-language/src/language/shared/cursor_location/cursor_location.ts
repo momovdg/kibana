@@ -17,11 +17,9 @@ import {
 import { COMMAND_RULES, PIPE_ANCHOR_RULE, PREFERRED_RULES } from './grammar_rules';
 import type { CommandSegment, CursorLocation, ExpectedRule } from './types';
 
-type ParseResult = ReturnType<typeof Parser.create>;
-type EsqlParser = ParseResult['parser'];
-
 interface GrammarInfo {
   ruleNames: string[];
+  symbolicNames: Array<string | null>;
   pipe: number;
   lp: number;
   rp: number;
@@ -34,12 +32,12 @@ interface GrammarInfo {
 
 let grammarInfo: GrammarInfo | undefined;
 
-const getGrammarInfo = (parser: EsqlParser): GrammarInfo => {
+const getGrammarInfo = (): GrammarInfo => {
   if (grammarInfo) {
     return grammarInfo;
   }
 
-  const { ruleNames, symbolicNames } = parser;
+  const { ruleNames, symbolicNames } = Parser.create('').parser;
   const ruleIndexes = (names: readonly string[]) =>
     new Set(names.map((name) => ruleNames.indexOf(name)));
   // Each lexer mode has its own comment tokens, e.g. `FROM_LINE_COMMENT`.
@@ -55,6 +53,7 @@ const getGrammarInfo = (parser: EsqlParser): GrammarInfo => {
 
   grammarInfo = {
     ruleNames,
+    symbolicNames,
     pipe: symbolicNames.indexOf('PIPE'),
     lp: symbolicNames.indexOf('LP'),
     rp: symbolicNames.indexOf('RP'),
@@ -67,6 +66,10 @@ const getGrammarInfo = (parser: EsqlParser): GrammarInfo => {
 
   return grammarInfo;
 };
+
+/** Token type of an ES|QL grammar token name, e.g. `AS`; `-1` (EOF) is returned as `Token.EOF`. */
+export const getTokenType = (name: string): number =>
+  name === 'EOF' ? Token.EOF : getGrammarInfo().symbolicNames.indexOf(name);
 
 const isVisible = (token: Token) => token.channel === Token.DEFAULT_CHANNEL;
 
@@ -140,7 +143,7 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
   const { parser, tokens } = Parser.create(textBeforeCursor);
   tokens.fill();
 
-  const grammar = getGrammarInfo(parser);
+  const grammar = getGrammarInfo();
   const allTokens = tokens.tokens;
   const eof = allTokens[allTokens.length - 1];
   const lastToken: Token | undefined = allTokens[allTokens.length - 2];
@@ -226,13 +229,23 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     commandCanEnd = expectedTokens.has(grammar.pipe);
   }
 
+  const previousToken = allTokens.slice(0, caret.tokenIndex).findLast(isVisible);
+
   const { ruleNames } = grammar;
   const expectedRules: ExpectedRule[] = [...candidates.rules].map(
-    ([ruleIndex, { callStack, startTokenIndex }]) => ({
-      rule: ruleNames[ruleIndex],
-      stack: callStack.map((entry) => ruleNames[entry.ruleIndex]),
-      continuation: startTokenIndex < caret.tokenIndex,
-    })
+    ([ruleIndex, { callStack, startTokenIndex }]) => {
+      const continuation = startTokenIndex < caret.tokenIndex;
+      const slotStart = allTokens[startTokenIndex].start;
+      return {
+        rule: ruleNames[ruleIndex],
+        stack: callStack.map((entry) => ruleNames[entry.ruleIndex]),
+        continuation,
+        text:
+          continuation && previousToken
+            ? textBeforeCursor.slice(slotStart, previousToken.stop + 1)
+            : '',
+      };
+    }
   );
 
   const sharedStack = getSharedStack(candidates, grammar);
@@ -256,6 +269,7 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     expectedRules,
     commandCanEnd,
     partial,
+    previousTokenType: previousToken?.type,
     inComment: false,
   };
 };
