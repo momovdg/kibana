@@ -57,7 +57,9 @@ function createGetEnrichFields(
       return [];
     }
 
-    const policyName = command.args[0].name;
+    const [source] = command.args;
+    // Without the `_mode:` prefix, as validation looks the policy up.
+    const policyName = source.index?.valueUnquoted ?? source.name;
 
     const policies = await getPolicies();
     const policy = policies.get(policyName);
