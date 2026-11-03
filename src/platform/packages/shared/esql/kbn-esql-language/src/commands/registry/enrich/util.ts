@@ -122,6 +122,21 @@ export const getPosition = ({
   }
 };
 
+/**
+ * After a mode prefix such as `_any:`, a policy name replaces only the text after the colon.
+ * The default range would cover the mode (`_any:po`) or only the dropped `:`.
+ */
+export const getPolicyNameRange = ({
+  partial,
+  segment,
+}: CursorLocation): ISuggestionItem['rangeToReplace'] => {
+  const colon = partial?.text.indexOf(':') ?? -1;
+  if (!partial || colon < 0) {
+    return undefined;
+  }
+  return { start: partial.start + colon + 1, end: segment.end };
+};
+
 /** The first word of the WITH clause at the cursor, as typed. */
 export const getWithClauseFirstWord = ({ expectedRules }: CursorLocation): string =>
   expectedRules.find(({ rule, continuation }) => continuation && rule === 'qualifiedNamePattern')

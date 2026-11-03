@@ -12,6 +12,7 @@ import {
   expectSuggestions,
   getFieldNamesByType,
   getPolicyFields,
+  suggest,
 } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
 import { ESQL_STRING_TYPES } from '../../definitions/types';
@@ -241,6 +242,23 @@ describe('ENRICH Autocomplete', () => {
       await enrichExpectSuggestions('from a\n| enrich policy\n  on b\n  with col0 = ', [
         ...getPolicyFields('policy'),
       ]);
+    });
+  });
+
+  describe('policy names after a mode', () => {
+    it.each([
+      ['from a | enrich _any:', ''],
+      ['from a | enrich _coordinator:po', 'po'],
+    ])('in %j replace only the text after the colon', async (query, typedPolicy) => {
+      const suggestions = await suggest(query, mockContext, 'enrich', mockCallbacks, autocomplete);
+
+      expect(suggestions.length).toBeGreaterThan(0);
+      for (const { rangeToReplace } of suggestions) {
+        expect(rangeToReplace).toEqual({
+          start: query.length - typedPolicy.length,
+          end: query.length,
+        });
+      }
     });
   });
 });

@@ -24,6 +24,7 @@ import {
   buildMatchingFieldsDefinition,
   buildPoliciesDefinitions,
   getPolicyMetadata,
+  getPolicyNameRange,
   getPosition,
   getWithClauseFirstWord,
   modeSuggestions,
@@ -77,7 +78,13 @@ export async function autocomplete(
 
     case Position.POLICY: {
       const policiesSuggestions = buildPoliciesDefinitions(Array.from(policies.values()));
-      return policiesSuggestions.length ? policiesSuggestions : [noPoliciesAvailableSuggestion];
+      if (!policiesSuggestions.length) {
+        return [noPoliciesAvailableSuggestion];
+      }
+      const rangeToReplace = getPolicyNameRange(location);
+      return rangeToReplace
+        ? policiesSuggestions.map((suggestion) => ({ ...suggestion, rangeToReplace }))
+        : policiesSuggestions;
     }
 
     case Position.AFTER_POLICY:
