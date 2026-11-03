@@ -12,7 +12,8 @@
  * (https://github.com/mike-lischke/antlr4-c3/blob/1aabe21e8b/src/CodeCompletionCore.ts),
  * ported from the `antlr4ng` runtime to the `antlr4` runtime used by `@elastic/esql`.
  * Debug output was removed, follow sets use plain number sets, and the collection also
- * reports whether the start rule can end right before the caret.
+ * reports whether the start rule can end right before the caret and the call stack under
+ * which each candidate was found.
  */
 
 /**
@@ -127,6 +128,13 @@ export type RuleList = number[];
 export interface CandidateRule {
   startTokenIndex: number;
   ruleList: RuleList;
+  /** The rules above this one, with the tokens they start at. */
+  callStack: RuleWithStartToken[];
+}
+
+export interface RuleWithStartToken {
+  startTokenIndex: number;
+  ruleIndex: number;
 }
 
 /**
@@ -135,6 +143,8 @@ export interface CandidateRule {
  */
 export interface CandidatesCollection {
   tokens: Map<number, TokenList>;
+  /** The call stack under which each token was first collected. */
+  tokenCallStacks: Map<number, RuleWithStartToken[]>;
   rules: Map<number, CandidateRule>;
   /** Whether the start rule can end right before the caret, without consuming it. */
   startRuleCanEndAtCaret: boolean;
@@ -144,11 +154,6 @@ export interface CandidatesCollection {
 export interface CollectionStart {
   ruleIndex: number;
   start: Token;
-}
-
-interface RuleWithStartToken {
-  startTokenIndex: number;
-  ruleIndex: number;
 }
 
 interface FollowSetWithPath {
@@ -191,6 +196,13 @@ const longestCommonPrefix = (a: TokenList, b: TokenList | undefined): TokenList 
   return a.slice(0, index);
 };
 
+const createCandidates = (): CandidatesCollection => ({
+  tokens: new Map(),
+  tokenCallStacks: new Map(),
+  rules: new Map(),
+  startRuleCanEndAtCaret: false,
+});
+
 // Follow sets depend only on the ATN, so they are shared by all instances. As in c3, a predicate
 // is evaluated once for them, which assumes grammar capabilities do not change at runtime.
 const followSetsByAtn = new WeakMap<RuntimeAtn, Map<number, FollowSetsHolder>>();
@@ -210,11 +222,7 @@ export class CodeCompletionCore {
   private tokens: Token[] = [];
   private precedenceStack: number[] = [];
   private shortcutMap = new Map<number, Map<number, RuleEndStatus>>();
-  private candidates: CandidatesCollection = {
-    tokens: new Map(),
-    rules: new Map(),
-    startRuleCanEndAtCaret: false,
-  };
+  private candidates = createCandidates();
 
   constructor(private readonly parser: EsqlParser, private readonly tokenStream: TokenSource) {
     this.atn = getRuntimeAtn(parser);
@@ -227,7 +235,7 @@ export class CodeCompletionCore {
    */
   public collectCandidates(caretTokenIndex: number, start?: CollectionStart): CandidatesCollection {
     this.shortcutMap = new Map();
-    this.candidates = { tokens: new Map(), rules: new Map(), startRuleCanEndAtCaret: false };
+    this.candidates = createCandidates();
     this.precedenceStack = [];
     this.tokens = [];
 
@@ -291,7 +299,8 @@ export class CodeCompletionCore {
       return false;
     }
 
-    const path = stack.slice(0, i).map((entry) => entry.ruleIndex);
+    const callStack = stack.slice(0, i);
+    const path = callStack.map((entry) => entry.ruleIndex);
     let addNew = true;
     for (const [candidateRule, { ruleList }] of this.candidates.rules) {
       if (candidateRule !== ruleIndex || ruleList.length !== path.length) {
@@ -304,7 +313,7 @@ export class CodeCompletionCore {
     }
 
     if (addNew) {
-      this.candidates.rules.set(ruleIndex, { startTokenIndex, ruleList: path });
+      this.candidates.rules.set(ruleIndex, { startTokenIndex, ruleList: path, callStack });
     }
 
     return true;
@@ -468,7 +477,19 @@ export class CodeCompletionCore {
     return followSets;
   }
 
-  private addTokenCandidate(symbol: number, following: TokenList, merge: 'reset' | 'prefix') {
+  private recordTokenCallStack(symbol: number, callStack: RuleWithStartToken[]) {
+    if (!this.candidates.tokenCallStacks.has(symbol)) {
+      this.candidates.tokenCallStacks.set(symbol, callStack.slice());
+    }
+  }
+
+  private addTokenCandidate(
+    symbol: number,
+    following: TokenList,
+    merge: 'reset' | 'prefix',
+    callStack: RuleWithStartToken[]
+  ) {
+    this.recordTokenCallStack(symbol, callStack);
     const existing = this.candidates.tokens.get(symbol);
     if (!existing) {
       this.candidates.tokens.set(symbol, following);
@@ -521,7 +542,7 @@ export class CodeCompletionCore {
           if (!this.translateStackToRuleIndex(fullPath)) {
             for (const symbol of set.symbols) {
               if (!this.ignoredTokens.has(symbol)) {
-                this.addTokenCandidate(symbol, set.following, 'reset');
+                this.addTokenCandidate(symbol, set.following, 'reset', fullPath);
               }
             }
           }
@@ -602,6 +623,7 @@ export class CodeCompletionCore {
             } else if (!this.translateStackToRuleIndex(callStack)) {
               for (const symbol of this.allUserTokens()) {
                 if (!this.ignoredTokens.has(symbol)) {
+                  this.recordTokenCallStack(symbol, callStack);
                   this.candidates.tokens.set(symbol, []);
                 }
               }
@@ -648,7 +670,7 @@ export class CodeCompletionCore {
               for (const symbol of symbols) {
                 if (!this.ignoredTokens.has(symbol)) {
                   const following = hasTokenSequence ? this.getFollowingTokens(transition) : [];
-                  this.addTokenCandidate(symbol, following, 'prefix');
+                  this.addTokenCandidate(symbol, following, 'prefix', callStack);
                 }
               }
             }
