@@ -313,6 +313,52 @@ export const withCompleteItem: ISuggestionItem = withAutoSuggest({
   category: SuggestionCategory.LANGUAGE_KEYWORD,
 });
 
+export const joinOnCompleteItem: ISuggestionItem = withAutoSuggest({
+  label: 'ON',
+  text: 'ON ',
+  detail: i18n.translate('esqlLanguage.esql.autocomplete.join.onKeyword', {
+    defaultMessage: 'Specify JOIN field conditions',
+  }),
+  kind: 'Keyword',
+});
+
+export const fuseScoreByCompleteItem: ISuggestionItem = {
+  label: 'SCORE BY',
+  kind: 'Reference',
+  detail: i18n.translate('esqlLanguage.esql.autocomplete.fuse.scoreBy', {
+    defaultMessage:
+      'Defaults to _score. Designates which column to use to retrieve the relevance scores of the input',
+  }),
+  text: 'SCORE BY ',
+};
+
+export const fuseGroupByCompleteItem: ISuggestionItem = {
+  label: 'GROUP BY',
+  kind: 'Reference',
+  detail: i18n.translate('esqlLanguage.esql.autocomplete.fuse.groupBy', {
+    defaultMessage: 'Defaults to _fork. Designates which column represents the result set',
+  }),
+  text: 'GROUP BY ',
+};
+
+export const fuseKeyByCompleteItem: ISuggestionItem = {
+  label: 'KEY BY',
+  kind: 'Reference',
+  detail: i18n.translate('esqlLanguage.esql.autocomplete.fuse.keyBy', {
+    defaultMessage: 'Defaults to _id, _index. Rows with matching key_columns values are merged',
+  }),
+  text: 'KEY BY ',
+};
+
+export const showInfoCompleteItem: ISuggestionItem = {
+  text: 'INFO',
+  detail: i18n.translate('esqlLanguage.esql.show.info.detail', {
+    defaultMessage: 'Get information about the Elasticsearch cluster.',
+  }),
+  kind: 'Method',
+  label: 'INFO',
+};
+
 export const withMapCompleteItem: ISuggestionItem = withAutoSuggest({
   label: 'inference_id',
   text: '{ "inference_id": "$0" }',

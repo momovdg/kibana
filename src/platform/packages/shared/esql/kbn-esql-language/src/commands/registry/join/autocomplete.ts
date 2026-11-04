@@ -6,14 +6,17 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { i18n } from '@kbn/i18n';
 import type { ESQLFieldWithMetadata } from '@kbn/esql-types';
 import type { ESQLAstAllCommands, ESQLAstJoinCommand } from '@elastic/esql/types';
 import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
 import { getLookupIndexCreateSuggestion } from '../../definitions/utils/autocomplete/helpers';
 import type { ICommandCallbacks } from '../types';
 import { type ISuggestionItem, type ICommandContext, Location } from '../types';
-import { newLineAndPipeCompleteItems, commaCompleteItem } from '../complete_items';
+import {
+  newLineAndPipeCompleteItems,
+  commaCompleteItem,
+  joinOnCompleteItem,
+} from '../complete_items';
 import {
   createEnrichedContext,
   createEnrichedGetByType,
@@ -110,16 +113,7 @@ export async function autocomplete(
     }
 
     case 'after_index': {
-      const suggestion: ISuggestionItem = withAutoSuggest({
-        label: 'ON',
-        text: 'ON ',
-        detail: i18n.translate('esqlLanguage.esql.autocomplete.join.onKeyword', {
-          defaultMessage: 'Specify JOIN field conditions',
-        }),
-        kind: 'Keyword',
-      });
-
-      return [suggestion];
+      return [joinOnCompleteItem];
     }
 
     case 'on_expression': {
