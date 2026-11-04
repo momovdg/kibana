@@ -10,10 +10,11 @@
 import type { ESQLAstAllCommands, ESQLSingleAstItem } from '@elastic/esql/types';
 import { isColumn } from '@elastic/esql';
 import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
+import { getTokenType } from '../../../language/shared/cursor_location/cursor_location';
+import type { CursorLocation } from '../../../language/shared/cursor_location/types';
 import { newLineCompleteItem, pipeCompleteItem, commaCompleteItem } from '../complete_items';
 import type { ISuggestionItem } from '../types';
 import { ReplacementRangeStrategyKind } from '../../../language/autocomplete/utils/prefix_range';
-import { endsWithComma, endsWithWhitespace } from '../../definitions/utils/regex';
 
 export type SortPosition =
   | 'expression'
@@ -22,12 +23,16 @@ export type SortPosition =
   | 'nulls_complete'
   | 'after_nulls';
 
+const isTypedKeyword = (partial: CursorLocation['partial'], keywords: string[]): boolean =>
+  partial !== undefined && keywords.includes(partial.text.toUpperCase());
+
+/** Maps the grammar's view of the cursor to a SORT position. */
 export const getSortPos = (
-  query: string,
+  { partial, previousTokenType, whitespaceBefore }: CursorLocation,
   command: ESQLAstAllCommands
 ): { position: SortPosition | undefined; expressionRoot: ESQLSingleAstItem | undefined } => {
   const lastArg = command.args[command.args.length - 1];
-  const afterComma = endsWithComma(query) && endsWithWhitespace(query);
+  const afterComma = previousTokenType === getTokenType('COMMA') && whitespaceBefore && !partial;
   const hasExpressionArg = lastArg && !Array.isArray(lastArg) && lastArg.type !== 'order';
 
   // Expression context: no arg, after comma, or within an expression (not order node)
@@ -37,19 +42,25 @@ export const getSortPos = (
     return { position: 'expression', expressionRoot };
   }
 
-  if (/(?:asc|desc)$/i.test(query)) {
+  const previousIs = (...names: string[]) =>
+    names.some((name) => previousTokenType === getTokenType(name));
+
+  if (isTypedKeyword(partial, ['ASC', 'DESC'])) {
     return { position: 'order_complete', expressionRoot: undefined };
   }
 
-  if (/(?:asc|desc)\s+(?:N?U?L?L?S? ?(F?I?R?S?|LA?S?)?)$/i.test(query)) {
+  if (previousIs('NULLS')) {
+    return {
+      position: isTypedKeyword(partial, ['FIRST', 'LAST']) ? 'nulls_complete' : 'after_order',
+      expressionRoot: undefined,
+    };
+  }
+
+  if (previousIs('ASC', 'DESC')) {
     return { position: 'after_order', expressionRoot: undefined };
   }
 
-  if (/(?:nulls\s+first|nulls\s+last)$/i.test(query)) {
-    return { position: 'nulls_complete', expressionRoot: undefined };
-  }
-
-  if (/(?:nulls\s+first|nulls\s+last)\s+$/i.test(query)) {
+  if (previousIs('FIRST', 'LAST') && !partial) {
     return { position: 'after_nulls', expressionRoot: undefined };
   }
 
@@ -84,23 +95,27 @@ export const sortModifierSuggestions = {
 };
 
 export const rightAfterColumn = (
-  innerText: string,
   expressionRoot: ESQLSingleAstItem | undefined,
-  columnExists: (name: string) => boolean
+  columnExists: (name: string) => boolean,
+  { partial, previousTokenType, whitespaceBefore }: CursorLocation,
+  cursorPosition: number
 ): boolean => {
   return (
     isColumn(expressionRoot) &&
     columnExists(expressionRoot.parts.join('.')) &&
     // this prevents the branch from being entered for something like "SORT column NULLS LA/"
     // where the "NULLS LA" won't be in the AST so expressionRoot will just be the column
-    /(?:sort|,)\s+\S+$/i.test(innerText)
+    (expressionRoot.location.max + 1 === cursorPosition ||
+      // the AST drops the parentheses of "SORT (column)"
+      (!partial && !whitespaceBefore && previousTokenType === getTokenType('RP')))
   );
 };
 
 export const getSuggestionsAfterCompleteExpression = (
-  innerText: string,
+  location: CursorLocation,
   expressionRoot: ESQLSingleAstItem | undefined,
-  columnExists: (name: string) => boolean
+  columnExists: (name: string) => boolean,
+  cursorPosition: number
 ): ISuggestionItem[] => {
   let sortCommandKeywordSuggestions = [
     { ...sortModifierSuggestions.ASC },
@@ -115,14 +130,14 @@ export const getSuggestionsAfterCompleteExpression = (
     text: ', ',
   });
 
-  // does the query end with whitespace?
-  if (endsWithWhitespace(innerText)) {
+  // is the cursor after whitespace or a comment?
+  if (location.whitespaceBefore && !location.partial) {
     commaSuggestion.replacementRangeStrategy = {
       kind: ReplacementRangeStrategyKind.TRAILING_WHITESPACE,
     };
   }
   // special case: cursor right after a column name
-  else if (isColumn(expressionRoot) && rightAfterColumn(innerText, expressionRoot, columnExists)) {
+  else if (rightAfterColumn(expressionRoot, columnExists, location, cursorPosition)) {
     sortCommandKeywordSuggestions = sortCommandKeywordSuggestions.map((s) => ({
       ...s,
       text: ` ${s.text}`,
