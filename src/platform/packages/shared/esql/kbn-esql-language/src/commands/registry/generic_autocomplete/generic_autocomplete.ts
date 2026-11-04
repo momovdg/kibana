@@ -27,13 +27,31 @@ export type CommandAutocomplete = (
   cursorPosition?: number
 ) => Promise<ISuggestionItem[]>;
 
-/** Tokens that end a value, so an item typed right after them needs a leading space. */
-const VALUE_END_TOKENS = [
-  'RP',
-  'CLOSING_BRACKET',
-  'RIGHT_BRACES',
-  'QUOTED_IDENTIFIER',
-  'QUOTED_STRING',
+/** Tokens after which an item can follow directly: operators, openers and separators. */
+const SEPARATING_TOKENS = [
+  'COMMA',
+  'ASSIGN',
+  'PIPE',
+  'SEMICOLON',
+  'COLON',
+  'DOT',
+  'CAST_OP',
+  'ARROW',
+  'LP',
+  'OPENING_BRACKET',
+  'LEFT_BRACES',
+  'EQ',
+  'CIEQ',
+  'NEQ',
+  'LT',
+  'LTE',
+  'GT',
+  'GTE',
+  'PLUS',
+  'MINUS',
+  'ASTERISK',
+  'SLASH',
+  'PERCENT',
 ];
 
 const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'SEMICOLON'];
@@ -41,11 +59,12 @@ const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'SEMICOLON'];
 const needsLeadingSpace = ({ token, item }: KeywordItem): boolean =>
   !SEPARATOR_TOKENS.includes(token) && item !== newLineCompleteItem;
 
-/** Nothing separates the cursor from the value before it, e.g. `SORT (col)`. */
+/** Nothing separates the cursor from the value before it, e.g. `SORT (col)` or `` `a b` ``. */
 const isGluedToValue = ({ partial, whitespaceBefore, previousTokenType }: CursorLocation) =>
   !partial &&
   !whitespaceBefore &&
-  VALUE_END_TOKENS.some((name) => getTokenType(name) === previousTokenType);
+  previousTokenType !== undefined &&
+  !SEPARATING_TOKENS.some((name) => getTokenType(name) === previousTokenType);
 
 const toItem = (keyword: KeywordItem, glued: boolean): ISuggestionItem =>
   glued && needsLeadingSpace(keyword)
