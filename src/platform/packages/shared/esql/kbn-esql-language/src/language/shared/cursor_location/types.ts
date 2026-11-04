@@ -30,12 +30,27 @@ export interface ExpectedRule {
   text: string;
 }
 
+/** The grammar context of a token the cursor can take. */
+export interface ExpectedToken {
+  /** The rules above the token, outermost first. */
+  rules: string[];
+  /** The token would be a command's first token, i.e. a command name. */
+  startsCommand: boolean;
+}
+
 export interface CursorLocation {
   segment: CommandSegment;
   /** The rules shared by every candidate, outermost first, e.g. `['processingCommand', 'keepCommand']`. */
   ruleStack: string[];
   /** Token types valid at the cursor, including `PIPE` and `EOF` or `RP` when the command can end. */
   expectedTokens: Set<number>;
+  /**
+   * For each expected token the grammar found, the rules above it, outermost first (e.g. `ASC`
+   * → `['processingCommand', 'sortCommand', 'orderExpression']`), and whether the token would
+   * start a command, like `WHERE` after a pipe but not `WHERE` in `STATS`. The tokens added
+   * because the command can end have none.
+   */
+  tokenStacks: Map<number, ExpectedToken>;
   expectedRules: ExpectedRule[];
   /** The command is complete at the cursor, so a pipe may follow. */
   commandCanEnd: boolean;

@@ -92,6 +92,43 @@ describe('locateCursor', () => {
     });
   });
 
+  describe('tokenStacks', () => {
+    it('names the rules above each expected token', () => {
+      const { tokenStacks } = locate(' FROM a | SORT b  ');
+
+      expect(tokenStacks.get(getTokenType('ASC'))).toEqual({
+        rules: ['processingCommand', 'sortCommand', 'orderExpression'],
+        startsCommand: false,
+      });
+    });
+
+    it('names the command of a token inside a FORK branch, where the shared stack does not', () => {
+      const { ruleStack, tokenStacks } = locate(' FROM a | FORK (SORT b  ');
+
+      expect(ruleStack).not.toContain('sortCommand');
+      expect(tokenStacks.get(getTokenType('ASC'))?.rules).toEqual(
+        expect.arrayContaining(['forkCommand', 'sortCommand'])
+      );
+    });
+
+    it('tells a command name from the same keyword inside a command', () => {
+      const where = getTokenType('WHERE');
+
+      expect(locate(' FROM a | ').tokenStacks.get(where)?.startsCommand).toBe(true);
+      expect(locate(' FROM a | FORK (').tokenStacks.get(where)?.startsCommand).toBe(true);
+      expect(locate(' FROM a | STATS c = COUNT(*)  ').tokenStacks.get(where)?.startsCommand).toBe(
+        false
+      );
+    });
+
+    it('has no stack for the tokens added because the command can end', () => {
+      const { tokenStacks } = locate(' FROM a | LIMIT 10  ');
+
+      expect(tokenStacks.has(getTokenType('PIPE'))).toBe(false);
+      expect(tokenStacks.has(getTokenType('BY'))).toBe(true);
+    });
+  });
+
   describe('commandCanEnd', () => {
     it.each([
       [' FROM a | ENRICH pol  ', true],
