@@ -328,4 +328,91 @@ describe('SORT Autocomplete', () => {
       await sortExpectSuggestions('from a | sort keywordField NULLS LAST ', ['\n', ', ', '| ']);
     });
   });
+
+  describe('positions the grammar resolves', () => {
+    const afterColumn = (column: string) => [
+      '\n',
+      `${column}, `,
+      `${column} | `,
+      `${column} ASC`,
+      `${column} DESC`,
+      `${column} NULLS FIRST`,
+      `${column} NULLS LAST`,
+    ];
+
+    it('ignores comments between the parts of a sort clause', async () => {
+      await sortExpectSuggestions(
+        'from a | sort /* c */ keywordField',
+        afterColumn('keywordField')
+      );
+      await sortExpectSuggestions('from a | sort keywordField /* c */ ASC /* d */ ', [
+        '\n',
+        'NULLS FIRST',
+        'NULLS LAST',
+        ', ',
+        '| ',
+      ]);
+      await sortExpectSuggestions('from a | sort keywordField ASC /* c */ NULLS /* d */ LAST', [
+        '\n',
+        'LAST, ',
+        'LAST | ',
+      ]);
+      await sortExpectSuggestions('from a | sort keywordField ASC NULLS LAST /* c */ ', [
+        '\n',
+        ', ',
+        '| ',
+      ]);
+    });
+
+    it('suggests modifiers right after a column that follows a comma without a space', async () => {
+      await sortExpectSuggestions(
+        'from a | sort keywordField ASC,doubleField',
+        afterColumn('doubleField')
+      );
+    });
+
+    it('suggests modifiers after a backtick-quoted column', async () => {
+      await sortExpectSuggestions('from a | sort `keywordField` DESC ', [
+        '\n',
+        'NULLS FIRST',
+        'NULLS LAST',
+        ', ',
+        '| ',
+      ]);
+    });
+
+    it('handles clauses split across lines', async () => {
+      await sortExpectSuggestions('from a\n| sort keywordField\n    ASC\n    ', [
+        '\n',
+        'NULLS FIRST',
+        'NULLS LAST',
+        ', ',
+        '| ',
+      ]);
+    });
+
+    it('does not suggest modifiers glued to an operator', async () => {
+      const suggestions = await suggest(
+        'from a | sort keywordField /',
+        mockContext,
+        'sort',
+        undefined,
+        autocomplete
+      );
+      expect(suggestions.map(({ text }) => text)).not.toContain(' ASC');
+    });
+
+    it('adds a space before modifiers right after a parenthesized column', async () => {
+      const suggestions = await suggest(
+        'from a | sort (keywordField)',
+        mockContext,
+        'sort',
+        undefined,
+        autocomplete
+      );
+      expect(suggestions.map(({ text }) => text)).toEqual(
+        expect.arrayContaining([' ASC', ' DESC', ' NULLS FIRST', ' NULLS LAST'])
+      );
+    });
+  });
 });
