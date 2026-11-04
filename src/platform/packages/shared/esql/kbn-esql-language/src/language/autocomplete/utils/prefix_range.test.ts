@@ -114,6 +114,24 @@ describe('computePrefixRange', () => {
     });
   });
 
+  describe('comments before the cursor', () => {
+    it('a comment after the last token produces an empty prefix at the cursor', () => {
+      for (const query of [
+        'FROM a | SORT field /* c */',
+        'FROM a | SORT field DESC /* c */ ',
+        'FROM a | SORT field // c\n',
+      ]) {
+        const result = computePrefixRange(query);
+        expect(result.prefix).toBe('');
+        expect(result.range).toEqual({ start: query.length, end: query.length });
+      }
+    });
+
+    it('text typed after a comment is the prefix', () => {
+      expectPrefix('FROM a | WHERE foo /* c */ LIKE "pat', '"pat', 'fallback-required');
+    });
+  });
+
   describe('fallback required', () => {
     it('incomplete string after LIKE', () => {
       expectPrefix('FROM a | WHERE foo LIKE "pat', '"pat', 'fallback-required');
