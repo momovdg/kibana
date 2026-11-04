@@ -19,6 +19,7 @@ import type {
 } from './types';
 import type { ESQLMessage } from '../definitions/types';
 import type { NamedSubquery } from '../definitions/utils/named_subqueries';
+import type { CommandAutocompleteSpec } from './generic_autocomplete/types';
 
 /**
  * Interface defining the methods that each ES|QL command should register.
@@ -53,8 +54,9 @@ export interface ICommandMethods<TContext = ICommandContext> {
    * @param context Additional context for suggestions (e.g., available functions, field types).
    * @param callbacks Optional callbacks for handling specific events during autocompletion.
    * @returns An array of suggested completion items.
+   * Commands without it use the generic autocomplete, driven by `ICommand.autocompleteSpec`.
    */
-  autocomplete: (
+  autocomplete?: (
     query: string,
     command: ESQLAstAllCommands,
     callbacks?: ICommandCallbacks,
@@ -113,6 +115,8 @@ export interface ICommand {
   name: string;
   methods: ICommandMethods;
   metadata: ICommandMetadata;
+  /** Slots, keyword filters and expression settings for the generic autocomplete. */
+  autocompleteSpec?: CommandAutocompleteSpec;
 }
 
 /**

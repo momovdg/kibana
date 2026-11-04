@@ -23,6 +23,7 @@ import type {
 import { getControlSuggestionIfSupported } from '../../commands/definitions/utils';
 import { getAutocompleteCursorContext } from '../shared/parse_for_autocomplete_query';
 import { locateCursor } from '../shared/cursor_location/cursor_location';
+import { getCommandAutocomplete } from '../../commands/registry/generic_autocomplete/command_autocomplete';
 import { getFromCommandHelper } from '../shared/resources_helpers';
 import { getCommandContext } from './get_command_context';
 import { mapRecommendedQueriesFromExtensions } from './recommended_queries_helpers';
@@ -273,9 +274,9 @@ async function getSuggestionsWithinCommandExpression(
   namedSubqueries: readonly NamedSubquery[] = []
 ) {
   const innerText = fullText.substring(0, offset);
-  const commandDefinition = esqlCommandRegistry.getCommandByName(astContext.command.name);
+  const autocomplete = getCommandAutocomplete(astContext.command.name);
 
-  if (!commandDefinition) {
+  if (!autocomplete) {
     return [];
   }
 
@@ -326,7 +327,7 @@ async function getSuggestionsWithinCommandExpression(
     });
 
   // does it make sense to have a different context per command?
-  const suggestions = await commandDefinition.methods.autocomplete(
+  const suggestions = await autocomplete(
     fullText,
     astContext.command,
     {
