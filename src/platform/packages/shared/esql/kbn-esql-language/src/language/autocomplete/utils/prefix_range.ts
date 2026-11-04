@@ -110,7 +110,12 @@ function computePrefixRangeFromTokens(query: string, tokens: EsqlLexerToken[]): 
 
   // the user is typing something the lexer can't parse yet (e.g. a partial keyword like "N" for "NOT NULL")
   if (gap > 0) {
-    return getPrefixResultFromUnparsedTrailingText(query, lastTokenEnd);
+    // whitespace and comments after the last visible token are not part of the prefix
+    const hiddenEnd = tokens.reduce(
+      (end, { start, stop }) => (start >= lastTokenEnd ? Math.max(end, stop + 1) : end),
+      lastTokenEnd
+    );
+    return getPrefixResultFromUnparsedTrailingText(query, hiddenEnd);
   }
 
   // Structural delimiters like ( ) , . = are not valid prefixes — cursor is in an empty position
@@ -352,7 +357,7 @@ function getPrefixResultFromUnparsedTrailingText(
 ): PrefixResult {
   const textAfterLastToken = query.substring(lastTokenEnd);
 
-  if (isOnlyWhitespace(textAfterLastToken)) {
+  if (!textAfterLastToken || isOnlyWhitespace(textAfterLastToken)) {
     return createEmptyPrefixResult(query, 'token-based');
   }
 
