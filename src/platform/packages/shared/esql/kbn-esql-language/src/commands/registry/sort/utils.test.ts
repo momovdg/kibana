@@ -9,6 +9,7 @@
 
 import type { ESQLCommand } from '@elastic/esql/types';
 import { synth } from '@elastic/esql';
+import { locateCursor } from '../../../language/shared/cursor_location/cursor_location';
 import type { SortPosition } from './utils';
 import { getSortPos as _getSortPos } from './utils';
 
@@ -19,7 +20,7 @@ export const getSortPos = (query: string) => {
   }
 
   const command: ESQLCommand = synth.cmd(commandText);
-  return _getSortPos(query, command).position;
+  return _getSortPos(locateCursor(query, query.length), command).position;
 };
 
 test('returns correct position on complete modifier matches', () => {

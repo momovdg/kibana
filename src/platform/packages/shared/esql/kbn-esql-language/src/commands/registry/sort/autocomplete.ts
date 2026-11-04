@@ -13,6 +13,7 @@ import {
   withAutoSuggest,
 } from '../../definitions/utils/autocomplete/helpers';
 import { suggestForExpression } from '../../definitions/utils';
+import { locateCursor } from '../../../language/shared/cursor_location/cursor_location';
 import {
   commaCompleteItem,
   newLineCompleteItem,
@@ -42,14 +43,13 @@ export async function autocomplete(
   if (!callbacks?.getByType) {
     return [];
   }
-  const innerText = query.substring(0, cursorPosition);
+  const location = context?.cursorLocation ?? locateCursor(query, cursorPosition);
   const prependSpace = (suggestion: ISuggestionItem) => ({
     ...suggestion,
     text: ' ' + suggestion.text,
   });
 
-  const commandText = innerText.slice(command.location.min);
-  const { position: pos, expressionRoot } = getSortPos(commandText, command);
+  const { position: pos, expressionRoot } = getSortPos(location, command);
 
   switch (pos) {
     case 'expression': {
@@ -78,11 +78,16 @@ export async function autocomplete(
 
       if (computed.isComplete && !computed.insideFunction) {
         suggestions.push(
-          ...getSuggestionsAfterCompleteExpression(innerText, expressionRoot, columnExists)
+          ...getSuggestionsAfterCompleteExpression(
+            location,
+            expressionRoot,
+            columnExists,
+            cursorPosition
+          )
         );
       }
 
-      if (!rightAfterColumn(innerText, expressionRoot, columnExists)) {
+      if (!rightAfterColumn(expressionRoot, columnExists, location, cursorPosition)) {
         suggestions.push(...expressionSuggestions);
       }
 
