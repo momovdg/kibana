@@ -59,8 +59,9 @@ const remainderOf = (item: ISuggestionItem): ISuggestionItem => ({
 /**
  * Items for the keyword and separator tokens the grammar expects inside a command. Command
  * entries keep the items those commands suggest today; Section 2's migrations may merge them.
+ * Built on first use, as some items come from command modules that import this one indirectly.
  */
-const KEYWORD_ENTRIES: readonly KeywordEntry[] = [
+const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'PIPE', items: newLineAndPipeCompleteItems },
   { token: 'COMMA', items: [commaCompleteItem] },
   { token: 'ASSIGN', items: [assignCompletionItem] },
@@ -93,6 +94,9 @@ const KEYWORD_ENTRIES: readonly KeywordEntry[] = [
   { token: 'FIRST', items: [remainderOf(sortModifierSuggestions.NULLS_FIRST)] },
   { token: 'LAST', items: [remainderOf(sortModifierSuggestions.NULLS_LAST)] },
 ];
+
+let keywordEntries: readonly KeywordEntry[] | undefined;
+const getKeywordEntries = (): readonly KeywordEntry[] => (keywordEntries ??= buildKeywordEntries());
 
 /**
  * Operators, brackets, literals and parameters: the grammar allows them after any expression,
@@ -152,7 +156,7 @@ const tokenName = (type: number): string => {
 
 /** The token names that have keyword items, for coverage checks. */
 export const getMappedKeywordTokens = (): ReadonlySet<string> =>
-  new Set(KEYWORD_ENTRIES.map(({ token }) => token));
+  new Set(getKeywordEntries().map(({ token }) => token));
 
 /**
  * The keyword and separator items for the tokens the grammar expects at the cursor. Command
@@ -169,7 +173,7 @@ export const keywordsAt = ({ expectedTokens, tokenStacks }: CursorLocation): Key
 
     const token = tokenName(type);
     const command = stack?.rules.findLast((rule) => rule.endsWith('Command'));
-    const entries = KEYWORD_ENTRIES.filter((entry) => entry.token === token);
+    const entries = getKeywordEntries().filter((entry) => entry.token === token);
     const entry =
       entries.find(
         (candidate) => candidate.command !== undefined && candidate.command === command
