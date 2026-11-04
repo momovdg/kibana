@@ -17,6 +17,9 @@ import {
   withCompleteItem,
   minMaxValueCompleteItem,
   noneValueCompleteItem,
+  fuseScoreByCompleteItem,
+  fuseGroupByCompleteItem,
+  fuseKeyByCompleteItem,
 } from '../complete_items';
 import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
 import { ESQL_STRING_TYPES } from '../../definitions/types';
@@ -288,37 +291,15 @@ function fuseArgumentsAutocomplete(command: ESQLAstFuseCommand): ISuggestionItem
   }
 
   if (!scoreBy) {
-    suggestions.push({
-      label: 'SCORE BY',
-      kind: 'Reference',
-      detail: i18n.translate('esqlLanguage.esql.autocomplete.fuse.scoreBy', {
-        defaultMessage:
-          'Defaults to _score. Designates which column to use to retrieve the relevance scores of the input',
-      }),
-      text: 'SCORE BY ',
-    });
+    suggestions.push(fuseScoreByCompleteItem);
   }
 
   if (!groupBy) {
-    suggestions.push({
-      label: 'GROUP BY',
-      kind: 'Reference',
-      detail: i18n.translate('esqlLanguage.esql.autocomplete.fuse.groupBy', {
-        defaultMessage: 'Defaults to _fork. Designates which column represents the result set',
-      }),
-      text: 'GROUP BY ',
-    });
+    suggestions.push(fuseGroupByCompleteItem);
   }
 
   if (!keyBy) {
-    suggestions.push({
-      label: 'KEY BY',
-      kind: 'Reference',
-      detail: i18n.translate('esqlLanguage.esql.autocomplete.fuse.keyBy', {
-        defaultMessage: 'Defaults to _id, _index. Rows with matching key_columns values are merged',
-      }),
-      text: 'KEY BY ',
-    });
+    suggestions.push(fuseKeyByCompleteItem);
   }
 
   if (!withOption) {

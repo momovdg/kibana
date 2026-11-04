@@ -6,11 +6,10 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { i18n } from '@kbn/i18n';
 import type { ESQLAstAllCommands } from '@elastic/esql/types';
 import type { ICommandCallbacks } from '../types';
 import { type ISuggestionItem, type ICommandContext } from '../types';
-import { newLineAndPipeCompleteItems } from '../complete_items';
+import { newLineAndPipeCompleteItems, showInfoCompleteItem } from '../complete_items';
 
 export async function autocomplete(
   query: string,
@@ -29,14 +28,5 @@ export async function autocomplete(
     return [];
   }
   // SHOW /
-  return [
-    {
-      text: 'INFO',
-      detail: i18n.translate('esqlLanguage.esql.show.info.detail', {
-        defaultMessage: 'Get information about the Elasticsearch cluster.',
-      }),
-      kind: 'Method',
-      label: 'INFO',
-    },
-  ];
+  return [showInfoCompleteItem];
 }

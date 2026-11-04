@@ -129,6 +129,7 @@ const emptyLocation = (offset: number, inComment: boolean): CursorLocation => ({
   segment: { start: offset, end: offset, text: '' },
   ruleStack: [],
   expectedTokens: new Set(),
+  tokenStacks: new Map(),
   expectedRules: [],
   commandCanEnd: false,
   whitespaceBefore: false,
@@ -283,6 +284,17 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     segment,
     ruleStack: sharedStack.map(({ ruleIndex }) => ruleNames[ruleIndex]),
     expectedTokens,
+    tokenStacks: new Map(
+      [...candidates.tokenCallStacks].map(([type, callStack]) => [
+        type,
+        {
+          rules: callStack.map(({ ruleIndex }) => ruleNames[ruleIndex]),
+          startsCommand:
+            callStack.findLast(({ ruleIndex }) => ruleNames[ruleIndex].endsWith('Command'))
+              ?.startTokenIndex === caret.tokenIndex,
+        },
+      ])
+    ),
     expectedRules,
     commandCanEnd,
     partial,
