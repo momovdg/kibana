@@ -191,6 +191,7 @@ export class CommandRegistry implements ICommandRegistry {
     {
       methods: ICommandMethods;
       metadata: ICommandMetadata; // Optional metadata for the command
+      autocompleteSpec?: CommandAutocompleteSpec;
     }
   > = new Map();
 
@@ -204,6 +205,7 @@ export class CommandRegistry implements ICommandRegistry {
       {
         methods: ICommandMethods;
         metadata: ICommandMetadata; // Optional metadata for the command
+        autocompleteSpec?: CommandAutocompleteSpec;
       }
     >();
   }
@@ -217,6 +219,7 @@ export class CommandRegistry implements ICommandRegistry {
       this.commands.set(command.name, {
         methods: command.methods,
         metadata: command.metadata,
+        autocompleteSpec: command.autocompleteSpec,
       });
 
       if (command.metadata.type === 'source') {
@@ -281,11 +284,15 @@ export class CommandRegistry implements ICommandRegistry {
     isStartingSubquery?: boolean;
     queryContainsSubqueries?: boolean;
   }): ICommand[] {
-    const allCommands = Array.from(this.commands.entries(), ([name, { methods, metadata }]) => ({
-      name,
-      methods,
-      metadata,
-    }));
+    const allCommands = Array.from(
+      this.commands.entries(),
+      ([name, { methods, metadata, autocompleteSpec }]) => ({
+        name,
+        methods,
+        metadata,
+        autocompleteSpec,
+      })
+    );
 
     const isStartingSubquery = options?.isStartingSubquery ?? false;
     const queryContainsSubqueries = options?.queryContainsSubqueries ?? false;
@@ -311,6 +318,7 @@ export class CommandRegistry implements ICommandRegistry {
           name: commandName,
           methods: command.methods,
           metadata: command.metadata,
+          autocompleteSpec: command.autocompleteSpec,
         }
       : undefined;
   }

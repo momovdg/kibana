@@ -48,6 +48,14 @@ describe('parity harness', () => {
     ]);
   });
 
+  it('puts comments between tokens, not inside quoted names or comments', () => {
+    const withComments = queryVariants('FROM a | RENAME `my field` /* x */ AS b', {
+      commandName: 'rename',
+    }).find((variant) => variant.includes('/* c */'));
+
+    expect(withComments).toBe('FROM a | RENAME /* c */ `my field` /* x */ /* c */ AS /* c */ b');
+  });
+
   it('checks every cursor offset after the command keyword', async () => {
     const same = returning([item('a')]);
     const report = await compareAtEveryOffset({
@@ -104,19 +112,23 @@ describe('parity harness', () => {
   });
 
   it('compares through the full suggest() and restores the registered command', async () => {
-    const keep = esqlCommandRegistry.getCommandByName('keep')!;
-    const { methods, autocompleteSpec } = keep;
+    const methods = esqlCommandRegistry.getCommandMethods('keep')!;
+    const original = methods.autocomplete;
 
     const report = await compareThroughSuggest({
       commandName: 'keep',
-      legacy: keepAutocomplete,
-      spec: {},
+      legacy: returning([item('fromLegacy')]),
       queries: ['FROM a | KEEP '],
     });
 
+    // The swap takes effect: only the legacy run returns the stand-in item. Right after `KEEP`
+    // the word is still a command name, so suggest() does not ask the command.
     expect(report.positions).toBe(2);
-    expect(keep.methods).toBe(methods);
-    expect(keep.autocompleteSpec).toBe(autocompleteSpec);
+    expect(report.differences.map(({ textBeforeCursor }) => textBeforeCursor)).toEqual([
+      'FROM a | KEEP ',
+    ]);
+    expect(report.differences[0].legacy).toEqual(['fromLegacy@14-14']);
+    expect(methods.autocomplete).toBe(original);
   });
 
   it('formats a report with the shown differences first', async () => {
