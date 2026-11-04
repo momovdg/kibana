@@ -34,17 +34,20 @@ const specificity = ({ parent, after }: SlotDefinition): number =>
   (after ? 2 : 0) + (parent ? 1 : 0);
 
 /**
- * The definition that fills each expected slot, outside expressions and continuations. The
- * most specific definition wins; on a tie, the earlier one, so command definitions go first.
+ * The definition that fills each expected slot outside expressions. A slot the cursor would
+ * continue counts only after a dot, inside a dotted name like `a.b`; after `ON x ` or a quoted
+ * name the name is done. The most specific definition wins; on a tie, the earlier one, so
+ * command definitions go first.
  */
 export const matchSlots = (
   { expectedRules, previousTokenType }: CursorLocation,
   definitions: readonly SlotDefinition[]
 ): SlotMatch[] => {
   const result: SlotMatch[] = [];
+  const afterDot = previousTokenType === getTokenType('DOT');
 
   for (const slot of expectedRules) {
-    if (slot.continuation || isExpressionSlot(slot)) {
+    if ((slot.continuation && !afterDot) || isExpressionSlot(slot)) {
       continue;
     }
 

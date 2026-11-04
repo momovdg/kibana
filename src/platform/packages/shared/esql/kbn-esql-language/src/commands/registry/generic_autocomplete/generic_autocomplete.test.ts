@@ -110,6 +110,12 @@ describe('generic autocomplete', () => {
       );
     });
 
+    it('adds one after a quoted name, whatever token the lexer mode gives it', async () => {
+      expect(await texts('from a | keep `keywordField`', 'keep', {})).toEqual(
+        [' | ', ',', '\n'].sort()
+      );
+    });
+
     it('adds none after whitespace', async () => {
       const result = await texts('from a | sort keywordField ', 'sort', sortSpec);
 

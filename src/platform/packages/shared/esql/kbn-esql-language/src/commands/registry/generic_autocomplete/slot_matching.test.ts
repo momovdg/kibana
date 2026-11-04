@@ -83,7 +83,17 @@ describe('matchSlots', () => {
     expect(chosen('FROM a | LIMIT ', definitions)).toEqual(['constants']);
   });
 
-  it('skips a slot the cursor would continue rather than start', () => {
+  it('fills a slot the cursor continues inside a dotted name', () => {
+    const definitions = [named('any', { rule: 'qualifiedNamePattern' })];
+
+    expect(chosen('FROM a | KEEP kubernetes.', definitions)).toEqual(['any']);
+    expect(chosen('FROM a | KEEP kubernetes.so', definitions)).toEqual(['any']);
+  });
+
+  it('skips a slot the cursor would continue after whitespace or a quoted name', () => {
+    expect(chosen('FROM a | KEEP `a b`', [named('any', { rule: 'qualifiedNamePattern' })])).toEqual(
+      []
+    );
     expect(
       chosen('FROM a | ENRICH pol ON x ', [named('any', { rule: 'qualifiedNamePattern' })])
     ).toEqual([]);
