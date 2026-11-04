@@ -18,6 +18,7 @@ import { pipePrecedesCurrentWord } from '../../definitions/utils/shared';
 import type { ICommandCallbacks } from '../types';
 import { type ISuggestionItem, type ICommandContext } from '../types';
 import { esqlCommandRegistry } from '..';
+import { getCommandAutocomplete } from '../generic_autocomplete/command_autocomplete';
 
 export async function autocomplete(
   query: string,
@@ -62,10 +63,8 @@ export async function autocomplete(
     return [];
   }
 
-  const subCommandMethods = esqlCommandRegistry.getCommandMethods(subCommand.name);
-  return (
-    subCommandMethods?.autocomplete(innerText, subCommand, callbacks, context, cursorPosition) || []
-  );
+  const subCommandAutocomplete = getCommandAutocomplete(subCommand.name);
+  return subCommandAutocomplete?.(innerText, subCommand, callbacks, context, cursorPosition) ?? [];
 }
 
 const newBranchSuggestion: ISuggestionItem = withAutoSuggest({
