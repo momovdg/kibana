@@ -19,7 +19,7 @@ import type { CommandAutocomplete } from '../../commands/registry/generic_autoco
 import type { CommandAutocompleteSpec } from '../../commands/registry/generic_autocomplete/types';
 import { suggest as suggestQuery } from '../../language/autocomplete/autocomplete';
 import { getTokenType } from '../../language/shared/cursor_location/cursor_location';
-import { getEsqlLexerTokens } from '../../language/shared/lexer_scope';
+import { getEsqlLexerTokens, isVisibleToken } from '../../language/shared/lexer_scope';
 import { createCustomCallbackMocks } from '../../language/autocomplete/__tests__/helpers';
 import { getMockCallbacks, mockContext } from './context_fixtures';
 import { suggest as suggestCommand } from './autocomplete';
@@ -59,9 +59,14 @@ export const queryVariants = (
   query: string,
   { commandName, columns = [] }: { commandName: string; columns?: string[] }
 ): string[] => {
-  const commandStart = query.toLowerCase().indexOf(commandName.toLowerCase());
-  const head = query.slice(0, commandStart + commandName.length);
-  const tail = query.slice(head.length);
+  const commandEnd = query.toLowerCase().indexOf(commandName.toLowerCase()) + commandName.length;
+  // A comment before each token after the command keyword that follows whitespace.
+  const withComments = getEsqlLexerTokens(query)
+    .filter(
+      (token) =>
+        isVisibleToken(token) && token.start > commandEnd && /\s/.test(query[token.start - 1])
+    )
+    .reduceRight((text, { start }) => `${text.slice(0, start)}/* c */ ${text.slice(start)}`, query);
   const quoted = columns.reduce(
     (text, column) => text.replace(new RegExp(`\\b${column}\\b`, 'g'), `\`${column}\``),
     query
@@ -73,7 +78,7 @@ export const queryVariants = (
       query.replace(KEYWORD, (word) => word.toLowerCase()),
       query.replace(/ \| /g, '\n| '),
       query.replace(/, /g, ','),
-      head + tail.replace(/ (?=\S)/g, ' /* c */ '),
+      withComments,
       quoted,
     ]),
   ];
@@ -195,39 +200,37 @@ export const compareAtEveryOffset = async ({
 
 /**
  * Runs the full `suggest()` at every cursor offset after the command keyword, once with the
- * command's `legacy` autocomplete registered and once with only `spec`.
+ * `legacy` autocomplete and once with the generic one, which reads the command's registered
+ * `autocompleteSpec`. The registry hands out copies of its commands but shares their `methods`,
+ * so the swap sets `methods.autocomplete` in place and restores it.
  */
 export const compareThroughSuggest = async ({
   commandName,
   legacy,
-  spec,
   queries,
   callbacks = createCustomCallbackMocks(),
 }: {
   commandName: string;
   legacy: CommandAutocomplete;
-  spec: CommandAutocompleteSpec;
   queries: string[];
   callbacks?: ESQLCallbacks;
 }): Promise<ParityReport> => {
-  const command = esqlCommandRegistry.getCommandByName(commandName);
-  if (!command) {
+  const methods = esqlCommandRegistry.getCommandMethods(commandName);
+  if (!methods) {
     throw new Error(`Unknown command ${commandName}`);
   }
 
-  const { methods, autocompleteSpec } = command;
+  const original = methods.autocomplete;
   const runWith = async (
-    registered: Pick<typeof command, 'methods' | 'autocompleteSpec'>,
+    autocomplete: CommandAutocomplete | undefined,
     query: string,
     offset: number
   ) => {
-    command.methods = registered.methods;
-    command.autocompleteSpec = registered.autocompleteSpec;
+    methods.autocomplete = autocomplete;
     try {
       return await suggestQuery(query, offset, callbacks);
     } finally {
-      command.methods = methods;
-      command.autocompleteSpec = autocompleteSpec;
+      methods.autocomplete = original;
     }
   };
 
@@ -235,16 +238,8 @@ export const compareThroughSuggest = async ({
   for (const query of queries) {
     for (const offset of offsetsAfterCommand(query, commandName)) {
       report.positions++;
-      const legacyItems = await runWith(
-        { methods: { ...methods, autocomplete: legacy } },
-        query,
-        offset
-      );
-      const genericItems = await runWith(
-        { methods: { ...methods, autocomplete: undefined }, autocompleteSpec: spec },
-        query,
-        offset
-      );
+      const legacyItems = await runWith(legacy, query, offset);
+      const genericItems = await runWith(undefined, query, offset);
       const difference = compare(query.slice(0, offset), 'suggest', legacyItems, genericItems);
       if (difference) {
         report.differences.push(difference);

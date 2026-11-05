@@ -1,0 +1,36 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the "Elastic License
+ * 2.0", the "GNU Affero General Public License v3.0 only", and the "Server Side
+ * Public License v 1"; you may not use this file except in compliance with, at
+ * your election, the "Elastic License 2.0", the "GNU Affero General Public
+ * License v3.0 only", or the "Server Side Public License, v 1".
+ */
+
+/**
+ * What a command argument is in the language, in the shape of a function parameter's
+ * `ParamHint` (`kind`, `entityType`, `allowedValues`, `constraints`). Roles describe the
+ * language only: anything validation could check, never how an editor presents it.
+ */
+export type ArgumentRole =
+  /** An existing column. */
+  | { kind: 'column'; constraints?: Record<string, string> }
+  /** The name of a column the command creates. Any name is valid, including an existing one. */
+  | { kind: 'new_column' }
+  /** A named thing outside the query, e.g. an enrich policy or an inference endpoint. */
+  | {
+      kind: 'entity';
+      entityType: 'enrich_policy' | 'enrich_field' | 'lookup_index' | 'inference_endpoint';
+      constraints?: Record<string, string>;
+    }
+  /** A literal value. */
+  | {
+      kind: 'constant';
+      valueType: 'integer' | 'double' | 'string' | 'map';
+      allowedValues?: string[];
+      constraints?: Record<string, string>;
+    }
+  /** An expression, filled by the expression grammar. */
+  | { kind: 'expression' }
+  /** An aggregation, as in a function parameter's `{ kind: 'aggregation' }` hint. */
+  | { kind: 'aggregation' };

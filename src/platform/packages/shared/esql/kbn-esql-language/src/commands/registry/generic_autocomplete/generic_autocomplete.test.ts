@@ -106,14 +106,20 @@ describe('generic autocomplete', () => {
       const result = await texts('from a | sort (keywordField)', 'sort', sortSpec);
 
       expect(result).toEqual(
-        expect.arrayContaining([' ASC', ' DESC', ' NULLS FIRST', ' NULLS LAST', ' | ', ',', '\n'])
+        expect.arrayContaining([' ASC', ' DESC', ' NULLS FIRST', ' NULLS LAST', ' | ', ', ', '\n'])
+      );
+    });
+
+    it('adds one after a quoted name, whatever token the lexer mode gives it', async () => {
+      expect(await texts('from a | keep `keywordField`', 'keep', {})).toEqual(
+        [' | ', ', ', '\n'].sort()
       );
     });
 
     it('adds none after whitespace', async () => {
       const result = await texts('from a | sort keywordField ', 'sort', sortSpec);
 
-      expect(result).toEqual(expect.arrayContaining(['ASC', 'DESC', '| ', ',', '\n']));
+      expect(result).toEqual(expect.arrayContaining(['ASC', 'DESC', '| ', ', ', '\n']));
       expect(result).not.toContain(' ASC');
     });
   });
@@ -127,7 +133,7 @@ describe('generic autocomplete', () => {
       expect(await texts('from a | keep keywordField', 'keep', keepSpec)).toEqual([
         '\n',
         'keywordField | ',
-        'keywordField,',
+        'keywordField, ',
       ]);
     });
 
@@ -150,12 +156,12 @@ describe('generic autocomplete', () => {
         'asc NULLS FIRST',
         'asc NULLS LAST',
         'asc | ',
-        'asc,',
+        'asc, ',
       ]);
       expect(await texts('from a | sort keywordField NULLS last', 'sort', sortSpec)).toEqual([
         '\n',
         'last | ',
-        'last,',
+        'last, ',
       ]);
     });
 

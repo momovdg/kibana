@@ -160,6 +160,17 @@ describe('CommandRegistry', () => {
       const retrievedCommand = registry.getCommandByName('unknownCommand');
       expect(retrievedCommand).toBeUndefined();
     });
+
+    test('should keep the autocomplete spec of a command without an autocomplete method', () => {
+      const autocompleteSpec = { keywordFollowUps: ['ASC'] };
+      registry.registerCommand({
+        ...createMockCommand('specCommand', { autocomplete: undefined }),
+        autocompleteSpec,
+      });
+
+      expect(registry.getCommandByName('specCommand')?.autocompleteSpec).toBe(autocompleteSpec);
+      expect(registry.getAllCommands()[0].autocompleteSpec).toBe(autocompleteSpec);
+    });
   });
 
   describe('getAllCommands', () => {

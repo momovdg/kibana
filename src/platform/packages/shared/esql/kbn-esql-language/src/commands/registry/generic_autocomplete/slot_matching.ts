@@ -21,45 +21,56 @@ export interface SlotMatch {
   definition: SlotDefinition;
 }
 
-const matches = (
-  { rule, parent, after }: SlotDefinition,
-  slot: ExpectedRule,
-  previousTokenType: number | undefined
-): boolean =>
+const matches = ({ rule, parent, after }: SlotDefinition, slot: ExpectedRule): boolean =>
   rule === slot.rule &&
   (parent === undefined || parent === slot.stack[slot.stack.length - 1]) &&
-  (after === undefined || after.some((name) => getTokenType(name) === previousTokenType));
+  (after === undefined || after.some((name) => getTokenType(name) === slot.previousTokenType));
+
+const bestMatch = (
+  definitions: readonly SlotDefinition[],
+  slot: ExpectedRule
+): SlotDefinition | undefined => {
+  let best: SlotDefinition | undefined;
+  for (const definition of definitions) {
+    if (matches(definition, slot) && (!best || specificity(definition) > specificity(best))) {
+      best = definition;
+    }
+  }
+  return best;
+};
 
 const specificity = ({ parent, after }: SlotDefinition): number =>
   (after ? 2 : 0) + (parent ? 1 : 0);
 
 /**
- * The definition that fills each expected slot, outside expressions and continuations. The
- * most specific definition wins; on a tie, the earlier one, so command definitions go first.
+ * The definition that fills each expected slot outside expressions: the command's own, else
+ * the one the slot's grammar roles give, else a default. Among definitions the most specific
+ * wins, and on a tie the earlier one. A slot the cursor would continue counts only after a dot,
+ * inside a dotted name like `a.b`; after `ON x ` or a quoted name the name is done.
  */
 export const matchSlots = (
   { expectedRules, previousTokenType }: CursorLocation,
-  definitions: readonly SlotDefinition[]
+  {
+    command = [],
+    fromRoles = () => undefined,
+    defaults = [],
+  }: {
+    command?: readonly SlotDefinition[];
+    fromRoles?: (slot: ExpectedRule) => SlotDefinition | undefined;
+    defaults?: readonly SlotDefinition[];
+  }
 ): SlotMatch[] => {
   const result: SlotMatch[] = [];
+  const afterDot = previousTokenType === getTokenType('DOT');
 
   for (const slot of expectedRules) {
-    if (slot.continuation || isExpressionSlot(slot)) {
+    if ((slot.continuation && !afterDot) || isExpressionSlot(slot)) {
       continue;
     }
 
-    let best: SlotDefinition | undefined;
-    for (const definition of definitions) {
-      if (
-        matches(definition, slot, previousTokenType) &&
-        (!best || specificity(definition) > specificity(best))
-      ) {
-        best = definition;
-      }
-    }
-
-    if (best) {
-      result.push({ slot, definition: best });
+    const definition = bestMatch(command, slot) ?? fromRoles(slot) ?? bestMatch(defaults, slot);
+    if (definition) {
+      result.push({ slot, definition });
     }
   }
 
