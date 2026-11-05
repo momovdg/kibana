@@ -11,12 +11,12 @@
 import { GRAMMAR_LABELS } from './grammar_labels/grammar_labels.generated';
 import type { CallSite, GrammarLabel } from './grammar_labels/types';
 import { ARGUMENT_ROLES, UNLABELLED_ARGUMENT_ROLES } from './argument_roles/argument_roles';
-import type { ArgumentRole } from './argument_roles/types';
+import type { ArgumentRole, MapParameter } from './argument_roles/types';
 
 export { GRAMMAR_LABELS };
 export { getCallSites } from './grammar_labels/call_sites';
 export { RULE_END, RULE_START } from './grammar_labels/types';
-export type { CallSite, GrammarLabel, ArgumentRole };
+export type { CallSite, GrammarLabel, ArgumentRole, MapParameter };
 
 /**
  * The role of the argument at a call site, if classified: by its label, or by the rule and the

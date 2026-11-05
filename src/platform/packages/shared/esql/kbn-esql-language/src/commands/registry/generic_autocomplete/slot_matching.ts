@@ -16,6 +16,9 @@ const EXPRESSION_RULES = ['booleanExpression', 'primaryExpression'];
 export const isExpressionSlot = ({ stack }: ExpectedRule): boolean =>
   stack.some((rule) => EXPRESSION_RULES.includes(rule));
 
+/** Tokens after which a slot that started earlier continues, rather than being done. */
+const CONTINUING_TOKENS = ['DOT', 'OPENING_BRACKET', 'COMMA'];
+
 export interface SlotMatch {
   slot: ExpectedRule;
   definition: SlotDefinition;
@@ -47,8 +50,9 @@ const specificity = ({ parent, after }: SlotDefinition): number =>
  * grammar roles give, else a default. Among definitions the most specific wins, and on a tie
  * the earlier one. Inside an expression only a role counts, as the column `DISSECT ` starts;
  * the expression engine fills the rest. Slots filling the same argument are filled once. A slot
- * the cursor would continue counts only after a dot, inside a dotted name like `a.b`; after
- * `ON x ` or a quoted name the name is done.
+ * the cursor would continue counts only inside it: after a dot in a dotted name like `a.b`, or
+ * after `[` or a comma in a list like `["name", `. After `ON x ` or a quoted name the name is
+ * done.
  */
 export const matchSlots = (
   { expectedRules, previousTokenType }: CursorLocation,
@@ -63,10 +67,10 @@ export const matchSlots = (
   }
 ): SlotMatch[] => {
   const result: SlotMatch[] = [];
-  const afterDot = previousTokenType === getTokenType('DOT');
+  const inside = CONTINUING_TOKENS.some((name) => getTokenType(name) === previousTokenType);
 
   for (const slot of expectedRules) {
-    if (slot.continuation && !afterDot) {
+    if (slot.continuation && !inside) {
       continue;
     }
 

@@ -18,7 +18,7 @@ import {
   getTokenName,
   getTokenType,
 } from '../../../language/shared/cursor_location/cursor_location';
-import type { ExpectedRule } from '../../../language/shared/cursor_location/types';
+import type { CursorLocation, ExpectedRule } from '../../../language/shared/cursor_location/types';
 import { columnExists } from '../../definitions/utils/autocomplete/helpers';
 import { unescapeColumnName } from '../../definitions/utils/shared';
 import { getMappedKeywordTokens, type KeywordItem } from '../keyword_items';
@@ -33,6 +33,7 @@ import {
   enrichFields,
   fixed,
   getEnrichPolicy,
+  mapEntries,
   matchingColumns,
   merged,
   newName,
@@ -84,6 +85,51 @@ const getArgumentSites = (slot: ExpectedRule): CallSite[] => {
     }
   }
   return getSlotSites(slot);
+};
+
+/**
+ * For a key or a value inside a command's `WITH { … }` map, the map's argument: the rule call
+ * above the map with a map role, as `userAgentCommand>commandNamedParameters`. A map inside a
+ * function or another map is not the command's.
+ */
+const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
+  const { stack } = slot;
+  const mapIndex = stack.indexOf('mapExpression');
+  if (mapIndex < 1) {
+    return undefined;
+  }
+  const site = getCallSites(stack[mapIndex - 2] ?? '', stack[mapIndex - 1]).find(
+    (candidate) => getArgumentRole(candidate)?.kind === 'map'
+  );
+  const role = site && getArgumentRole(site);
+  if (!site || role?.kind !== 'map') {
+    return undefined;
+  }
+  const nested = stack.indexOf('mapExpression', mapIndex + 1) >= 0;
+  return {
+    rule: slot.rule,
+    argument: `${site.rule}>${site.invokes}`,
+    provide: nested ? none() : providerFor(role, site),
+  };
+};
+
+/**
+ * The types an expression role prefers for the expression at the cursor, e.g. a string for
+ * USER_AGENT's input. Inside a function call the argument's own types apply instead.
+ */
+export const getExpressionTypes = ({ expectedRules }: CursorLocation): string[] | undefined => {
+  for (const slot of expectedRules) {
+    if (!isExpressionSlot(slot)) {
+      continue;
+    }
+    for (const site of getArgumentSites(slot)) {
+      const role = getArgumentRole(site);
+      if (role?.kind === 'expression' && role.types) {
+        return role.types;
+      }
+    }
+  }
+  return undefined;
 };
 
 /** Roles the expression engine fills. */
@@ -170,6 +216,8 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
       return exampleValues(role);
     case 'option_name':
       return optionNames(role.allowedValues);
+    case 'map':
+      return mapEntries(site.rule, role.parameters);
     case 'entity':
       if (role.entityType === 'enrich_policy') {
         return policies();
@@ -185,6 +233,10 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
  * positions has one. Expression roles are left to the expression engine.
  */
 export const getRoleSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
+  const mapSlot = getMapSlot(slot);
+  if (mapSlot) {
+    return mapSlot;
+  }
   const sites = getArgumentSites(slot);
   const providers: SlotProvider[] = [];
   for (const site of sites) {

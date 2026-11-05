@@ -88,6 +88,28 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
   'uriPartsCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
   'registeredDomainCommand>qualifiedName': { kind: 'new_column' },
   'registeredDomainCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
+
+  'userAgentCommand>qualifiedName': { kind: 'new_column' },
+  'userAgentCommand>primaryExpression': { kind: 'expression', types: STRING_TYPES },
+  'userAgentCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: {
+      regex_file: { type: 'keyword', default: '_default_' },
+      extract_device_type: { type: 'boolean' },
+      properties: { type: 'keyword', list: true, values: ['name', 'version', 'os', 'device'] },
+    },
+  },
+  'ipLocationCommand>qualifiedName': { kind: 'new_column' },
+  'ipLocationCommand>primaryExpression': { kind: 'expression', types: ['ip', ...STRING_TYPES] },
+  'ipLocationCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: {
+      database_file: { type: 'keyword', default: 'GeoLite2-City.mmdb' },
+      first_only: { type: 'boolean' },
+      // The output columns of the database, which the command's output definition lists.
+      properties: { type: 'keyword', list: true },
+    },
+  },
 };
 
 /**
