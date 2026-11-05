@@ -71,6 +71,10 @@ const getGrammarInfo = (): GrammarInfo => {
 export const getTokenType = (name: string): number =>
   name === 'EOF' ? Token.EOF : getGrammarInfo().symbolicNames.indexOf(name);
 
+/** The grammar name of a token type, e.g. `AS`; the inverse of `getTokenType`. */
+export const getTokenName = (type: number): string =>
+  type === Token.EOF ? 'EOF' : getGrammarInfo().symbolicNames[type] ?? '';
+
 const isVisible = (token: Token) => token.channel === Token.DEFAULT_CHANNEL;
 
 /**
@@ -262,6 +266,7 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
           continuation && previousToken
             ? textBeforeCursor.slice(slotStart, previousToken.stop + 1)
             : '',
+        previousTokenType: allTokens.slice(0, startTokenIndex).findLast(isVisible)?.type,
       };
     }
   );

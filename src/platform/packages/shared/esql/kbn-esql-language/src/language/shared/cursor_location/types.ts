@@ -28,6 +28,8 @@ export interface ExpectedRule {
   continuation: boolean;
   /** For a continuation, the slot's text typed before the cursor, e.g. `a.b`; otherwise empty. */
   text: string;
+  /** Type of the last token before the slot, e.g. `AS` in `RENAME a AS b.c`. */
+  previousTokenType?: number;
 }
 
 /** The grammar context of a token the cursor can take. */
