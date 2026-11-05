@@ -10,7 +10,7 @@ import { mockContext } from '../../../__tests__/commands/context_fixtures';
 import { getFieldNamesByType, suggest } from '../../../__tests__/commands/autocomplete';
 import { locateCursor } from '../../../language/shared/cursor_location/cursor_location';
 import { createGenericAutocomplete } from './generic_autocomplete';
-import { getSlotLabels } from './roles';
+import { getSlotSites } from './roles';
 
 // No command spec: everything comes from the grammar labels and the argument roles.
 const zeroConfig = createGenericAutocomplete(() => ({}));
@@ -22,13 +22,13 @@ const texts = async (query: string, commandName: string) =>
 
 const labelsAt = (text: string) => {
   const [slot] = locateCursor(text, text.length).expectedRules;
-  return getSlotLabels(slot).map(({ label }) => label);
+  return getSlotSites(slot).map(({ label }) => label);
 };
 
 const fieldNames = getFieldNamesByType('any');
 
 describe('grammar roles', () => {
-  describe('getSlotLabels', () => {
+  describe('getSlotSites', () => {
     it.each([
       ['FROM a | RENAME ', ['oldName', 'newName']],
       ['FROM a | RENAME a AS ', ['newName']],

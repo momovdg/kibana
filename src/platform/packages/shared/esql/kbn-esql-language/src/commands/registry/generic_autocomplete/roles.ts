@@ -8,12 +8,10 @@
  */
 import {
   getArgumentRole,
-  getGrammarLabels,
-  getUnlabelledArgumentRole,
+  getCallSites,
   RULE_END,
-  RULE_START,
   type ArgumentRole,
-  type GrammarLabel,
+  type CallSite,
 } from '../../../esql_js_prototype';
 import { getTokenName } from '../../../language/shared/cursor_location/cursor_location';
 import type { ExpectedRule } from '../../../language/shared/cursor_location/types';
@@ -38,25 +36,28 @@ import type { SlotDefinition, SlotProvider, SuggestContext } from './types';
 const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'PIPE', 'SEMICOLON'];
 
 /**
- * The labelled grammar positions a slot can be, told apart by the token before it: in
- * `RENAME a AS `, only `newName`; at `RENAME `, both `oldName` and `newName`.
+ * The grammar positions a slot can be, told apart by the token before it: in `RENAME a AS `,
+ * only `newName`; at `RENAME `, both `oldName` and `newName`. Without a site after that token,
+ * the token ended the rule's start or a rule call, as the column before GROK's pattern.
  */
-export const getSlotLabels = ({ rule, stack, previousTokenType }: ExpectedRule): GrammarLabel[] => {
-  const labels = getGrammarLabels(stack[stack.length - 1] ?? '', rule);
+export const getSlotSites = ({ rule, stack, previousTokenType }: ExpectedRule): CallSite[] => {
+  const sites = getCallSites(stack[stack.length - 1] ?? '', rule);
   const previous = previousTokenType === undefined ? undefined : getTokenName(previousTokenType);
-  const exact = labels.filter(
+  const exact = sites.filter(
     ({ precededBy }) => previous !== undefined && precededBy.includes(previous)
   );
-  return exact.length ? exact : labels.filter(({ precededBy }) => precededBy.includes(RULE_START));
+  // `<start>` or a `<rule>` call.
+  return exact.length
+    ? exact
+    : sites.filter(({ precededBy }) => precededBy.some((before) => before.startsWith('<')));
 };
 
 /** A keyword follows the slot in the grammar, so moving the cursor past the value helps. */
-const isFollowedByKeyword = ({ followedBy }: GrammarLabel): boolean => {
+const isFollowedByKeyword = ({ followedBy }: CallSite): boolean => {
   const keywords = getMappedKeywordTokens();
   return followedBy.some((token) => keywords.has(token) && !SEPARATOR_TOKENS.includes(token));
 };
 
-/** The editor's provider for a role. Roles describe the language; this decides what to show. */
 /** Example values for a constant, by its type: a row count, or a probability between 0 and 1. */
 const exampleValues = (role: Extract<ArgumentRole, { kind: 'constant' }>): string[] => {
   if (role.valueType === 'integer') {
@@ -69,10 +70,10 @@ const exampleValues = (role: Extract<ArgumentRole, { kind: 'constant' }>): strin
 };
 
 /**
- * The editor's provider for a role, given the slot's label when the grammar labels it. Roles
- * describe the language; this decides what to show.
+ * The editor's provider for a role at a call site. Roles describe the language; this decides
+ * what to show.
  */
-const providerFor = (role: ArgumentRole, label?: GrammarLabel): SlotProvider => {
+const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
   switch (role.kind) {
     case 'column':
       // A column matching another argument, e.g. ENRICH's ON and the policy's match field.
@@ -84,12 +85,12 @@ const providerFor = (role: ArgumentRole, label?: GrammarLabel): SlotProvider => 
       return columns({
         options: {
           openSuggestions: true,
-          ...(label && isFollowedByKeyword(label) && { advanceCursor: true }),
+          ...(isFollowedByKeyword(site) && { advanceCursor: true }),
         },
       });
     case 'new_column':
       // `name = ` where an assignment follows; otherwise the name is typed freely.
-      return label?.followedBy.includes('ASSIGN') ? newName() : none();
+      return site.followedBy.includes('ASSIGN') ? newName() : none();
     case 'constant':
       return constants(exampleValues(role));
     case 'entity':
@@ -102,20 +103,15 @@ const providerFor = (role: ArgumentRole, label?: GrammarLabel): SlotProvider => 
   }
 };
 
-/** The slot definition given by the roles of the slot's labels, when all of them have one. */
+/** The slot definition given by the roles of the slot's call sites, when all of them have one. */
 export const getRoleSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
-  const labels = getSlotLabels(slot);
-  if (!labels.length) {
-    const role = getUnlabelledArgumentRole(slot.stack[slot.stack.length - 1] ?? '', slot.rule);
-    return role ? { rule: slot.rule, provide: providerFor(role) } : undefined;
-  }
   const providers: SlotProvider[] = [];
-  for (const label of labels) {
-    const role = getArgumentRole(label);
+  for (const site of getSlotSites(slot)) {
+    const role = getArgumentRole(site);
     if (!role) {
       return undefined;
     }
-    providers.push(providerFor(role, label));
+    providers.push(providerFor(role, site));
   }
   return providers.length ? { rule: slot.rule, provide: merged(...providers) } : undefined;
 };
@@ -152,9 +148,9 @@ export const isCompleteName = (name: string, ctx: SuggestContext): boolean =>
     if (!NAME_RULES.includes(slot.rule)) {
       return false;
     }
-    const labels = getSlotLabels(slot);
-    return labels.length
-      ? labels.some((label) => isExistingAs(getArgumentRole(label), name, ctx))
+    const roles = getSlotSites(slot).map(getArgumentRole);
+    return roles.some(Boolean)
+      ? roles.some((role) => isExistingAs(role, name, ctx))
       : columnExists(name, ctx.context);
   });
 
@@ -175,18 +171,16 @@ export const filterKeywordsByRoles = (
   const slot = location.expectedRules.find(
     (candidate) => candidate.continuation && !isExpressionSlot(candidate)
   );
-  const labels = slot ? getSlotLabels(slot) : [];
-  if (!slot || !labels.length) {
+  const sites = slot ? getSlotSites(slot) : [];
+  if (!slot || !sites.some((site) => getArgumentRole(site))) {
     return keywords;
   }
 
-  // The labels a keyword reads the name as. Tokens after the clause, like a comma or the pipe,
-  // belong to the labels that can end it.
-  const readingOf = (token: string): GrammarLabel[] => {
-    const owners = labels.filter(({ followedBy }) => followedBy.includes(token));
-    return owners.length
-      ? owners
-      : labels.filter(({ followedBy }) => followedBy.includes(RULE_END));
+  // The call sites a keyword reads the name as. Tokens after the clause, like a comma or the
+  // pipe, belong to the sites that can end it.
+  const readingOf = (token: string): CallSite[] => {
+    const owners = sites.filter(({ followedBy }) => followedBy.includes(token));
+    return owners.length ? owners : sites.filter(({ followedBy }) => followedBy.includes(RULE_END));
   };
   const readings = keywords.map(({ token }) => readingOf(token));
   const distinct = new Set(readings.map((reading) => reading.map(({ state }) => state).join()));
@@ -195,7 +189,7 @@ export const filterKeywordsByRoles = (
   }
 
   const found = readings.map((reading) =>
-    reading.map((label) => isExistingAs(getArgumentRole(label), slot.text, ctx))
+    reading.map((site) => isExistingAs(getArgumentRole(site), slot.text, ctx))
   );
   // Prefer a reading that finds the name; otherwise drop those that need an existing one.
   if (found.some((results) => results.includes(true))) {
