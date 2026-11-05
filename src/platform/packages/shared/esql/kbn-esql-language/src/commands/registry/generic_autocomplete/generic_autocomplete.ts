@@ -17,6 +17,7 @@ import { keywordsAt, type KeywordItem } from '../keyword_items';
 import type { ICommandCallbacks, ICommandContext, ISuggestionItem } from '../types';
 import { DEFAULT_SLOTS, suggestExpression } from './providers';
 import { isExpressionSlot, matchSlots } from './slot_matching';
+import { filterKeywordsByRoles, getRoleSlot } from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
 
 export type CommandAutocomplete = (
@@ -109,10 +110,16 @@ export const createGenericAutocomplete =
 
     const spec = getSpec(command);
     const ctx: SuggestContext = { query, command, cursorPosition, location, callbacks, context };
-    const adjustKeywords = (keywords: KeywordItem[], at: SuggestContext) =>
-      spec.keywords ? spec.keywords(keywords, at) : keywords;
+    const adjustKeywords = (keywords: KeywordItem[], at: SuggestContext) => {
+      const allowed = filterKeywordsByRoles(keywords, at);
+      return spec.keywords ? spec.keywords(allowed, at) : allowed;
+    };
 
-    const slotMatches = matchSlots(location, [...(spec.slots ?? []), ...DEFAULT_SLOTS]);
+    const slotMatches = matchSlots(location, {
+      command: spec.slots,
+      fromRoles: getRoleSlot,
+      defaults: DEFAULT_SLOTS,
+    });
 
     const keywordFollowUps = spec.keywordFollowUps ?? [];
     const columnFollowUps = slotMatches.some(({ definition }) => definition.followUps);
@@ -137,18 +144,22 @@ export const createGenericAutocomplete =
         const followUps = adjustKeywords(keywordsAt(after), afterCtx).map((keyword) =>
           toFollowUp(keyword, true)
         );
-        return withoutDuplicates([...followUps, ...(await suggestAt(ctx, spec, slotMatches))]);
+        return withoutDuplicates([
+          ...followUps,
+          ...(await suggestAt(ctx, spec, slotMatches, adjustKeywords)),
+        ]);
       }
     }
 
-    return withoutDuplicates(await suggestAt(ctx, spec, slotMatches));
+    return withoutDuplicates(await suggestAt(ctx, spec, slotMatches, adjustKeywords));
   };
 
 /** The slot, expression and keyword items for the position before the word being typed. */
 const suggestAt = async (
   ctx: SuggestContext,
   spec: CommandAutocompleteSpec,
-  slotMatches: ReturnType<typeof matchSlots>
+  slotMatches: ReturnType<typeof matchSlots>,
+  adjustKeywords: (keywords: KeywordItem[], at: SuggestContext) => KeywordItem[]
 ): Promise<ISuggestionItem[]> => {
   const { location } = ctx;
   const slotItems = await Promise.all(
@@ -158,9 +169,8 @@ const suggestAt = async (
     spec.expression && location.expectedRules.some(isExpressionSlot)
       ? await suggestExpression(ctx, spec.expression)
       : [];
-  const keywords = keywordsAt(location);
   const glued = isGluedToValue(location);
-  const keywordItems = (spec.keywords ? spec.keywords(keywords, ctx) : keywords).map((keyword) =>
+  const keywordItems = adjustKeywords(keywordsAt(location), ctx).map((keyword) =>
     toItem(keyword, glued)
   );
 

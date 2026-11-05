@@ -9,6 +9,7 @@
 import { Parser } from '@elastic/esql';
 import { Token } from 'antlr4';
 import type { CursorLocation } from '../../language/shared/cursor_location/types';
+import { withAutoSuggest } from '../definitions/utils/autocomplete/helpers';
 import type { ISuggestionItem } from './types';
 import {
   asCompletionItem,
@@ -63,7 +64,7 @@ const remainderOf = (item: ISuggestionItem): ISuggestionItem => ({
  */
 const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'PIPE', items: newLineAndPipeCompleteItems },
-  { token: 'COMMA', items: [commaCompleteItem] },
+  { token: 'COMMA', items: [withAutoSuggest({ ...commaCompleteItem, text: ', ' })] },
   { token: 'ASSIGN', items: [assignCompletionItem] },
   { token: 'SEMICOLON', items: [semiColonCompleteItem] },
   { token: 'AS', items: [asCompletionItem] },
