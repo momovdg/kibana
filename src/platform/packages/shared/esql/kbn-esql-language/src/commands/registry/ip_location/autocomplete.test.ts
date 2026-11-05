@@ -10,7 +10,7 @@
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
 import { suggest } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 
 interface ExpectedIpLocationSuggestions {
   contains?: string[];
@@ -70,10 +70,31 @@ describe('IP_LOCATION Autocomplete', () => {
     );
   });
 
-  it('suggests WITH and pipe after a complete expression', async () => {
+  it('suggests WITH and pipe after a complete expression, keeping it', async () => {
     await expectIpLocationSuggestions('FROM a | IP_LOCATION geo = ipField', {
+      contains: ['ipField WITH { $0 }', 'ipField | '],
+    });
+    await expectIpLocationSuggestions('FROM a | IP_LOCATION geo = ipField ', {
       contains: ['WITH { $0 }', '| '],
     });
+  });
+
+  it('suggests the default database file', async () => {
+    await expectIpLocationSuggestions(
+      'FROM a | IP_LOCATION geo = ipField WITH { "database_file": ',
+      {
+        contains: ['"GeoLite2-City.mmdb"'],
+      }
+    );
+  });
+
+  it("suggests the default database's properties when no database file is given", async () => {
+    await expectIpLocationSuggestions(
+      'FROM a | IP_LOCATION geo = ipField WITH { "properties": [ ',
+      {
+        contains: ['"city_name"', '"location"'],
+      }
+    );
   });
 
   it('suggests map keys inside an empty options map', async () => {
