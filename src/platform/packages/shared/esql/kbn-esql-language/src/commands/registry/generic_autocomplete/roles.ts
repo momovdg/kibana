@@ -17,9 +17,18 @@ import {
 import { getTokenName } from '../../../language/shared/cursor_location/cursor_location';
 import type { ExpectedRule } from '../../../language/shared/cursor_location/types';
 import { columnExists } from '../../definitions/utils/autocomplete/helpers';
+import { unescapeColumnName } from '../../definitions/utils/shared';
 import { getMappedKeywordTokens, type KeywordItem } from '../keyword_items';
-import type { ICommandContext } from '../types';
-import { columns, merged, newName, none, policies } from './providers';
+import {
+  columns,
+  enrichFields,
+  getEnrichPolicy,
+  matchingColumns,
+  merged,
+  newName,
+  none,
+  policies,
+} from './providers';
 import { isExpressionSlot } from './slot_matching';
 import type { SlotDefinition, SlotProvider, SuggestContext } from './types';
 
@@ -48,6 +57,10 @@ const isFollowedByKeyword = ({ followedBy }: GrammarLabel): boolean => {
 const providerFor = (role: ArgumentRole, label: GrammarLabel): SlotProvider => {
   switch (role.kind) {
     case 'column':
+      // A column matching another argument, e.g. ENRICH's ON and the policy's match field.
+      if (role.constraints?.matches) {
+        return matchingColumns();
+      }
       return columns(
         isFollowedByKeyword(label)
           ? { options: { advanceCursor: true, openSuggestions: true } }
@@ -57,7 +70,10 @@ const providerFor = (role: ArgumentRole, label: GrammarLabel): SlotProvider => {
       // `name = ` where an assignment follows; otherwise the name is typed freely.
       return label.followedBy.includes('ASSIGN') ? newName() : none();
     case 'entity':
-      return role.entityType === 'enrich_policy' ? policies() : none();
+      if (role.entityType === 'enrich_policy') {
+        return policies();
+      }
+      return role.entityType === 'enrich_field' ? enrichFields() : none();
     default:
       return none();
   }
@@ -77,17 +93,35 @@ export const getRoleSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
   return providers.length ? { rule: slot.rule, provide: merged(...providers) } : undefined;
 };
 
-const accepts = (role: ArgumentRole | undefined, name: string, context?: ICommandContext) =>
-  role?.kind !== 'column' || columnExists(name, context);
+/**
+ * Whether `name` is an existing thing of the role's kind, or undefined for roles that take any
+ * name (a new column) or are not looked up.
+ */
+const isExistingAs = (
+  role: ArgumentRole | undefined,
+  name: string,
+  ctx: SuggestContext
+): boolean | undefined => {
+  if (role?.kind === 'column') {
+    return columnExists(name, ctx.context);
+  }
+  if (role?.kind === 'entity' && role.entityType === 'enrich_field') {
+    return getEnrichPolicy(ctx)?.enrichFields.includes(unescapeColumnName(name));
+  }
+  return undefined;
+};
 
 /**
- * Leaves out the keywords that would make the name just typed something it cannot be: in
- * `RENAME field `, `AS` makes `field` an existing column, so it needs one.
+ * Chooses between readings of the name just typed when the keywords after it imply different
+ * ones. In `RENAME bytes `, `AS` reads `bytes` as an existing column and `=` as a new one: an
+ * existing column keeps only `AS`, any other name only `=`. With a single reading, as in
+ * `RENAME a = b `, every keyword stays.
  */
 export const filterKeywordsByRoles = (
   keywords: KeywordItem[],
-  { location, context }: SuggestContext
+  ctx: SuggestContext
 ): KeywordItem[] => {
+  const { location } = ctx;
   if (location.partial) {
     return keywords;
   }
@@ -99,15 +133,28 @@ export const filterKeywordsByRoles = (
     return keywords;
   }
 
-  return keywords.filter(({ token }) => {
+  // The labels a keyword reads the name as. Tokens after the clause, like a comma or the pipe,
+  // belong to the labels that can end it.
+  const readingOf = (token: string): GrammarLabel[] => {
     const owners = labels.filter(({ followedBy }) => followedBy.includes(token));
-    // Tokens after the clause, like a comma or the pipe, belong to the labels that can end it.
-    const deciding = owners.length
+    return owners.length
       ? owners
       : labels.filter(({ followedBy }) => followedBy.includes(RULE_END));
-    return (
-      !deciding.length ||
-      deciding.some((label) => accepts(getArgumentRole(label), slot.text, context))
-    );
-  });
+  };
+  const readings = keywords.map(({ token }) => readingOf(token));
+  const distinct = new Set(readings.map((reading) => reading.map(({ state }) => state).join()));
+  if (distinct.size <= 1) {
+    return keywords;
+  }
+
+  const found = readings.map((reading) =>
+    reading.map((label) => isExistingAs(getArgumentRole(label), slot.text, ctx))
+  );
+  // Prefer a reading that finds the name; otherwise drop those that need an existing one.
+  if (found.some((results) => results.includes(true))) {
+    return keywords.filter((_, index) => found[index].includes(true));
+  }
+  return keywords.filter(
+    (_, index) => !found[index].includes(false) || found[index].includes(undefined)
+  );
 };

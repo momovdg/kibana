@@ -8,6 +8,7 @@
  */
 
 import { esqlCommandRegistry } from '../../../commands/registry';
+import * as cursorLocation from '../../shared/cursor_location/cursor_location';
 import { locateCursor } from '../../shared/cursor_location/cursor_location';
 import { setup } from './helpers';
 
@@ -20,7 +21,6 @@ describe('autocomplete cursor location', () => {
 
   it.each([
     ['keep', 'FROM index | KEEP ^', 'KEEP '],
-    ['enrich', 'FROM index | ENRICH ^', 'ENRICH '],
     ['keep', 'FROM index, (FROM other | KEEP ^', 'KEEP '],
     ['where', 'FROM index | FORK (WHERE a > 1 | SORT b) (WHERE ^', 'WHERE '],
     ['eval', 'FROM index\n| EVAL x = ^\n| WHERE b > 1', 'EVAL x = '],
@@ -41,4 +41,23 @@ describe('autocomplete cursor location', () => {
     expect(context?.cursorLocation).toEqual(locateCursor(text, offset));
     expect(context?.cursorLocation?.segment.text).toBe(segmentText);
   });
+
+  // Commands without their own autocomplete read the location suggest() computed.
+  it.each([
+    ['enrich', 'FROM index | ENRICH ^'],
+    ['rename', 'FROM index | FORK (RENAME a AS b) (RENAME ^'],
+  ])(
+    'computes the location once for %s on the generic autocomplete',
+    async (commandName, query) => {
+      expect(esqlCommandRegistry.getCommandMethods(commandName)?.autocomplete).toBeUndefined();
+      const spy = jest.spyOn(cursorLocation, 'locateCursor');
+      const { suggest } = await setup(CARET);
+
+      const suggestions = await suggest(query);
+
+      expect(suggestions.length).toBeGreaterThan(0);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith(query.replace(CARET, ''), query.indexOf(CARET));
+    }
+  );
 });
