@@ -15,7 +15,6 @@ import { columnsAfter } from './columns_after';
 import { summary } from './summary';
 
 const metricsInfoCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete: () => Promise.resolve([]),
   columnsAfter,
   summary,
 };

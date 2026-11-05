@@ -8,13 +8,11 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import type { ICommandContext } from '../types';
 import { columnsAfter } from './columns_after';
 import { summary } from './summary';
 
 const showCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
   columnsAfter,
   summary,
 };
