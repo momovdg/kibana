@@ -32,17 +32,12 @@ export interface SlotDefinition {
   parent?: string;
   /** Token names one of which comes directly before the slot or the word typed, e.g. `['AS']`. */
   after?: string[];
-  /**
-   * After a complete column typed in this slot, also offer what follows it, keeping the typed
-   * column (`host, `, `host | `).
-   */
-  followUps?: boolean;
   provide: SlotProvider;
 }
 
 export interface ExpressionSpec {
-  /** The `Location` the command passes to the expression engine, e.g. `Location.SORT`. */
-  location: Location;
+  /** The `Location` for the expression engine; by default derived from the command and option. */
+  location?: Location;
   options?: ExpressionContextOptions | ((ctx: SuggestContext) => ExpressionContextOptions);
   /** The expression at the cursor; by default the last argument that starts before it. */
   getRoot?: (ctx: SuggestContext) => ESQLSingleAstItem | undefined;
@@ -54,7 +49,5 @@ export interface CommandAutocompleteSpec {
   slots?: SlotDefinition[];
   /** Narrows or adjusts the keyword and separator items the grammar allows. */
   keywords?: (keywords: KeywordItem[], ctx: SuggestContext) => KeywordItem[];
-  /** Token names that, typed in full, get only what follows them (`asc` → `asc NULLS FIRST`). */
-  keywordFollowUps?: string[];
   expression?: ExpressionSpec;
 }
