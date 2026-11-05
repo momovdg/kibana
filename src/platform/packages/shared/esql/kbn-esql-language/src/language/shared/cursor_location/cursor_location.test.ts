@@ -270,6 +270,22 @@ describe('locateCursor', () => {
     });
   });
 
+  describe('startsRules', () => {
+    const startsRules = (text: string, rule: string) =>
+      locate(text).expectedRules.find((candidate) => candidate.rule === rule)?.startsRules;
+
+    it('counts the enclosing rules that start with the slot', () => {
+      // `primaryExpression`, then `functionExpression` too for a function name.
+      expect(startsRules('FROM a | DISSECT ', 'qualifiedName')).toBe(1);
+      expect(startsRules('FROM a | DISSECT ', 'functionName')).toBe(2);
+    });
+
+    it('stops at a rule that started before the slot', () => {
+      expect(startsRules('FROM a | KEEP ', 'qualifiedNamePattern')).toBe(1);
+      expect(startsRules('FROM a | KEEP a, ', 'qualifiedNamePattern')).toBe(0);
+    });
+  });
+
   describe('previousTokenType', () => {
     it.each([
       ['FROM a | RENAME x AS ', 'AS'],

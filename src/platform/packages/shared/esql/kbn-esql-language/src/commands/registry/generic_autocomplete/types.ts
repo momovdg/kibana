@@ -32,6 +32,11 @@ export interface SlotDefinition {
   parent?: string;
   /** Token names one of which comes directly before the slot or the word typed, e.g. `['AS']`. */
   after?: string[];
+  /**
+   * The argument filled, e.g. `dissectCommand>primaryExpression` for each of the slots a column,
+   * a constant or a function at `DISSECT ` could start; it is filled once.
+   */
+  argument?: string;
   provide: SlotProvider;
 }
 

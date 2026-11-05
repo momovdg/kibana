@@ -13,8 +13,8 @@
  * language only: anything validation could check, never how an editor presents it.
  */
 export type ArgumentRole =
-  /** An existing column. */
-  | { kind: 'column'; constraints?: Record<string, string> }
+  /** An existing column, of one of `types` when given, e.g. `keyword` and `text`. */
+  | { kind: 'column'; types?: string[]; constraints?: Record<string, string> }
   /** The name of a column the command creates. Any name is valid, including an existing one. */
   | { kind: 'new_column' }
   /** A named thing outside the query, e.g. an enrich policy or an inference endpoint. */
@@ -23,13 +23,18 @@ export type ArgumentRole =
       entityType: 'enrich_policy' | 'enrich_field' | 'lookup_index' | 'inference_endpoint';
       constraints?: Record<string, string>;
     }
-  /** A literal value. */
+  /**
+   * A literal value. A string's `format` constraint says what it holds, e.g. a GROK pattern
+   * (`grok_pattern`).
+   */
   | {
       kind: 'constant';
       valueType: 'integer' | 'double' | 'string' | 'map';
       allowedValues?: string[];
       constraints?: Record<string, string>;
     }
+  /** The name of a command option, set as `name = value`, e.g. DISSECT's `APPEND_SEPARATOR`. */
+  | { kind: 'option_name'; allowedValues: string[] }
   /** An expression, filled by the expression grammar. */
   | { kind: 'expression' }
   /** An aggregation, as in a function parameter's `{ kind: 'aggregation' }` hint. */

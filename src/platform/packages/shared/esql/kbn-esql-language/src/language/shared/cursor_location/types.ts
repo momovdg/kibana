@@ -22,6 +22,11 @@ export interface ExpectedRule {
   /** The rules above the slot, outermost first. */
   stack: string[];
   /**
+   * How many of the innermost rules in `stack` start where the slot starts, e.g. 1 for a column
+   * at `DISSECT ` (`primaryExpression`) but 0 for one inside `DISSECT TRIM(`.
+   */
+  startsRules: number;
+  /**
    * The slot started before the cursor, so the cursor would extend it rather than start a new
    * one, e.g. a time unit after `NOW() - 1 `.
    */

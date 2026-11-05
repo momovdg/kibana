@@ -97,6 +97,17 @@ describe('matchSlots', () => {
     expect(chosen('FROM a | LIMIT ', definitions)).toEqual(['constants']);
   });
 
+  it('lets a role fill an expression slot, once per argument', () => {
+    const fromRoles = () => ({
+      ...named('string column', { rule: 'qualifiedName' }),
+      argument: 'a',
+    });
+    const matched = matchSlots(locateCursor('FROM a | DISSECT ', 17), { fromRoles });
+
+    // A column, a constant and a function name could each start the argument.
+    expect(matched.map(({ definition }) => definition.argument)).toEqual(['a']);
+  });
+
   it('fills a slot the cursor continues inside a dotted name', () => {
     const definitions = [named('any', { rule: 'qualifiedNamePattern' })];
 
