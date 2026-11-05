@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -139,18 +139,26 @@ describe('ENRICH Autocomplete', () => {
       ]);
     });
 
-    test('waits to suggest fields until space', async () => {
-      await enrichExpectSuggestions(`from a | enrich policy on b with col0 = otherField,/`, []);
-      await enrichExpectSuggestions(`from a | enrich policy on b with/`, []);
+    // A comma needs no space after it before the next clause is suggested (all commands alike).
+    test('suggests fields right after a comma', async () => {
+      await enrichExpectSuggestions(`from a | enrich policy on b with col0 = otherField,/`, [
+        ' = ',
+        ...getPolicyFields('policy'),
+      ]);
+    });
+
+    // While a keyword is typed, the keywords stay and the editor filters them.
+    test('suggests the keywords while WITH is typed', async () => {
+      await enrichExpectSuggestions(`from a | enrich policy on b with/`, ['\n', 'WITH ', '| ']);
     });
 
     test('after first word', async () => {
       // not a recognized column name
-      await enrichExpectSuggestions(`from a | enrich policy on b with col0 `, ['= $0']);
+      await enrichExpectSuggestions(`from a | enrich policy on b with col0 `, ['= ']);
       // recognized column name
       await enrichExpectSuggestions(`from a | enrich policy on b with otherField `, [
         '\n',
-        ',',
+        ', ',
         '| ',
       ]);
     });
@@ -172,24 +180,24 @@ describe('ENRICH Autocomplete', () => {
       // works with escaped field names
       await enrichExpectSuggestions(`from a | enrich policy on b with col0 = \`otherField\` `, [
         '\n',
-        ',',
+        ', ',
         '| ',
       ]);
       await enrichExpectSuggestions(`from a | enrich policy on b with col0=otherField `, [
         '\n',
-        ',',
+        ', ',
         '| ',
       ]);
       await enrichExpectSuggestions(`from a | enrich policy on b with otherField `, [
         '\n',
-        ',',
+        ', ',
         '| ',
       ]);
     });
 
     test('after user-defined column name', async () => {
       await enrichExpectSuggestions(`from a | enrich policy on b with col0 = otherField, col1 `, [
-        '= $0',
+        '= ',
       ]);
     });
   });
@@ -234,8 +242,11 @@ describe('ENRICH Autocomplete', () => {
       ]);
     });
 
-    it('waits for a space after a comma in the first WITH clause too', async () => {
-      await enrichExpectSuggestions('from a | enrich policy with otherField,', []);
+    it('suggests fields right after a comma in the first WITH clause too', async () => {
+      await enrichExpectSuggestions('from a | enrich policy with otherField,', [
+        ' = ',
+        ...getPolicyFields('policy'),
+      ]);
     });
 
     it('handles clauses split across lines', async () => {

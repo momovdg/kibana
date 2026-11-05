@@ -8,9 +8,8 @@
  */
 import { i18n } from '@kbn/i18n';
 import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
-import { getTokenType } from '../../../language/shared/cursor_location/cursor_location';
 import type { CursorLocation } from '../../../language/shared/cursor_location/types';
-import type { ESQLPolicy, ISuggestionItem } from '../types';
+import type { ISuggestionItem } from '../types';
 import { getSafeInsertText } from '../../definitions/utils/autocomplete/helpers';
 import { SuggestionCategory } from '../../../language/autocomplete/utils/sorting/types';
 
@@ -53,75 +52,6 @@ export const buildPoliciesDefinitions = (
     })
   );
 
-export const getPolicyMetadata = (policies: Map<string, ESQLPolicy>, policyName: string) => {
-  return policies.get(policyName);
-};
-
-export enum Position {
-  MODE = 'mode',
-  POLICY = 'policy',
-  AFTER_POLICY = 'after_policy',
-  MATCH_FIELD = 'match_field',
-  AFTER_ON_CLAUSE = 'after_on_clause',
-  WITH_NEW_CLAUSE = 'with_new_clause',
-  WITH_AFTER_FIRST_WORD = 'with_after_first_word',
-  WITH_AFTER_ASSIGNMENT = 'with_after_assignment',
-  WITH_AFTER_COMPLETE_CLAUSE = 'with_after_complete_clause',
-}
-
-/** Maps the grammar's view of the cursor to an ENRICH position. */
-export const getPosition = ({
-  expectedTokens,
-  expectedRules,
-  partial,
-  commandCanEnd,
-  previousTokenType,
-  whitespaceBefore,
-  skippedText,
-}: CursorLocation): Position | undefined => {
-  // The lexer dropped text the grammar cannot place, e.g. `_any: ` with a space after the mode.
-  if (skippedText) {
-    return undefined;
-  }
-
-  const slot = expectedRules.find(({ continuation }) => !continuation);
-
-  if (slot?.rule === 'enrichPolicyName') {
-    // `_any:policy` is a single token; only the `_mode` part before the colon is a mode.
-    return partial?.text.startsWith('_') && !partial.text.includes(':')
-      ? Position.MODE
-      : Position.POLICY;
-  }
-  if (expectedTokens.has(getTokenType('ON'))) {
-    return Position.AFTER_POLICY;
-  }
-
-  if (slot && slot.stack[slot.stack.length - 1] !== 'enrichWithClause') {
-    return Position.MATCH_FIELD;
-  }
-  if (slot) {
-    if (previousTokenType === getTokenType('ASSIGN')) {
-      return Position.WITH_AFTER_ASSIGNMENT;
-    }
-    // A new WITH clause is only suggested once a space follows WITH or the comma.
-    return whitespaceBefore ? Position.WITH_NEW_CLAUSE : undefined;
-  }
-
-  // Keywords and separators are only suggested after a space, not while a word is typed.
-  if (partial) {
-    return undefined;
-  }
-  if (expectedTokens.has(getTokenType('ASSIGN'))) {
-    return Position.WITH_AFTER_FIRST_WORD;
-  }
-  if (expectedTokens.has(getTokenType('WITH'))) {
-    return Position.AFTER_ON_CLAUSE;
-  }
-  if (commandCanEnd && expectedTokens.has(getTokenType('COMMA'))) {
-    return Position.WITH_AFTER_COMPLETE_CLAUSE;
-  }
-};
-
 /**
  * After a mode prefix such as `_any:`, a policy name replaces only the text after the colon.
  * The default range would cover the mode (`_any:po`) or only the dropped `:`.
@@ -136,11 +66,6 @@ export const getPolicyNameRange = ({
   }
   return { start: partial.start + colon + 1, end: segment.end };
 };
-
-/** The first word of the WITH clause at the cursor, as typed. */
-export const getWithClauseFirstWord = ({ expectedRules }: CursorLocation): string =>
-  expectedRules.find(({ rule, continuation }) => continuation && rule === 'qualifiedNamePattern')
-    ?.text ?? '';
 
 export const noPoliciesAvailableSuggestion: ISuggestionItem = {
   label: i18n.translate('esqlLanguage.esql.autocomplete.noPoliciesLabel', {
