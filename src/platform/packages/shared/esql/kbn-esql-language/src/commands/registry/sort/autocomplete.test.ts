@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -256,72 +256,23 @@ describe('SORT Autocomplete', () => {
         '| ',
         ...stringOperatorSuggestions,
       ]);
+      // NULLS is complete: what follows it, keeping the word.
       await sortExpectSuggestions('from a | sort keywordField nulls', [
-        '\n',
-        'ASC',
-        'DESC',
-        'NULLS FIRST',
-        'NULLS LAST',
-        ', ',
-        '| ',
-        ...stringOperatorSuggestions,
+        'nulls FIRST',
+        'nulls LAST',
       ]);
-      await sortExpectSuggestions('from a | sort keywordField nulls ', [
-        '\n',
-        'ASC',
-        'DESC',
-        'NULLS FIRST',
-        'NULLS LAST',
-        ', ',
-        '| ',
-        ...stringOperatorSuggestions,
-      ]);
+      // After NULLS the grammar allows only FIRST and LAST.
+      await sortExpectSuggestions('from a | sort keywordField nulls ', ['FIRST', 'LAST']);
     });
 
     test('when user types NULLS FIRST', async () => {
-      await sortExpectSuggestions('from a | sort keywordField NULLS F', [
-        '\n',
-        'ASC',
-        'DESC',
-        'NULLS FIRST',
-        'NULLS LAST',
-        ', ',
-        '| ',
-        ...stringOperatorSuggestions,
-      ]);
-      await sortExpectSuggestions('from a | sort keywordField NULLS FI', [
-        '\n',
-        'ASC',
-        'DESC',
-        'NULLS FIRST',
-        'NULLS LAST',
-        ', ',
-        '| ',
-        ...stringOperatorSuggestions,
-      ]);
+      await sortExpectSuggestions('from a | sort keywordField NULLS F', ['FIRST', 'LAST']);
+      await sortExpectSuggestions('from a | sort keywordField NULLS FI', ['FIRST', 'LAST']);
     });
 
     test('when user types NULLS LAST', async () => {
-      await sortExpectSuggestions('from a | sort keywordField NULLS L', [
-        '\n',
-        'ASC',
-        'DESC',
-        'NULLS LAST',
-        'NULLS FIRST',
-        ', ',
-        '| ',
-        ...stringOperatorSuggestions,
-      ]);
-      await sortExpectSuggestions('from a | sort keywordField NULLS LAS', [
-        '\n',
-        'ASC',
-        'DESC',
-        'NULLS LAST',
-        'NULLS FIRST',
-        ', ',
-        '| ',
-        ...stringOperatorSuggestions,
-      ]);
+      await sortExpectSuggestions('from a | sort keywordField NULLS L', ['FIRST', 'LAST']);
+      await sortExpectSuggestions('from a | sort keywordField NULLS LAS', ['FIRST', 'LAST']);
     });
 
     test('after nulls are entered, suggests comma or pipe', async () => {
