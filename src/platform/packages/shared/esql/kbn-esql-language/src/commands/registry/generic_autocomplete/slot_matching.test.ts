@@ -20,7 +20,7 @@ const named = (name: string, definition: Omit<SlotDefinition, 'provide'>) => ({
 
 /** The names of the definitions chosen at the end of `text`. */
 const chosen = (text: string, definitions: Array<ReturnType<typeof named>>) =>
-  matchSlots(locateCursor(text, text.length), definitions).map(
+  matchSlots(locateCursor(text, text.length), { command: definitions }).map(
     ({ definition }) => (definition as ReturnType<typeof named>).name
   );
 
@@ -63,7 +63,21 @@ describe('matchSlots', () => {
     expect(chosen('FROM a | KEEP ', definitions)).toEqual(['rule']);
   });
 
-  it('picks the earlier definition on a tie, so command definitions beat the defaults', () => {
+  it('prefers command definitions, then the grammar roles, then the defaults', () => {
+    const at = (text: string, options: Parameters<typeof matchSlots>[1]) =>
+      matchSlots(locateCursor(text, text.length), options).map(
+        ({ definition }) => (definition as ReturnType<typeof named>).name
+      );
+    const fromRoles = () => named('roles', { rule: 'qualifiedNamePattern' });
+    const command = [named('command', { rule: 'qualifiedNamePattern' })];
+    const defaults = [named('default', { rule: 'qualifiedNamePattern' })];
+
+    expect(at('FROM a | KEEP ', { command, fromRoles, defaults })).toEqual(['command']);
+    expect(at('FROM a | KEEP ', { fromRoles, defaults })).toEqual(['roles']);
+    expect(at('FROM a | KEEP ', { defaults })).toEqual(['default']);
+  });
+
+  it('picks the earlier definition on a tie', () => {
     const definitions = [
       named('command', { rule: 'qualifiedNamePattern' }),
       named('default', { rule: 'qualifiedNamePattern' }),
