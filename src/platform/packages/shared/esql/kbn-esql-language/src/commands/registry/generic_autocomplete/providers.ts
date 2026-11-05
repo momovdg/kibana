@@ -6,17 +6,20 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
+import { isSource } from '@elastic/esql';
 import type { ESQLSingleAstItem } from '@elastic/esql/types';
 import { suggestForExpression } from '../../definitions/utils';
+import { buildFieldsDefinitions } from '../../definitions/utils/functions';
 import { getNewUserDefinedColumnSuggestion } from '../complete_items';
 import {
+  buildMatchingFieldsDefinition,
   buildPoliciesDefinitions,
   getPolicyNameRange,
   modeSuggestions,
   noPoliciesAvailableSuggestion,
 } from '../enrich/util';
 import { getTokenType } from '../../../language/shared/cursor_location/cursor_location';
-import type { GetColumnsByTypeFn, ISuggestionItem } from '../types';
+import type { ESQLPolicy, GetColumnsByTypeFn, ISuggestionItem } from '../types';
 import type { ExpressionSpec, SlotDefinition, SlotProvider, SuggestContext } from './types';
 
 type ColumnsOptions = Parameters<GetColumnsByTypeFn>[2];
@@ -68,6 +71,33 @@ export const policies =
     const rangeToReplace = getPolicyNameRange(location);
     return rangeToReplace ? items.map((item) => ({ ...item, rangeToReplace })) : items;
   };
+
+/** The enrich policy the command names, looked up without its `_mode:` prefix as validation does. */
+export const getEnrichPolicy = ({ command, context }: SuggestContext): ESQLPolicy | undefined => {
+  const source = command.args.find((arg) => isSource(arg));
+  if (!isSource(source)) {
+    return undefined;
+  }
+  return context?.policies?.get(source.index?.valueUnquoted ?? source.name);
+};
+
+/** The enrich fields of the command's policy. */
+export const enrichFields = (): SlotProvider => async (ctx) => {
+  const policy = getEnrichPolicy(ctx);
+  return policy ? buildFieldsDefinitions(policy.enrichFields, false) : [];
+};
+
+/** The columns to match on the command's policy's match field. */
+export const matchingColumns = (): SlotProvider => async (ctx) => {
+  const policy = getEnrichPolicy(ctx);
+  if (!policy) {
+    return [];
+  }
+  const names = [...(ctx.context?.columns.values() ?? [])]
+    .filter(({ userDefined }) => !userDefined)
+    .map(({ name }) => name);
+  return buildMatchingFieldsDefinition(policy.matchField, names);
+};
 
 export const DEFAULT_SLOTS: readonly SlotDefinition[] = [
   { rule: 'qualifiedName', provide: columns() },

@@ -17,8 +17,18 @@ import {
 import { getTokenName } from '../../../language/shared/cursor_location/cursor_location';
 import type { ExpectedRule } from '../../../language/shared/cursor_location/types';
 import { columnExists } from '../../definitions/utils/autocomplete/helpers';
+import { unescapeColumnName } from '../../definitions/utils/shared';
 import { getMappedKeywordTokens, type KeywordItem } from '../keyword_items';
-import { columns, merged, newName, none, policies } from './providers';
+import {
+  columns,
+  enrichFields,
+  getEnrichPolicy,
+  matchingColumns,
+  merged,
+  newName,
+  none,
+  policies,
+} from './providers';
 import { isExpressionSlot } from './slot_matching';
 import type { SlotDefinition, SlotProvider, SuggestContext } from './types';
 
@@ -47,6 +57,10 @@ const isFollowedByKeyword = ({ followedBy }: GrammarLabel): boolean => {
 const providerFor = (role: ArgumentRole, label: GrammarLabel): SlotProvider => {
   switch (role.kind) {
     case 'column':
+      // A column matching another argument, e.g. ENRICH's ON and the policy's match field.
+      if (role.constraints?.matches) {
+        return matchingColumns();
+      }
       return columns(
         isFollowedByKeyword(label)
           ? { options: { advanceCursor: true, openSuggestions: true } }
@@ -56,7 +70,10 @@ const providerFor = (role: ArgumentRole, label: GrammarLabel): SlotProvider => {
       // `name = ` where an assignment follows; otherwise the name is typed freely.
       return label.followedBy.includes('ASSIGN') ? newName() : none();
     case 'entity':
-      return role.entityType === 'enrich_policy' ? policies() : none();
+      if (role.entityType === 'enrich_policy') {
+        return policies();
+      }
+      return role.entityType === 'enrich_field' ? enrichFields() : none();
     default:
       return none();
   }
@@ -83,8 +100,16 @@ export const getRoleSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
 const isExistingAs = (
   role: ArgumentRole | undefined,
   name: string,
-  { context }: SuggestContext
-): boolean | undefined => (role?.kind === 'column' ? columnExists(name, context) : undefined);
+  ctx: SuggestContext
+): boolean | undefined => {
+  if (role?.kind === 'column') {
+    return columnExists(name, ctx.context);
+  }
+  if (role?.kind === 'entity' && role.entityType === 'enrich_field') {
+    return getEnrichPolicy(ctx)?.enrichFields.includes(unescapeColumnName(name));
+  }
+  return undefined;
+};
 
 /**
  * Chooses between readings of the name just typed when the keywords after it imply different
