@@ -209,6 +209,19 @@ describe('locateCursor', () => {
     });
   });
 
+  describe('a dot after whitespace', () => {
+    it('is the start of a decimal being typed', () => {
+      const { partial, expectedRules } = locate(' FROM a | SAMPLE .');
+
+      expect(partial).toEqual({ text: '.', start: 17 });
+      expect(expectedRules.map(({ rule }) => rule)).toEqual(['constant']);
+    });
+
+    it('still continues a dotted name without whitespace', () => {
+      expect(locate(' FROM a | KEEP a.').partial).toBeUndefined();
+    });
+  });
+
   describe('inComment', () => {
     it.each([
       ['FROM a // note', true],
