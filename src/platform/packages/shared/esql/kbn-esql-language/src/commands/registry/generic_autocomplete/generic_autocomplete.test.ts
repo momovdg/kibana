@@ -125,13 +125,9 @@ describe('generic autocomplete', () => {
     });
   });
 
-  describe('follow-ups after a complete word', () => {
-    const keepSpec: CommandAutocompleteSpec = {
-      slots: [{ rule: 'qualifiedNamePattern', followUps: true, provide: columns() }],
-    };
-
+  describe('follow-ups after a complete word, in every command', () => {
     it('offers what follows an existing column, keeping it', async () => {
-      expect(await texts('from a | keep keywordField', 'keep', keepSpec)).toEqual([
+      expect(await texts('from a | keep keywordField', 'keep', {})).toEqual([
         '\n',
         'keywordField | ',
         'keywordField, ',
@@ -139,35 +135,53 @@ describe('generic autocomplete', () => {
     });
 
     it('offers the columns while the word is not an existing column', async () => {
-      expect(await texts('from a | keep keyw', 'keep', keepSpec)).toEqual([...fieldNames].sort());
+      expect(await texts('from a | keep keyw', 'keep', {})).toEqual([...fieldNames].sort());
     });
 
-    it('offers no follow-ups for a slot that does not opt in', async () => {
-      expect(await texts('from a | keep keywordField', 'keep', {})).toEqual([...fieldNames].sort());
+    it('offers what follows a dotted column typed in full', async () => {
+      const context = {
+        ...mockContext,
+        columns: new Map([
+          ...mockContext.columns,
+          ['kubernetes.pod', { name: 'kubernetes.pod', type: 'keyword', userDefined: false }],
+        ]),
+      } as typeof mockContext;
+      const suggestions = await suggest(
+        'from a | keep kubernetes.pod',
+        context,
+        'keep',
+        undefined,
+        createGenericAutocomplete(() => ({}))
+      );
+
+      expect(suggestions.map(({ text }) => text).sort()).toEqual([
+        '\n',
+        'kubernetes.pod | ',
+        'kubernetes.pod, ',
+      ]);
     });
 
-    const sortSpec: CommandAutocompleteSpec = {
-      keywordFollowUps: ['ASC', 'DESC', 'FIRST', 'LAST'],
-      expression: { location: Location.SORT },
-    };
-
-    it('offers only what follows a complete keyword that opts in', async () => {
-      expect(await texts('from a | sort keywordField asc', 'sort', sortSpec)).toEqual([
+    it('offers only what follows a complete keyword', async () => {
+      expect(await texts('from a | sort keywordField asc', 'sort', {})).toEqual([
         '\n',
         'asc NULLS FIRST',
         'asc NULLS LAST',
         'asc | ',
         'asc, ',
       ]);
-      expect(await texts('from a | sort keywordField NULLS last', 'sort', sortSpec)).toEqual([
+      expect(await texts('from a | sort keywordField NULLS last', 'sort', {})).toEqual([
         '\n',
         'last | ',
         'last, ',
       ]);
     });
 
+    it('offers the usual items after a complete keyword followed by a slot', async () => {
+      expect(await texts('from a | rename textField AS', 'rename', {})).toEqual(['= ', 'AS ']);
+    });
+
     it('offers the keywords before the word while it is not complete', async () => {
-      expect(await texts('from a | sort keywordField as', 'sort', sortSpec)).toEqual(
+      expect(await texts('from a | sort keywordField as', 'sort', {})).toEqual(
         expect.arrayContaining(['ASC', 'DESC', 'NULLS FIRST', 'NULLS LAST'])
       );
     });

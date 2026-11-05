@@ -56,7 +56,8 @@ describe('grammar roles', () => {
     });
 
     it('offers a new name with `=` where an assignment follows', async () => {
-      expect(await texts('from a | completion ', 'completion')).toEqual([' = ']);
+      // The prompt expression is also expected there, so expression items come too.
+      expect(await texts('from a | completion ', 'completion')).toContain(' = ');
     });
 
     it('offers enrich policies', async () => {

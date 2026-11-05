@@ -8,16 +8,23 @@
  */
 import type { ESQLAstAllCommands } from '@elastic/esql/types';
 import {
+  getTokenName,
   getTokenType,
   locateCursor,
 } from '../../../language/shared/cursor_location/cursor_location';
 import type { CursorLocation } from '../../../language/shared/cursor_location/types';
 import { newLineCompleteItem } from '../complete_items';
-import { keywordsAt, type KeywordItem } from '../keyword_items';
+import {
+  EXPRESSION_ENGINE_TOKENS,
+  getMappedKeywordTokens,
+  keywordsAt,
+  type KeywordItem,
+} from '../keyword_items';
+import { ReplacementRangeStrategyKind } from '../../../language/autocomplete/utils/prefix_range';
 import type { ICommandCallbacks, ICommandContext, ISuggestionItem } from '../types';
 import { DEFAULT_SLOTS, suggestExpression } from './providers';
 import { isExpressionSlot, matchSlots } from './slot_matching';
-import { filterKeywordsByRoles, getRoleSlot } from './roles';
+import { filterKeywordsByRoles, getRoleSlot, isCompleteName } from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
 
 export type CommandAutocomplete = (
@@ -67,30 +74,37 @@ const isGluedToValue = ({ partial, whitespaceBefore, previousTokenType }: Cursor
   previousTokenType !== undefined &&
   !SEPARATING_TOKENS.some((name) => getTokenType(name) === previousTokenType);
 
-const toItem = (keyword: KeywordItem, glued: boolean): ISuggestionItem =>
-  glued && needsLeadingSpace(keyword)
-    ? { ...keyword.item, text: ` ${keyword.item.text}` }
-    : keyword.item;
-
-/**
- * What follows a complete word, keeping the word: `asc NULLS FIRST`, `host, `, `host | `. For
- * a column, `attachReplacementRanges` keeps these only when the word is an existing column.
- */
-const toFollowUp = (
-  keyword: KeywordItem,
-  requiresExistingColumnMatch: boolean
-): ISuggestionItem => {
-  if (keyword.item === newLineCompleteItem) {
-    return requiresExistingColumnMatch
-      ? { ...keyword.item, requiresExistingColumnMatch }
-      : keyword.item;
+const toItem = (keyword: KeywordItem, location: CursorLocation): ISuggestionItem => {
+  if (isGluedToValue(location) && needsLeadingSpace(keyword)) {
+    return { ...keyword.item, text: ` ${keyword.item.text}` };
   }
-  return {
-    ...keyword.item,
-    text: needsLeadingSpace(keyword) ? ` ${keyword.item.text}` : keyword.item.text,
-    preserveTypedPrefix: true,
-    ...(requiresExistingColumnMatch && { requiresExistingColumnMatch }),
-  };
+  // `a , ` reads badly: a comma after whitespace replaces it.
+  if (keyword.token === 'COMMA' && location.whitespaceBefore && !location.partial) {
+    return {
+      ...keyword.item,
+      replacementRangeStrategy: { kind: ReplacementRangeStrategyKind.TRAILING_WHITESPACE },
+    };
+  }
+  return keyword.item;
+};
+
+/** What follows a complete word, keeping the word: `asc NULLS FIRST`, `host, `, `host | `. */
+const toFollowUp = (keyword: KeywordItem): ISuggestionItem =>
+  keyword.item === newLineCompleteItem
+    ? keyword.item
+    : {
+        ...keyword.item,
+        text: needsLeadingSpace(keyword) ? ` ${keyword.item.text}` : keyword.item.text,
+        preserveTypedPrefix: true,
+      };
+
+/** The name typed so far: a dotted prefix the word continues (`kubernetes.`), then the word. */
+const typedName = ({ partial, expectedRules, previousTokenType }: CursorLocation): string => {
+  const prefix =
+    previousTokenType === getTokenType('DOT')
+      ? expectedRules.find(({ continuation }) => continuation)?.text ?? ''
+      : '';
+  return `${prefix}${partial?.text ?? ''}`;
 };
 
 const withoutDuplicates = (items: ISuggestionItem[]): ISuggestionItem[] => {
@@ -121,33 +135,31 @@ export const createGenericAutocomplete =
       defaults: DEFAULT_SLOTS,
     });
 
-    const keywordFollowUps = spec.keywordFollowUps ?? [];
-    const columnFollowUps = slotMatches.some(({ definition }) => definition.followUps);
-
-    // A word typed in full may be followed by more keywords; locate the cursor after it.
-    if (location.partial && (keywordFollowUps.length || columnFollowUps)) {
-      const after = locateCursor(`${query.slice(0, cursorPosition)} `, cursorPosition + 1);
-      const afterCtx = { ...ctx, location: after };
-      const word = after.previousTokenType;
-      const isCompleteKeyword =
-        word !== undefined &&
-        location.expectedTokens.has(word) &&
-        keywordFollowUps.some((name) => getTokenType(name) === word);
-
-      if (isCompleteKeyword) {
-        return adjustKeywords(keywordsAt(after), afterCtx).map((keyword) =>
-          toFollowUp(keyword, false)
-        );
-      }
-
-      if (columnFollowUps) {
-        const followUps = adjustKeywords(keywordsAt(after), afterCtx).map((keyword) =>
-          toFollowUp(keyword, true)
-        );
-        return withoutDuplicates([
-          ...followUps,
-          ...(await suggestAt(ctx, spec, slotMatches, adjustKeywords)),
-        ]);
+    // A complete word, a keyword the grammar expects or an existing name, gets only what can
+    // follow it, when something can: `asc` → `asc NULLS FIRST`, `bytes` → `bytes, `.
+    if (location.partial) {
+      const keywords = getMappedKeywordTokens();
+      const expectsKeyword = [...location.expectedTokens].some((type) =>
+        keywords.has(getTokenName(type))
+      );
+      const completesSlot = isCompleteName(typedName(location), ctx);
+      // The word's token depends on the lexer mode, so it is read from the position after it.
+      if (expectsKeyword || completesSlot) {
+        const after = locateCursor(`${query.slice(0, cursorPosition)} `, cursorPosition + 1);
+        // Inside unclosed parentheses, as in `TRIM(col`, the expression continues instead.
+        const isNested = !after.commandCanEnd && after.expectedTokens.has(getTokenType('RP'));
+        const word = after.previousTokenType;
+        const isCompleteKeyword =
+          word !== undefined &&
+          location.expectedTokens.has(word) &&
+          keywords.has(getTokenName(word));
+        const followUps =
+          (isCompleteKeyword || completesSlot) && !isNested
+            ? adjustKeywords(keywordsAt(after), { ...ctx, location: after })
+            : [];
+        if (followUps.length) {
+          return withoutDuplicates(followUps.map(toFollowUp));
+        }
       }
     }
 
@@ -165,13 +177,15 @@ const suggestAt = async (
   const slotItems = await Promise.all(
     slotMatches.map(({ slot, definition }) => definition.provide(ctx, slot))
   );
+  // An expression slot, or a token only expressions take, like an operator after `SORT (col) `
+  // or `NULL` after `IS NOT `. Right after a value such as `(col)`, only what follows it.
+  const inExpression =
+    location.expectedRules.some(isExpressionSlot) ||
+    [...location.expectedTokens].some((type) => EXPRESSION_ENGINE_TOKENS.has(getTokenName(type)));
   const expressionItems =
-    spec.expression && location.expectedRules.some(isExpressionSlot)
-      ? await suggestExpression(ctx, spec.expression)
-      : [];
-  const glued = isGluedToValue(location);
+    inExpression && !isGluedToValue(location) ? await suggestExpression(ctx, spec.expression) : [];
   const keywordItems = adjustKeywords(keywordsAt(location), ctx).map((keyword) =>
-    toItem(keyword, glued)
+    toItem(keyword, location)
   );
 
   return [...slotItems.flat(), ...expressionItems, ...keywordItems];

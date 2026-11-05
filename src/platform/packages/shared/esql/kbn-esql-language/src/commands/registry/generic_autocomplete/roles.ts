@@ -108,8 +108,28 @@ const isExistingAs = (
   if (role?.kind === 'entity' && role.entityType === 'enrich_field') {
     return getEnrichPolicy(ctx)?.enrichFields.includes(unescapeColumnName(name));
   }
+  if (role?.kind === 'entity' && role.entityType === 'enrich_policy') {
+    return ctx.context?.policies?.has(unescapeColumnName(name));
+  }
   return undefined;
 };
+
+const NAME_RULES = ['qualifiedName', 'qualifiedNamePattern', 'enrichPolicyName'];
+
+/**
+ * Whether `name` fills one of the slots expected at the cursor with something that exists: a
+ * column, or what the slot's role looks up (an enrich field, a policy).
+ */
+export const isCompleteName = (name: string, ctx: SuggestContext): boolean =>
+  ctx.location.expectedRules.some((slot) => {
+    if (!NAME_RULES.includes(slot.rule)) {
+      return false;
+    }
+    const labels = getSlotLabels(slot);
+    return labels.length
+      ? labels.some((label) => isExistingAs(getArgumentRole(label), name, ctx))
+      : columnExists(name, ctx.context);
+  });
 
 /**
  * Chooses between readings of the name just typed when the keywords after it imply different

@@ -8,13 +8,11 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import { validate } from './validate';
 import type { ICommandContext } from '../types';
 import { Commands } from '../../definitions/keywords';
 
 const sortCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
   validate,
 };
 
