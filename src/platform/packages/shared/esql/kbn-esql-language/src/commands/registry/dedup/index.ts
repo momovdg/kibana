@@ -8,13 +8,10 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import type { ICommandContext } from '../types';
 import { Commands } from '../../definitions/keywords';
 
-const dedupCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
-};
+const dedupCommandMethods: ICommandMethods<ICommandContext> = {};
 
 export const dedupCommand = {
   name: Commands.DEDUP,

@@ -15,7 +15,6 @@ import { columnsAfter } from './columns_after';
 import { summary } from './summary';
 
 const tsInfoCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete: () => Promise.resolve([]),
   columnsAfter,
   summary,
 };
