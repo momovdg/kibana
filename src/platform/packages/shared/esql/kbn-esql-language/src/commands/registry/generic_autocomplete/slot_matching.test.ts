@@ -97,6 +97,18 @@ describe('matchSlots', () => {
     expect(chosen('FROM a | LIMIT ', definitions)).toEqual(['constants']);
   });
 
+  it('fills a slot the cursor continues inside a list', () => {
+    const fromRoles = () => named('list value', { rule: 'constant' });
+    const at = (text: string) =>
+      matchSlots(locateCursor(text, text.length), { fromRoles }).map(
+        ({ definition }) => (definition as ReturnType<typeof named>).name
+      );
+    const map = 'FROM a | USER_AGENT ua = x WITH { "properties": ';
+
+    expect(at(`${map}[ `)).toEqual(['list value']);
+    expect(at(`${map}["name", `)).toEqual(['list value']);
+  });
+
   it('lets a role fill an expression slot, once per argument', () => {
     const fromRoles = () => ({
       ...named('string column', { rule: 'qualifiedName' }),

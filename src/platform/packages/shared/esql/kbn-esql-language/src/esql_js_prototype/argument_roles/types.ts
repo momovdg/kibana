@@ -7,6 +7,18 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+/** A parameter of a map argument. */
+export interface MapParameter {
+  /** The data type of the value, e.g. `keyword` or `boolean`. */
+  type: string;
+  /** The value is a list of `type`, e.g. `["name", "os"]`. */
+  list?: boolean;
+  /** The values allowed, e.g. USER_AGENT's properties. */
+  values?: string[];
+  /** The value Elasticsearch uses when the parameter is left out. */
+  default?: string;
+}
+
 /**
  * What a command argument is in the language, in the shape of a function parameter's
  * `ParamHint` (`kind`, `entityType`, `allowedValues`, `constraints`). Roles describe the
@@ -29,13 +41,15 @@ export type ArgumentRole =
    */
   | {
       kind: 'constant';
-      valueType: 'integer' | 'double' | 'string' | 'map';
+      valueType: 'integer' | 'double' | 'string';
       allowedValues?: string[];
       constraints?: Record<string, string>;
     }
   /** The name of a command option, set as `name = value`, e.g. DISSECT's `APPEND_SEPARATOR`. */
   | { kind: 'option_name'; allowedValues: string[] }
-  /** An expression, filled by the expression grammar. */
-  | { kind: 'expression' }
+  /** A map of named parameters, `{ "name": value, … }`, e.g. USER_AGENT's `WITH` options. */
+  | { kind: 'map'; parameters: Record<string, MapParameter> }
+  /** An expression, filled by the expression grammar, of one of `types` when given. */
+  | { kind: 'expression'; types?: string[] }
   /** An aggregation, as in a function parameter's `{ kind: 'aggregation' }` hint. */
   | { kind: 'aggregation' };

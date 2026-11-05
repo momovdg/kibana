@@ -24,7 +24,13 @@ import { ReplacementRangeStrategyKind } from '../../../language/autocomplete/uti
 import type { ICommandCallbacks, ICommandContext, ISuggestionItem } from '../types';
 import { DEFAULT_SLOTS, suggestExpression } from './providers';
 import { isExpressionSlot, matchSlots } from './slot_matching';
-import { filterKeywordsByRoles, getRoleSlot, isCompleteName, isCoveredByRole } from './roles';
+import {
+  filterKeywordsByRoles,
+  getExpressionTypes,
+  getRoleSlot,
+  isCompleteName,
+  isCoveredByRole,
+} from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
 
 export type CommandAutocomplete = (
@@ -162,6 +168,13 @@ export const createGenericAutocomplete =
         if (followUps.length) {
           return withoutDuplicates(followUps.map(toFollowUp));
         }
+        // A keyword typed in full that nothing listed follows, as `WITH` before `{`: only the
+        // keywords fit the word, so the editor can complete it.
+        if (isCompleteKeyword && !completesSlot && !isNested) {
+          return withoutDuplicates(
+            adjustKeywords(keywordsAt(location), ctx).map((keyword) => toItem(keyword, location))
+          );
+        }
       }
     }
 
@@ -194,7 +207,9 @@ const suggestAt = async (
       );
     });
   const expressionItems =
-    inExpression && !isGluedToValue(location) ? await suggestExpression(ctx, spec.expression) : [];
+    inExpression && !isGluedToValue(location)
+      ? await suggestExpression(ctx, spec.expression, getExpressionTypes(location))
+      : [];
   const keywordItems = adjustKeywords(keywordsAt(location), ctx).map((keyword) =>
     toItem(keyword, location)
   );

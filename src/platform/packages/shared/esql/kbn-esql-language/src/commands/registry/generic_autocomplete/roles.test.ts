@@ -114,6 +114,73 @@ describe('grammar roles', () => {
     });
   });
 
+  describe('maps of named parameters', () => {
+    const withMap = 'from a | user_agent ua = keywordField WITH { ';
+
+    it('offers the parameters not set yet', async () => {
+      expect(await texts(withMap, 'user_agent')).toEqual(
+        ['"extract_device_type": ', '"properties": [ $0 ]', '"regex_file": "$0"'].sort()
+      );
+      expect(await texts(`${withMap}"regex_file": "x", `, 'user_agent')).toEqual(
+        ['"extract_device_type": ', '"properties": [ $0 ]'].sort()
+      );
+    });
+
+    it('offers values by the parameter: its default, booleans, a list', async () => {
+      expect(await texts(`${withMap}"regex_file": `, 'user_agent')).toEqual(['"_default_"']);
+      expect(await texts(`${withMap}"extract_device_type": `, 'user_agent')).toEqual([
+        'false',
+        'true',
+      ]);
+      expect(await texts(`${withMap}"properties": `, 'user_agent')).toEqual(['[ $0 ]']);
+    });
+
+    it('offers the list values not listed yet', async () => {
+      expect(await texts(`${withMap}"properties": [ `, 'user_agent')).toEqual(
+        ['"device"', '"name"', '"os"', '"version"'].sort()
+      );
+      expect(await texts(`${withMap}"properties": ["name", `, 'user_agent')).toEqual(
+        ['"device"', '"os"', '"version"'].sort()
+      );
+    });
+
+    it('takes list values from the output variant the parameter it varies by names', async () => {
+      const ipMap = 'from a | ip_location geo = ipField WITH { ';
+      const country = await texts(
+        `${ipMap}"database_file": "GeoLite2-Country.mmdb", "properties": [ `,
+        'ip_location'
+      );
+      expect(country).toContain('"country_name"');
+      expect(country).not.toContain('"location"');
+      // Without a database file, the default database's.
+      expect(await texts(`${ipMap}"properties": [ `, 'ip_location')).toContain('"location"');
+    });
+
+    it('offers a comma after a value, and nothing inside a nested map', async () => {
+      expect(await texts(`${withMap}"regex_file": "x" `, 'user_agent')).toEqual([', ']);
+      expect(await texts(`${withMap}"a": { `, 'user_agent')).toEqual([]);
+    });
+  });
+
+  describe('expression arguments', () => {
+    it('prefers the role types, with the scalar functions of a command with no location', async () => {
+      const items = await texts('from a | user_agent ua = ', 'user_agent');
+      expect(items).toEqual(expect.arrayContaining(['CONCAT($0)', 'keywordField']));
+    });
+
+    it('reads the expression of an assignment, not the target name', async () => {
+      const items = await texts('from a | ip_location geo = ipField ', 'ip_location');
+      expect(items).toEqual(expect.arrayContaining(['WITH { $0 }', '| ']));
+      expect(items).not.toContain('CONCAT($0)');
+    });
+
+    it('offers only keywords while a keyword nothing listed follows is typed', async () => {
+      expect(await texts('from a | ip_location geo = ipField WITH', 'ip_location')).toEqual(
+        ['\n', 'WITH { $0 }', '| '].sort()
+      );
+    });
+  });
+
   describe('keywords from roles', () => {
     it('chooses between readings of the name: AS for an existing column, = otherwise', async () => {
       expect(await texts('from a | rename keywordField ', 'rename')).toEqual(['AS ']);
