@@ -128,7 +128,7 @@ describe('generic autocomplete', () => {
   describe('follow-ups after a complete word, in every command', () => {
     it('offers what follows an existing column, keeping it', async () => {
       expect(await texts('from a | keep keywordField', 'keep', {})).toEqual([
-        '\n',
+        'keywordField\n',
         'keywordField | ',
         'keywordField, ',
       ]);
@@ -155,7 +155,7 @@ describe('generic autocomplete', () => {
       );
 
       expect(suggestions.map(({ text }) => text).sort()).toEqual([
-        '\n',
+        'kubernetes.pod\n',
         'kubernetes.pod | ',
         'kubernetes.pod, ',
       ]);
@@ -163,14 +163,14 @@ describe('generic autocomplete', () => {
 
     it('offers only what follows a complete keyword', async () => {
       expect(await texts('from a | sort keywordField asc', 'sort', {})).toEqual([
-        '\n',
+        'asc\n',
         'asc NULLS FIRST',
         'asc NULLS LAST',
         'asc | ',
         'asc, ',
       ]);
       expect(await texts('from a | sort keywordField NULLS last', 'sort', {})).toEqual([
-        '\n',
+        'last\n',
         'last | ',
         'last, ',
       ]);

@@ -88,7 +88,7 @@ describe('SORT Autocomplete', () => {
 
     it('suggests modifers after complete column name', async () => {
       await sortExpectSuggestions('from a | sort keywordField', [
-        '\n',
+        'keywordField\n',
         'keywordField, ',
         'keywordField | ',
         'keywordField ASC',
@@ -97,7 +97,7 @@ describe('SORT Autocomplete', () => {
         'keywordField NULLS LAST',
       ]);
       await sortExpectSuggestions('from a | sort keywordField, doubleField', [
-        '\n',
+        'doubleField\n',
         'doubleField, ',
         'doubleField | ',
         'doubleField ASC',
@@ -180,14 +180,14 @@ describe('SORT Autocomplete', () => {
         ...stringOperatorSuggestions,
       ]);
       await sortExpectSuggestions('from a | sort keywordField ASC', [
-        '\n',
+        'ASC\n',
         'ASC NULLS FIRST',
         'ASC NULLS LAST',
         'ASC, ',
         'ASC | ',
       ]);
       await sortExpectSuggestions('from a | sort keywordField asc', [
-        '\n',
+        'asc\n',
         'asc NULLS FIRST',
         'asc NULLS LAST',
         'asc, ',
@@ -214,7 +214,7 @@ describe('SORT Autocomplete', () => {
         '| ',
       ]);
       await sortExpectSuggestions('from a | sort keywordField desc', [
-        '\n',
+        'desc\n',
         'desc NULLS FIRST',
         'desc NULLS LAST',
         'desc, ',
@@ -282,7 +282,7 @@ describe('SORT Autocomplete', () => {
 
   describe('positions the grammar resolves', () => {
     const afterColumn = (column: string) => [
-      '\n',
+      `${column}\n`,
       `${column}, `,
       `${column} | `,
       `${column} ASC`,
@@ -304,7 +304,7 @@ describe('SORT Autocomplete', () => {
         '| ',
       ]);
       await sortExpectSuggestions('from a | sort keywordField ASC /* c */ NULLS /* d */ LAST', [
-        '\n',
+        'LAST\n',
         'LAST, ',
         'LAST | ',
       ]);
