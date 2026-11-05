@@ -7,7 +7,13 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { GRAMMAR_LABELS } from '../grammar_labels/grammar_labels.generated';
-import { ARGUMENT_ROLES, NON_ARGUMENT_RULES, UNCLASSIFIED_ARGUMENTS } from './argument_roles';
+import { Parser } from '@elastic/esql';
+import {
+  ARGUMENT_ROLES,
+  NON_ARGUMENT_RULES,
+  UNCLASSIFIED_ARGUMENTS,
+  UNLABELLED_ARGUMENT_ROLES,
+} from './argument_roles';
 
 const argumentKeys = new Set(
   GRAMMAR_LABELS.filter(({ rule }) => !NON_ARGUMENT_RULES.includes(rule)).map(
@@ -34,5 +40,14 @@ describe('argument roles', () => {
 
   it('classify an argument at most once', () => {
     expect(Object.keys(ARGUMENT_ROLES).filter((key) => key in UNCLASSIFIED_ARGUMENTS)).toEqual([]);
+  });
+
+  it('key unlabelled arguments by rules of the grammar', () => {
+    const { ruleNames } = Parser.create('').parser;
+    const unknown = Object.keys(UNLABELLED_ARGUMENT_ROLES).filter((key) =>
+      key.split('>').some((rule) => !ruleNames.includes(rule))
+    );
+
+    expect(unknown).toEqual([]);
   });
 });

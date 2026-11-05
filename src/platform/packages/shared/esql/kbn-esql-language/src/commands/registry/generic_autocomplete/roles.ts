@@ -9,6 +9,7 @@
 import {
   getArgumentRole,
   getGrammarLabels,
+  getUnlabelledArgumentRole,
   RULE_END,
   RULE_START,
   type ArgumentRole,
@@ -19,8 +20,10 @@ import type { ExpectedRule } from '../../../language/shared/cursor_location/type
 import { columnExists } from '../../definitions/utils/autocomplete/helpers';
 import { unescapeColumnName } from '../../definitions/utils/shared';
 import { getMappedKeywordTokens, type KeywordItem } from '../keyword_items';
+import { defaultLimitValueSuggestions } from '../complete_items';
 import {
   columns,
+  constants,
   enrichFields,
   getEnrichPolicy,
   matchingColumns,
@@ -54,21 +57,41 @@ const isFollowedByKeyword = ({ followedBy }: GrammarLabel): boolean => {
 };
 
 /** The editor's provider for a role. Roles describe the language; this decides what to show. */
-const providerFor = (role: ArgumentRole, label: GrammarLabel): SlotProvider => {
+/** Example values for a constant, by its type: a row count, or a probability between 0 and 1. */
+const exampleValues = (role: Extract<ArgumentRole, { kind: 'constant' }>): string[] => {
+  if (role.valueType === 'integer') {
+    return defaultLimitValueSuggestions;
+  }
+  if (role.valueType === 'double' && role.constraints?.lessThan === '1') {
+    return ['.1', '.01', '.001'];
+  }
+  return [];
+};
+
+/**
+ * The editor's provider for a role, given the slot's label when the grammar labels it. Roles
+ * describe the language; this decides what to show.
+ */
+const providerFor = (role: ArgumentRole, label?: GrammarLabel): SlotProvider => {
   switch (role.kind) {
     case 'column':
       // A column matching another argument, e.g. ENRICH's ON and the policy's match field.
       if (role.constraints?.matches) {
         return matchingColumns();
       }
-      return columns(
-        isFollowedByKeyword(label)
-          ? { options: { advanceCursor: true, openSuggestions: true } }
-          : {}
-      );
+      // The list reopens after a column, with what follows it; the cursor moves on when a
+      // keyword has to follow, as AS in `RENAME a AS b`.
+      return columns({
+        options: {
+          openSuggestions: true,
+          ...(label && isFollowedByKeyword(label) && { advanceCursor: true }),
+        },
+      });
     case 'new_column':
       // `name = ` where an assignment follows; otherwise the name is typed freely.
-      return label.followedBy.includes('ASSIGN') ? newName() : none();
+      return label?.followedBy.includes('ASSIGN') ? newName() : none();
+    case 'constant':
+      return constants(exampleValues(role));
     case 'entity':
       if (role.entityType === 'enrich_policy') {
         return policies();
@@ -82,6 +105,10 @@ const providerFor = (role: ArgumentRole, label: GrammarLabel): SlotProvider => {
 /** The slot definition given by the roles of the slot's labels, when all of them have one. */
 export const getRoleSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
   const labels = getSlotLabels(slot);
+  if (!labels.length) {
+    const role = getUnlabelledArgumentRole(slot.stack[slot.stack.length - 1] ?? '', slot.rule);
+    return role ? { rule: slot.rule, provide: providerFor(role) } : undefined;
+  }
   const providers: SlotProvider[] = [];
   for (const label of labels) {
     const role = getArgumentRole(label);

@@ -60,6 +60,11 @@ describe('grammar roles', () => {
       expect(await texts('from a | completion ', 'completion')).toContain(' = ');
     });
 
+    it('offers example values for constants by their type', async () => {
+      expect(await texts('from a | limit ', 'limit')).toEqual(['10 ', '100 ', '1000 ']);
+      expect(await texts('from a | sample ', 'sample')).toEqual(['.001 ', '.01 ', '.1 ']);
+    });
+
     it('offers enrich policies', async () => {
       expect(await texts('from a | enrich ', 'enrich')).toEqual(['`policy$` ', 'policy ']);
     });
