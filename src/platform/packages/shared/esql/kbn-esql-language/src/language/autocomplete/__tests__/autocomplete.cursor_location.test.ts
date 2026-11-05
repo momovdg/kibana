@@ -20,8 +20,8 @@ describe('autocomplete cursor location', () => {
   });
 
   it.each([
-    ['keep', 'FROM index | KEEP ^', 'KEEP '],
-    ['keep', 'FROM index, (FROM other | KEEP ^', 'KEEP '],
+    ['limit', 'FROM index | LIMIT ^', 'LIMIT '],
+    ['limit', 'FROM index, (FROM other | LIMIT ^', 'LIMIT '],
     ['where', 'FROM index | FORK (WHERE a > 1 | SORT b) (WHERE ^', 'WHERE '],
     ['eval', 'FROM index\n| EVAL x = ^\n| WHERE b > 1', 'EVAL x = '],
   ])('hands %s the location of %j', async (commandName, query, segmentText) => {
@@ -45,6 +45,7 @@ describe('autocomplete cursor location', () => {
   // Commands without their own autocomplete read the location suggest() computed.
   it.each([
     ['enrich', 'FROM index | ENRICH ^'],
+    ['keep', 'FROM index, (FROM other | KEEP ^'],
     ['rename', 'FROM index | FORK (RENAME a AS b) (RENAME ^'],
   ])(
     'computes the location once for %s on the generic autocomplete',
