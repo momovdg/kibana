@@ -134,9 +134,24 @@ export const matchingColumns = (): SlotProvider => async (ctx) => {
   return buildMatchingFieldsDefinition(policy.matchField, names);
 };
 
+/** Rules whose items are separated by commas, so a comma may directly follow a column. */
+const LIST_RULES = ['qualifiedNamePatterns'];
+
+/**
+ * Columns for a slot no role describes. The suggestions reopen after one, and the cursor moves
+ * on unless the column is a list item, where a comma may follow: `MV_EXPAND a ` but `KEEP a`.
+ */
+const defaultColumns = (): SlotProvider => async (ctx, slot) => {
+  const inList = LIST_RULES.includes(slot.stack[slot.stack.length - 1] ?? '');
+  return columns({ options: { openSuggestions: true, ...(!inList && { advanceCursor: true }) } })(
+    ctx,
+    slot
+  );
+};
+
 export const DEFAULT_SLOTS: readonly SlotDefinition[] = [
-  { rule: 'qualifiedName', provide: columns() },
-  { rule: 'qualifiedNamePattern', provide: columns() },
+  { rule: 'qualifiedName', provide: defaultColumns() },
+  { rule: 'qualifiedNamePattern', provide: defaultColumns() },
   { rule: 'enrichPolicyName', provide: policies() },
 ];
 
