@@ -10,7 +10,7 @@
 import { Parser } from '@elastic/esql';
 import { Token } from 'antlr4';
 import { esqlCommandRegistry } from '../../../commands/registry';
-import { getTokenType, locateCursor } from './cursor_location';
+import { getTokenName, getTokenType, locateCursor } from './cursor_location';
 
 const { symbolicNames } = Parser.create('').parser;
 
@@ -295,6 +295,25 @@ describe('locateCursor', () => {
       ['FROM a | KEEP x,/* c */', true],
     ])('at %j is %s', (text, expected) => {
       expect(locate(text).whitespaceBefore).toBe(expected);
+    });
+  });
+
+  describe('slot previousTokenType', () => {
+    it('is the token before the slot, also when the cursor continues the slot', () => {
+      const [slot] = locate(' FROM a | RENAME a AS b.').expectedRules;
+
+      expect(slot.continuation).toBe(true);
+      expect(slot.previousTokenType).toBe(getTokenType('AS'));
+      expect(locate(' FROM a | RENAME ').expectedRules[0].previousTokenType).toBe(
+        getTokenType('RENAME')
+      );
+    });
+  });
+
+  describe('getTokenName', () => {
+    it('names token types', () => {
+      expect(getTokenName(getTokenType('AS'))).toBe('AS');
+      expect(getTokenName(Token.EOF)).toBe('EOF');
     });
   });
 
