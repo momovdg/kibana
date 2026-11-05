@@ -10,7 +10,7 @@
 // Prototype of what esql-js would provide; see README.md. Kibana code imports only this file.
 import { GRAMMAR_LABELS } from './grammar_labels/grammar_labels.generated';
 import type { GrammarLabel } from './grammar_labels/types';
-import { ARGUMENT_ROLES } from './argument_roles/argument_roles';
+import { ARGUMENT_ROLES, UNLABELLED_ARGUMENT_ROLES } from './argument_roles/argument_roles';
 import type { ArgumentRole } from './argument_roles/types';
 
 export { GRAMMAR_LABELS };
@@ -24,3 +24,9 @@ export const getGrammarLabels = (rule: string, invokes: string): GrammarLabel[] 
 /** The role of a labelled argument, if classified. */
 export const getArgumentRole = ({ rule, label }: GrammarLabel): ArgumentRole | undefined =>
   ARGUMENT_ROLES[`${rule}.${label}`];
+
+/** The role of an unlabelled call of `invokes` inside `rule`, if classified. */
+export const getUnlabelledArgumentRole = (
+  rule: string,
+  invokes: string
+): ArgumentRole | undefined => UNLABELLED_ARGUMENT_ROLES[`${rule}>${invokes}`];
