@@ -162,7 +162,7 @@ describe('CommandRegistry', () => {
     });
 
     test('should keep the autocomplete spec of a command without an autocomplete method', () => {
-      const autocompleteSpec = { keywordFollowUps: ['ASC'] };
+      const autocompleteSpec = { slots: [] };
       registry.registerCommand({
         ...createMockCommand('specCommand', { autocomplete: undefined }),
         autocompleteSpec,
