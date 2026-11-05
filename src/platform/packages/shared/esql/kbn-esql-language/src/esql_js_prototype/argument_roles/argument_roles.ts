@@ -8,6 +8,9 @@
  */
 import type { ArgumentRole } from './types';
 
+/** The string column types, which DISSECT, GROK and the URI and domain commands read. */
+const STRING_TYPES = ['keyword', 'text'];
+
 /**
  * The role of each labelled command argument, keyed by `rule.label` from the grammar labels.
  * Hand-maintained; upstream this would live next to the command definitions.
@@ -61,6 +64,30 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
  */
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
+
+  'dissectCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
+  'dissectCommand>string': {
+    kind: 'constant',
+    valueType: 'string',
+    constraints: { format: 'dissect_pattern' },
+  },
+  'dissectCommandOption>identifier': { kind: 'option_name', allowedValues: ['APPEND_SEPARATOR'] },
+  'dissectCommandOption>constant': {
+    kind: 'constant',
+    valueType: 'string',
+    constraints: { format: 'separator' },
+  },
+  'grokCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
+  'grokCommand>string': {
+    kind: 'constant',
+    valueType: 'string',
+    constraints: { format: 'grok_pattern' },
+  },
+
+  'uriPartsCommand>qualifiedName': { kind: 'new_column' },
+  'uriPartsCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
+  'registeredDomainCommand>qualifiedName': { kind: 'new_column' },
+  'registeredDomainCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
 };
 
 /**

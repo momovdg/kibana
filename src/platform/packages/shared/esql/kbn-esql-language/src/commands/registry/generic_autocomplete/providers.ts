@@ -6,9 +6,11 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
+import { i18n } from '@kbn/i18n';
 import { isColumn, isOptionNode, isSource } from '@elastic/esql';
 import type { ESQLAstItem, ESQLSingleAstItem } from '@elastic/esql/types';
 import { suggestForExpression } from '../../definitions/utils';
+import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
 import { buildFieldsDefinitions } from '../../definitions/utils/functions';
 import { buildConstantsDefinitions } from '../../definitions/utils/literals';
 import { getNewUserDefinedColumnSuggestion } from '../complete_items';
@@ -53,23 +55,60 @@ export const listedColumns = (ctx: SuggestContext): string[] => {
   return names;
 };
 
-/** The existing columns, through `callbacks.getByType`, without those already listed. */
+/** A double-quoted string is being typed, as in `GROK "a`: never a column, which backticks quote. */
+const isTypingString = ({ location }: SuggestContext): boolean =>
+  Boolean(location.partial?.text.startsWith('"'));
+
+/**
+ * The existing columns of `types` (any by default), through `callbacks.getByType`, without
+ * those already listed.
+ */
 export const columns =
   ({
+    types = 'any',
     ignored = listedColumns,
     options,
   }: {
+    types?: string | string[];
     ignored?: (ctx: SuggestContext) => string[];
     options?: ColumnsOptions;
   } = {}): SlotProvider =>
   async (ctx) =>
-    (await ctx.callbacks?.getByType?.('any', ignored(ctx), options)) ?? [];
+    isTypingString(ctx)
+      ? []
+      : (await ctx.callbacks?.getByType?.(types, ignored(ctx), options)) ?? [];
 
 /** Constant values to start from, e.g. `10`, `100`, `1000` for a row count. */
 export const constants =
-  (values: string[]): SlotProvider =>
+  (values: string[], detail = ''): SlotProvider =>
   async () =>
-    buildConstantsDefinitions(values, '', { advanceCursorAndOpenSuggestions: true });
+    buildConstantsDefinitions(values, detail, { advanceCursorAndOpenSuggestions: true });
+
+/** The same items at every position, e.g. `":"` and `";"` for a separator. */
+export const fixed =
+  (items: ISuggestionItem[]): SlotProvider =>
+  async () =>
+    items;
+
+const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  APPEND_SEPARATOR: i18n.translate('esqlLanguage.esql.definitions.appendSeparatorDoc', {
+    defaultMessage:
+      'The character(s) that separate the appended fields. Default to empty string ("").',
+  }),
+};
+
+/** Option names with their `=`, e.g. `APPEND_SEPARATOR = `. */
+export const optionNames =
+  (names: string[]): SlotProvider =>
+  async () =>
+    names.map((name) =>
+      withAutoSuggest({
+        label: name,
+        text: `${name} = `,
+        kind: 'Reference',
+        detail: OPTION_DESCRIPTIONS[name] ?? '',
+      })
+    );
 
 /** A new column name, e.g. `col0 = `. */
 export const newName =

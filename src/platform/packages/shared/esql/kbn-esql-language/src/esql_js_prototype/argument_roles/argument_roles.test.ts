@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { GRAMMAR_LABELS } from '../grammar_labels/grammar_labels.generated';
-import { Parser } from '@elastic/esql';
+import { getCallSites } from '../grammar_labels/call_sites';
 import {
   ARGUMENT_ROLES,
   NON_ARGUMENT_RULES,
@@ -42,11 +42,12 @@ describe('argument roles', () => {
     expect(Object.keys(ARGUMENT_ROLES).filter((key) => key in UNCLASSIFIED_ARGUMENTS)).toEqual([]);
   });
 
-  it('key unlabelled arguments by rules of the grammar', () => {
-    const { ruleNames } = Parser.create('').parser;
-    const unknown = Object.keys(UNLABELLED_ARGUMENT_ROLES).filter((key) =>
-      key.split('>').some((rule) => !ruleNames.includes(rule))
-    );
+  it('key unlabelled arguments by unlabelled calls of the grammar', () => {
+    const unknown = Object.keys(UNLABELLED_ARGUMENT_ROLES).filter((key) => {
+      const [rule, invokes] = key.split('>');
+      const sites = getCallSites(rule, invokes);
+      return !sites.length || sites.some(({ label }) => label);
+    });
 
     expect(unknown).toEqual([]);
   });

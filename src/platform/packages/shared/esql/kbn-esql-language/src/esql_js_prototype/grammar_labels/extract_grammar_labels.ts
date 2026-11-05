@@ -35,7 +35,7 @@ export interface GrammarInfo {
   symbolicNames: Array<string | null>;
 }
 
-const RULE_TRANSITION = 3;
+export const RULE_TRANSITION = 3;
 const TOKEN_TRANSITIONS = [5, 7, 8]; // atom, set, not-set
 
 const tokenNames = (transition: AtnTransition, { symbolicNames }: GrammarInfo): string[] => {
@@ -49,7 +49,7 @@ const tokenNames = (transition: AtnTransition, { symbolicNames }: GrammarInfo): 
 };
 
 /** The tokens (or rule calls, as `<ruleName>`) that can come right after `state`'s rule call. */
-const followedBy = (callState: AtnState, grammar: GrammarInfo): string[] => {
+export const followedBy = (callState: AtnState, grammar: GrammarInfo): string[] => {
   const call = callState.transitions.find((t) => t.serializationType === RULE_TRANSITION);
   const result = new Set<string>();
   const seen = new Set<number>();
@@ -84,7 +84,7 @@ const followedBy = (callState: AtnState, grammar: GrammarInfo): string[] => {
 };
 
 /** The tokens (or rule calls) that can come right before `callState`, or the rule start. */
-const precededBy = (callState: AtnState, grammar: GrammarInfo): string[] => {
+export const precededBy = (callState: AtnState, grammar: GrammarInfo): string[] => {
   const { atn, ruleNames } = grammar;
   const ruleStates = atn.states.filter((state) => state?.ruleIndex === callState.ruleIndex);
   const start = atn.ruleToStartState[callState.ruleIndex];

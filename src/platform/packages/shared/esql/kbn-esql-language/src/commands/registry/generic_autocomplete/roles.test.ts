@@ -10,7 +10,8 @@ import { mockContext } from '../../../__tests__/commands/context_fixtures';
 import { getFieldNamesByType, suggest } from '../../../__tests__/commands/autocomplete';
 import { locateCursor } from '../../../language/shared/cursor_location/cursor_location';
 import { createGenericAutocomplete } from './generic_autocomplete';
-import { getSlotLabels } from './roles';
+import { getSlotSites } from './roles';
+import { ESQL_STRING_TYPES } from '../../definitions/types';
 
 // No command spec: everything comes from the grammar labels and the argument roles.
 const zeroConfig = createGenericAutocomplete(() => ({}));
@@ -22,13 +23,13 @@ const texts = async (query: string, commandName: string) =>
 
 const labelsAt = (text: string) => {
   const [slot] = locateCursor(text, text.length).expectedRules;
-  return getSlotLabels(slot).map(({ label }) => label);
+  return getSlotSites(slot).map(({ label }) => label);
 };
 
 const fieldNames = getFieldNamesByType('any');
 
 describe('grammar roles', () => {
-  describe('getSlotLabels', () => {
+  describe('getSlotSites', () => {
     it.each([
       ['FROM a | RENAME ', ['oldName', 'newName']],
       ['FROM a | RENAME a AS ', ['newName']],
@@ -67,6 +68,49 @@ describe('grammar roles', () => {
 
     it('offers enrich policies', async () => {
       expect(await texts('from a | enrich ', 'enrich')).toEqual(['`policy$` ', 'policy ']);
+    });
+  });
+
+  describe('arguments the grammar does not label', () => {
+    const stringFields = getFieldNamesByType(ESQL_STRING_TYPES);
+
+    it('offers columns of the role types where the argument is an expression', async () => {
+      expect(await texts('from a | dissect ', 'dissect')).toEqual([...stringFields].sort());
+      expect(await texts('from a | uri_parts p = ', 'uri_parts')).toEqual([...stringFields].sort());
+    });
+
+    it('continues no expression after a column the role covers', async () => {
+      expect(await texts('from a | uri_parts p = keywordField ', 'uri_parts')).toEqual([
+        '\n',
+        '| ',
+      ]);
+    });
+
+    it('offers a new name with `=` where an assignment follows', async () => {
+      expect(await texts('from a | uri_parts ', 'uri_parts')).toEqual([' = ']);
+    });
+
+    it('offers no columns while a double-quoted string is typed', async () => {
+      expect(await texts('from a | dissect "a', 'dissect')).toEqual([]);
+    });
+
+    it('offers example strings by their format', async () => {
+      expect(await texts('from a | dissect keywordField ', 'dissect')).toEqual(['"%{firstWord}" ']);
+      expect(await texts('from a | grok keywordField ', 'grok')).toEqual(['"%{WORD:firstWord}" ']);
+      expect(await texts('from a | grok keywordField "%{WORD:a}", ', 'grok')).toEqual([
+        '"%{WORD:nextWord}" ',
+      ]);
+      expect(
+        await texts('from a | dissect keywordField "%{a}" APPEND_SEPARATOR = ', 'dissect')
+      ).toEqual(['":" ', '";" ']);
+    });
+
+    it('offers option names with their `=`', async () => {
+      expect(await texts('from a | dissect keywordField "%{a}" ', 'dissect')).toEqual([
+        '\n',
+        'APPEND_SEPARATOR = ',
+        '| ',
+      ]);
     });
   });
 

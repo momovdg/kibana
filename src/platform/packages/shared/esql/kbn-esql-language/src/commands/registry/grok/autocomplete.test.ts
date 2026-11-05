@@ -6,8 +6,8 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import { expectSuggestions, getFieldNamesByType } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
 import { ESQL_STRING_TYPES } from '../../definitions/types';
@@ -47,12 +47,12 @@ describe('GROK Autocomplete', () => {
   it('suggests fields after GROK', async () => {
     await grokExpectSuggestions(
       'from a | grok ',
-      getFieldNamesByType(ESQL_STRING_TYPES).map((name) => `${name} `),
+      getFieldNamesByType(ESQL_STRING_TYPES),
       mockCallbacks
     );
     await grokExpectSuggestions(
       'from a | grok key',
-      getFieldNamesByType(ESQL_STRING_TYPES).map((name) => `${name} `),
+      getFieldNamesByType(ESQL_STRING_TYPES),
       mockCallbacks
     );
   });
@@ -67,23 +67,36 @@ describe('GROK Autocomplete', () => {
   });
 
   it('suggests pipe or comma after multiple patterns', async () => {
-    const result = await autocomplete(
-      `from a | grok keywordField "%{IP:ip}", "%{WORD:method}" /`,
-      {
-        type: 'command',
-        name: 'grok',
-        args: [
-          { type: 'column', name: 'keywordField' },
-          { type: 'literal', value: '"%{IP:ip}"' },
-          { type: 'literal', value: '"%{WORD:method}"' },
-        ],
-      } as any,
+    await grokExpectSuggestions(
+      'from a | grok keywordField "%{IP:ip}", "%{WORD:method}" ',
+      ['| ', ', ', '\n'],
       mockCallbacks
     );
+  });
 
-    const suggestions = result.map(({ text }) => text);
+  describe('from the grammar roles', () => {
+    it('suggests only string columns', async () => {
+      await grokExpectSuggestions(
+        'from a | grok ',
+        getFieldNamesByType(ESQL_STRING_TYPES),
+        getMockCallbacks()
+      );
+    });
 
-    expect(suggestions).toContain('| ');
-    expect(suggestions).toContain(', ');
+    it('suggests a next pattern after a comma', async () => {
+      await grokExpectSuggestions(
+        'from a | grok keywordField "%{IP:ip}", ',
+        ['"%{WORD:nextWord}" '],
+        mockCallbacks
+      );
+    });
+
+    it('adds a space before the pipe right after a pattern', async () => {
+      await grokExpectSuggestions(
+        'from a | grok keywordField "%{IP:ip}"',
+        [', ', ' | ', '\n'],
+        mockCallbacks
+      );
+    });
   });
 });

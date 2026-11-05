@@ -8,7 +8,6 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import { columnsAfter } from './columns_after';
 import { validate } from './validate';
 import { summary } from './summary';
@@ -17,7 +16,6 @@ import { Commands } from '../../definitions/keywords';
 
 const grokCommandMethods: ICommandMethods<ICommandContext> = {
   validate,
-  autocomplete,
   columnsAfter,
   summary,
 };

@@ -30,3 +30,6 @@ export interface GrammarLabel {
   /** Token names, `<rule>` calls, or `<end>` (the end of `rule`) that can come right after it. */
   followedBy: string[];
 }
+
+/** A rule call in the grammar, with its label when it has one. */
+export type CallSite = Omit<GrammarLabel, 'label'> & { label?: string };

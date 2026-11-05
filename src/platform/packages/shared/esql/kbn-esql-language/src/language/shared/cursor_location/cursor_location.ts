@@ -263,9 +263,13 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     ([ruleIndex, { callStack, startTokenIndex }]) => {
       const continuation = startTokenIndex < caret.tokenIndex;
       const slotStart = allTokens[startTokenIndex].start;
+      const enclosingStart = callStack.findLastIndex(
+        (entry) => entry.startTokenIndex !== startTokenIndex
+      );
       return {
         rule: ruleNames[ruleIndex],
         stack: callStack.map((entry) => ruleNames[entry.ruleIndex]),
+        startsRules: callStack.length - 1 - enclosingStart,
         continuation,
         text:
           continuation && previousToken
