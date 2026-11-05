@@ -6,10 +6,11 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { isColumn, isSource } from '@elastic/esql';
-import type { ESQLSingleAstItem } from '@elastic/esql/types';
+import { isColumn, isOptionNode, isSource } from '@elastic/esql';
+import type { ESQLAstItem, ESQLSingleAstItem } from '@elastic/esql/types';
 import { suggestForExpression } from '../../definitions/utils';
 import { buildFieldsDefinitions } from '../../definitions/utils/functions';
+import { buildConstantsDefinitions } from '../../definitions/utils/literals';
 import { getNewUserDefinedColumnSuggestion } from '../complete_items';
 import {
   buildMatchingFieldsDefinition,
@@ -25,14 +26,25 @@ import type { ExpressionSpec, SlotDefinition, SlotProvider, SuggestContext } fro
 
 type ColumnsOptions = Parameters<GetColumnsByTypeFn>[2];
 
+/** The arguments of the option the cursor is in, as LIMIT's `BY`, or else of the command. */
+const argsAtCursor = ({ command, cursorPosition }: SuggestContext): ESQLAstItem[] => {
+  for (let index = command.args.length - 1; index >= 0; index--) {
+    const arg = command.args[index];
+    if (!Array.isArray(arg) && isOptionNode(arg) && arg.location.min < cursorPosition) {
+      return arg.args;
+    }
+  }
+  return command.args;
+};
+
 /**
  * The columns that are already whole items of the command's list before the word being typed,
  * e.g. `a` and `b` in `SORT a ASC, b, `; they are not suggested again.
  */
-export const listedColumns = ({ command, location, cursorPosition }: SuggestContext): string[] => {
-  const end = location.partial?.start ?? cursorPosition;
+export const listedColumns = (ctx: SuggestContext): string[] => {
+  const end = ctx.location.partial?.start ?? ctx.cursorPosition;
   const names: string[] = [];
-  for (const arg of command.args) {
+  for (const arg of argsAtCursor(ctx)) {
     const item = !Array.isArray(arg) && arg.type === 'order' ? arg.args[0] : arg;
     if (isColumn(item) && item.location.max < end) {
       names.push(item.parts.join('.'));
@@ -52,6 +64,12 @@ export const columns =
   } = {}): SlotProvider =>
   async (ctx) =>
     (await ctx.callbacks?.getByType?.('any', ignored(ctx), options)) ?? [];
+
+/** Constant values to start from, e.g. `10`, `100`, `1000` for a row count. */
+export const constants =
+  (values: string[]): SlotProvider =>
+  async () =>
+    buildConstantsDefinitions(values, '', { advanceCursorAndOpenSuggestions: true });
 
 /** A new column name, e.g. `col0 = `. */
 export const newName =
@@ -116,9 +134,24 @@ export const matchingColumns = (): SlotProvider => async (ctx) => {
   return buildMatchingFieldsDefinition(policy.matchField, names);
 };
 
+/** Rules whose items are separated by commas, so a comma may directly follow a column. */
+const LIST_RULES = ['qualifiedNamePatterns'];
+
+/**
+ * Columns for a slot no role describes. The suggestions reopen after one, and the cursor moves
+ * on unless the column is a list item, where a comma may follow: `MV_EXPAND a ` but `KEEP a`.
+ */
+const defaultColumns = (): SlotProvider => async (ctx, slot) => {
+  const inList = LIST_RULES.includes(slot.stack[slot.stack.length - 1] ?? '');
+  return columns({ options: { openSuggestions: true, ...(!inList && { advanceCursor: true }) } })(
+    ctx,
+    slot
+  );
+};
+
 export const DEFAULT_SLOTS: readonly SlotDefinition[] = [
-  { rule: 'qualifiedName', provide: columns() },
-  { rule: 'qualifiedNamePattern', provide: columns() },
+  { rule: 'qualifiedName', provide: defaultColumns() },
+  { rule: 'qualifiedNamePattern', provide: defaultColumns() },
   { rule: 'enrichPolicyName', provide: policies() },
 ];
 
@@ -126,17 +159,15 @@ export const DEFAULT_SLOTS: readonly SlotDefinition[] = [
  * The last argument starting before the cursor, unless the cursor starts a new one: right
  * after a comma, or while a word is typed after one (`SORT a, b` or an unterminated `SORT a, `b`).
  */
-const findExpressionRoot = ({
-  command,
-  cursorPosition,
-  location: { previousTokenType },
-}: SuggestContext): ESQLSingleAstItem | undefined => {
-  if (previousTokenType === getTokenType('COMMA')) {
+const findExpressionRoot = (ctx: SuggestContext): ESQLSingleAstItem | undefined => {
+  const { cursorPosition, location } = ctx;
+  if (location.previousTokenType === getTokenType('COMMA')) {
     return undefined;
   }
 
-  for (let index = command.args.length - 1; index >= 0; index--) {
-    const arg = command.args[index];
+  const args = argsAtCursor(ctx);
+  for (let index = args.length - 1; index >= 0; index--) {
+    const arg = args[index];
     if (Array.isArray(arg) || arg.type === 'option' || arg.location.min >= cursorPosition) {
       continue;
     }

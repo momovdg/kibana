@@ -22,6 +22,7 @@ interface GrammarInfo {
   symbolicNames: Array<string | null>;
   pipe: number;
   lp: number;
+  dot: number;
   rp: number;
   anchorRule: number;
   preferredRules: Set<number>;
@@ -56,6 +57,7 @@ const getGrammarInfo = (): GrammarInfo => {
     symbolicNames,
     pipe: symbolicNames.indexOf('PIPE'),
     lp: symbolicNames.indexOf('LP'),
+    dot: symbolicNames.indexOf('DOT'),
     rp: symbolicNames.indexOf('RP'),
     anchorRule: ruleNames.indexOf(PIPE_ANCHOR_RULE),
     preferredRules: ruleIndexes(PREFERRED_RULES),
@@ -171,10 +173,13 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
 
   // The caret is the word being typed when the cursor touches one, otherwise the next token.
   // Untokenized characters directly after a word (e.g. the `:` of `_any:`) belong to that word.
+  // A dot after whitespace starts a decimal (`SAMPLE .`), as a dotted name has no space before it.
+  const startsDecimal =
+    lastToken?.type === grammar.dot && /\s/.test(textBeforeCursor.charAt(lastToken.start - 1));
   const isTypingWord =
     lastToken !== undefined &&
     isVisible(lastToken) &&
-    /\w$/.test(lastToken.text) &&
+    (/\w$/.test(lastToken.text) || startsDecimal) &&
     tail === untokenized;
   const caret = isTypingWord ? lastToken : eof;
 

@@ -7,7 +7,6 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { esqlCommandRegistry } from '../../commands/registry';
-import { autocomplete as keepAutocomplete } from '../../commands/registry/keep/autocomplete';
 import type { ISuggestionItem } from '../../commands/registry/types';
 import type { CommandAutocomplete } from '../../commands/registry/generic_autocomplete/generic_autocomplete';
 import {
@@ -152,9 +151,10 @@ describe('parity harness', () => {
   });
 
   it('pairs the legacy and generic implementations for describe.each', () => {
-    const [[legacyName, legacy], [genericName]] = bothImplementations(keepAutocomplete, {});
+    const standIn = returning([item('a')]);
+    const [[legacyName, legacy], [genericName]] = bothImplementations(standIn, {});
 
     expect([legacyName, genericName]).toEqual(['legacy', 'generic']);
-    expect(legacy).toBe(keepAutocomplete);
+    expect(legacy).toBe(standIn);
   });
 });

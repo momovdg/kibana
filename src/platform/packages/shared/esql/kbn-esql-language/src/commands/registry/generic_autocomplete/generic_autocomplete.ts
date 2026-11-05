@@ -64,6 +64,8 @@ const SEPARATING_TOKENS = [
 
 const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'SEMICOLON'];
 
+const CLOSING_TOKENS = ['RP', 'CLOSING_BRACKET', 'RIGHT_BRACES'];
+
 const needsLeadingSpace = ({ token, item }: KeywordItem): boolean =>
   !SEPARATOR_TOKENS.includes(token) && item !== newLineCompleteItem;
 
@@ -88,15 +90,15 @@ const toItem = (keyword: KeywordItem, location: CursorLocation): ISuggestionItem
   return keyword.item;
 };
 
-/** What follows a complete word, keeping the word: `asc NULLS FIRST`, `host, `, `host | `. */
-const toFollowUp = (keyword: KeywordItem): ISuggestionItem =>
-  keyword.item === newLineCompleteItem
-    ? keyword.item
-    : {
-        ...keyword.item,
-        text: needsLeadingSpace(keyword) ? ` ${keyword.item.text}` : keyword.item.text,
-        preserveTypedPrefix: true,
-      };
+/**
+ * What follows a complete word, keeping the word: `asc NULLS FIRST`, `host, `, `host | `, and
+ * a new line after `host` (without the word, the item would replace it).
+ */
+const toFollowUp = (keyword: KeywordItem): ISuggestionItem => ({
+  ...keyword.item,
+  text: needsLeadingSpace(keyword) ? ` ${keyword.item.text}` : keyword.item.text,
+  preserveTypedPrefix: true,
+});
 
 /** The name typed so far: a dotted prefix the word continues (`kubernetes.`), then the word. */
 const typedName = ({ partial, expectedRules, previousTokenType }: CursorLocation): string => {
@@ -179,9 +181,13 @@ const suggestAt = async (
   );
   // An expression slot, or a token only expressions take, like an operator after `SORT (col) `
   // or `NULL` after `IS NOT `. Right after a value such as `(col)`, only what follows it.
+  // A closing `)` is no sign of an expression: it may close a FORK branch or a subquery.
   const inExpression =
     location.expectedRules.some(isExpressionSlot) ||
-    [...location.expectedTokens].some((type) => EXPRESSION_ENGINE_TOKENS.has(getTokenName(type)));
+    [...location.expectedTokens].some((type) => {
+      const name = getTokenName(type);
+      return EXPRESSION_ENGINE_TOKENS.has(name) && !CLOSING_TOKENS.includes(name);
+    });
   const expressionItems =
     inExpression && !isGluedToValue(location) ? await suggestExpression(ctx, spec.expression) : [];
   const keywordItems = adjustKeywords(keywordsAt(location), ctx).map((keyword) =>

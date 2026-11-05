@@ -56,6 +56,14 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
 };
 
 /**
+ * The role of command arguments the grammar does not label, keyed by `rule>calledRule`, e.g.
+ * LIMIT's row count in `limitCommand: LIMIT constant (BY fields)?`.
+ */
+export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
+  'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
+};
+
+/**
  * Labelled arguments not classified yet, with why. Each is classified when its command moves
  * to the generic autocomplete.
  */
