@@ -43,10 +43,12 @@ const specificity = ({ parent, after }: SlotDefinition): number =>
   (after ? 2 : 0) + (parent ? 1 : 0);
 
 /**
- * The definition that fills each expected slot outside expressions: the command's own, else
- * the one the slot's grammar roles give, else a default. Among definitions the most specific
- * wins, and on a tie the earlier one. A slot the cursor would continue counts only after a dot,
- * inside a dotted name like `a.b`; after `ON x ` or a quoted name the name is done.
+ * The definition that fills each expected slot: the command's own, else the one the slot's
+ * grammar roles give, else a default. Among definitions the most specific wins, and on a tie
+ * the earlier one. Inside an expression only a role counts, as the column `DISSECT ` starts;
+ * the expression engine fills the rest. Slots filling the same argument are filled once. A slot
+ * the cursor would continue counts only after a dot, inside a dotted name like `a.b`; after
+ * `ON x ` or a quoted name the name is done.
  */
 export const matchSlots = (
   { expectedRules, previousTokenType }: CursorLocation,
@@ -64,12 +66,17 @@ export const matchSlots = (
   const afterDot = previousTokenType === getTokenType('DOT');
 
   for (const slot of expectedRules) {
-    if ((slot.continuation && !afterDot) || isExpressionSlot(slot)) {
+    if (slot.continuation && !afterDot) {
       continue;
     }
 
-    const definition = bestMatch(command, slot) ?? fromRoles(slot) ?? bestMatch(defaults, slot);
-    if (definition) {
+    const definition = isExpressionSlot(slot)
+      ? fromRoles(slot)
+      : bestMatch(command, slot) ?? fromRoles(slot) ?? bestMatch(defaults, slot);
+    const filled = definition?.argument
+      ? result.some((match) => match.definition.argument === definition.argument)
+      : false;
+    if (definition && !filled) {
       result.push({ slot, definition });
     }
   }

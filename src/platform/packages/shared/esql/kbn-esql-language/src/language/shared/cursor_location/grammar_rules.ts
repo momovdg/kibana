@@ -17,6 +17,8 @@ export const PREFERRED_RULES = [
   'constant',
   'parameter',
   'identifierPattern',
+  'string',
+  'identifier',
 ] as const;
 
 /** Rules that wrap a single command; the innermost one at the cursor bounds the segment. */

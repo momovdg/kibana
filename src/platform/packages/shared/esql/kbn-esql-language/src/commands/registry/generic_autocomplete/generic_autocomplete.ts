@@ -24,7 +24,7 @@ import { ReplacementRangeStrategyKind } from '../../../language/autocomplete/uti
 import type { ICommandCallbacks, ICommandContext, ISuggestionItem } from '../types';
 import { DEFAULT_SLOTS, suggestExpression } from './providers';
 import { isExpressionSlot, matchSlots } from './slot_matching';
-import { filterKeywordsByRoles, getRoleSlot, isCompleteName } from './roles';
+import { filterKeywordsByRoles, getRoleSlot, isCompleteName, isCoveredByRole } from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
 
 export type CommandAutocomplete = (
@@ -182,11 +182,16 @@ const suggestAt = async (
   // An expression slot, or a token only expressions take, like an operator after `SORT (col) `
   // or `NULL` after `IS NOT `. Right after a value such as `(col)`, only what follows it.
   // A closing `)` is no sign of an expression: it may close a FORK branch or a subquery.
+  // Where a role says what the argument is, as the column of `DISSECT `, the role fills it.
   const inExpression =
-    location.expectedRules.some(isExpressionSlot) ||
+    location.expectedRules.some((slot) => isExpressionSlot(slot) && !getRoleSlot(slot)) ||
     [...location.expectedTokens].some((type) => {
       const name = getTokenName(type);
-      return EXPRESSION_ENGINE_TOKENS.has(name) && !CLOSING_TOKENS.includes(name);
+      return (
+        EXPRESSION_ENGINE_TOKENS.has(name) &&
+        !CLOSING_TOKENS.includes(name) &&
+        !isCoveredByRole(location.tokenStacks.get(type)?.rules ?? [])
+      );
     });
   const expressionItems =
     inExpression && !isGluedToValue(location) ? await suggestExpression(ctx, spec.expression) : [];
