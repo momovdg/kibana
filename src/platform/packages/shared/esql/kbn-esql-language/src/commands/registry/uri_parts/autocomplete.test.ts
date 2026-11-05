@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -56,7 +56,7 @@ describe('URI_PARTS > autocomplete', () => {
   it('suggests string fields after assignment operator', async () => {
     await uriPartsExpectSuggestions(
       'FROM index | URI_PARTS prefix = ',
-      getFieldNamesByType(ESQL_STRING_TYPES).map((fieldName) => `${fieldName} `),
+      getFieldNamesByType(ESQL_STRING_TYPES),
       mockCallbacks
     );
   });
@@ -67,5 +67,31 @@ describe('URI_PARTS > autocomplete', () => {
       ['\n', '| '],
       mockCallbacks
     );
+  });
+
+  describe('from the grammar roles', () => {
+    it('suggests only string columns', async () => {
+      await uriPartsExpectSuggestions(
+        'FROM index | URI_PARTS prefix = ',
+        getFieldNamesByType(ESQL_STRING_TYPES),
+        getMockCallbacks()
+      );
+    });
+
+    it('suggests string columns while one is typed', async () => {
+      await uriPartsExpectSuggestions(
+        'FROM index | URI_PARTS prefix = key',
+        getFieldNamesByType(ESQL_STRING_TYPES),
+        getMockCallbacks()
+      );
+    });
+
+    it('suggests what follows a complete column, keeping it', async () => {
+      await uriPartsExpectSuggestions(
+        'FROM index | URI_PARTS prefix = keywordField',
+        ['keywordField\n', 'keywordField | '],
+        mockCallbacks
+      );
+    });
   });
 });

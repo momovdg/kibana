@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -64,7 +64,7 @@ describe('REGISTERED_DOMAIN > autocomplete', () => {
   it('suggests string fields after assignment operator', async () => {
     await registeredDomainExpectSuggestions(
       'FROM index | REGISTERED_DOMAIN prefix = ',
-      getFieldNamesByType(ESQL_STRING_TYPES).map((fieldName) => `${fieldName} `),
+      getFieldNamesByType(ESQL_STRING_TYPES),
       mockCallbacks
     );
   });
@@ -75,5 +75,23 @@ describe('REGISTERED_DOMAIN > autocomplete', () => {
       ['\n', '| '],
       mockCallbacks
     );
+  });
+
+  describe('from the grammar roles', () => {
+    it('suggests only string columns', async () => {
+      await registeredDomainExpectSuggestions(
+        'FROM index | REGISTERED_DOMAIN prefix = ',
+        getFieldNamesByType(ESQL_STRING_TYPES),
+        getMockCallbacks()
+      );
+    });
+
+    it('suggests what follows a complete column, keeping it', async () => {
+      await registeredDomainExpectSuggestions(
+        'FROM index | REGISTERED_DOMAIN prefix = keywordField',
+        ['keywordField\n', 'keywordField | '],
+        mockCallbacks
+      );
+    });
   });
 });
