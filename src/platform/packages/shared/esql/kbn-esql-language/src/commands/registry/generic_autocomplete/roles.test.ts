@@ -65,9 +65,17 @@ describe('grammar roles', () => {
   });
 
   describe('keywords from roles', () => {
-    it('offers AS only after an existing column, since AS makes it the old name', async () => {
-      expect(await texts('from a | rename keywordField ', 'rename')).toEqual(['= ', 'AS ']);
+    it('chooses between readings of the name: AS for an existing column, = otherwise', async () => {
+      expect(await texts('from a | rename keywordField ', 'rename')).toEqual(['AS ']);
       expect(await texts('from a | rename field ', 'rename')).toEqual(['= ']);
+    });
+
+    it('keeps every keyword when only one reading of the name is possible', async () => {
+      expect(await texts('from a | rename x = unknownColumn ', 'rename')).toEqual([
+        '\n',
+        ', ',
+        '| ',
+      ]);
     });
 
     it('keeps the keywords after a clause, which any new name allows', async () => {

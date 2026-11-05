@@ -59,7 +59,8 @@ describe('generic autocomplete', () => {
     });
 
     it('offers the keywords the grammar expects', async () => {
-      expect(await texts('from a | rename keywordField ', 'rename', renameSpec)).toEqual([
+      // While a word is typed, keywords are not filtered by the readings of the name.
+      expect(await texts('from a | rename keywordField A', 'rename', renameSpec)).toEqual([
         '= ',
         'AS ',
       ]);
