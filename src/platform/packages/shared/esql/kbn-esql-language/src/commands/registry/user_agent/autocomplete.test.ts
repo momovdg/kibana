@@ -16,7 +16,7 @@ import {
 import { assignCompletionItem, pipeCompleteItem, withCompleteItem } from '../complete_items';
 import type { ICommandCallbacks } from '../types';
 import { Location } from '../types';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 
 const expectUserAgentSuggestions = (
   query: string,
@@ -61,7 +61,7 @@ describe('USER_AGENT Autocomplete', () => {
     const mockCallbacks = getMockCallbacks();
     (mockCallbacks.getSuggestedUserDefinedColumnName as jest.Mock).mockReturnValue('ua');
 
-    await expectUserAgentSuggestions('FROM a | USER_AGENT ', ['${1:user_agent} = '], mockCallbacks);
+    await expectUserAgentSuggestions('FROM a | USER_AGENT ', ['ua = '], mockCallbacks);
   });
 
   it('suggests = after the target field name', async () => {
@@ -127,8 +127,40 @@ describe('USER_AGENT Autocomplete', () => {
     ]);
   });
 
-  it('suggests a map placeholder after the WITH keyword', async () => {
-    await expectUserAgentSuggestions('FROM a | USER_AGENT ua = keywordField WITH ', ['{ $0 }']);
+  it('opens the map with the WITH item, while WITH is typed', async () => {
+    await expectUserAgentSuggestionsContains('FROM a | USER_AGENT ua = keywordField WITH', [
+      withCompleteItem.text,
+    ]);
+  });
+
+  it('suggests a map key while one is typed', async () => {
+    await expectUserAgentSuggestionsContains('FROM a | USER_AGENT ua = keywordField WITH { "', [
+      '"regex_file": "$0"',
+      '"extract_device_type": ',
+      '"properties": [ $0 ]',
+    ]);
+  });
+
+  it('suggests the default parser file and the boolean values', async () => {
+    await expectUserAgentSuggestions(
+      'FROM a | USER_AGENT ua = keywordField WITH { "regex_file": ',
+      ['"_default_"']
+    );
+    await expectUserAgentSuggestions(
+      'FROM a | USER_AGENT ua = keywordField WITH { "extract_device_type": ',
+      ['true', 'false']
+    );
+  });
+
+  it('suggests a comma after a map value', async () => {
+    await expectUserAgentSuggestions(
+      'FROM a | USER_AGENT ua = keywordField WITH { "regex_file": "_default_" ',
+      [', ']
+    );
+  });
+
+  it('suggests nothing inside a nested map', async () => {
+    await expectUserAgentSuggestions('FROM a | USER_AGENT ua = keywordField WITH { "a": { ', []);
   });
 
   it('suggests map keys inside an empty options map', async () => {
