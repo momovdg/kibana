@@ -250,7 +250,7 @@ describe('FORK Autocomplete', () => {
 
         test('drop', async () => {
           await forkExpectSuggestions('FROM a | FORK (DROP ', [...getFieldNamesByType('any')]);
-          await forkExpectSuggestions('FROM a | FORK (DROP integerField ', [',', '| ', '\n']);
+          await forkExpectSuggestions('FROM a | FORK (DROP integerField ', [', ', '| ', '\n']);
         });
 
         test('mv_expand', async () => {
