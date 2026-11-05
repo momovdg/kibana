@@ -268,7 +268,7 @@ describe('FORK Autocomplete', () => {
             ' = ',
             ...getFieldNamesByType('any'),
           ]);
-          await forkExpectSuggestions('FROM a | FORK (RENAME textField ', ['AS ']);
+          await forkExpectSuggestions('FROM a | FORK (RENAME textField ', ['AS ', '= ']);
           await forkExpectSuggestions('FROM a | FORK (RENAME field ', ['= ']);
         });
 

@@ -7,9 +7,10 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import { expectSuggestions, getFieldNamesByType } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
+import { setup } from '../../../language/autocomplete/__tests__/helpers';
 
 const renameExpectSuggestions = (
   query: string,
@@ -42,10 +43,14 @@ describe('RENAME Autocomplete', () => {
     await renameExpectSuggestions('from a | rename field = foo, fie', expectedSuggestions);
   });
 
-  it('suggests AS after an existing field', async () => {
-    await renameExpectSuggestions('from a | rename textField ', ['AS ']);
-    await renameExpectSuggestions('from a | rename keywordField AS foo, textField ', ['AS ']);
-    await renameExpectSuggestions('from a | rename keywordField as foo , textField ', ['AS ']);
+  // An existing column can be renamed (AS) or replaced by another one (=).
+  it('suggests AS and = after an existing field', async () => {
+    await renameExpectSuggestions('from a | rename textField ', ['AS ', '= ']);
+    await renameExpectSuggestions('from a | rename keywordField AS foo, textField ', ['AS ', '= ']);
+    await renameExpectSuggestions('from a | rename keywordField as foo , textField ', [
+      'AS ',
+      '= ',
+    ]);
   });
 
   it('suggests = after a field that does not exist', async () => {
@@ -69,8 +74,9 @@ describe('RENAME Autocomplete', () => {
   describe('positions the grammar resolves', () => {
     it('reads a backtick-quoted name as one name', async () => {
       await renameExpectSuggestions('from a | rename `my field` ', ['= ']);
-      await renameExpectSuggestions('from a | rename `my field` A', ['AS ']);
-      await renameExpectSuggestions('from a | rename `any#Char$Field` ', ['AS ']);
+      // While a keyword is typed, all keywords stay; the editor filters them.
+      await renameExpectSuggestions('from a | rename `my field` A', ['AS ', '= ']);
+      await renameExpectSuggestions('from a | rename `any#Char$Field` ', ['AS ', '= ']);
     });
 
     it('suggests names while a backtick-quoted name is still open', async () => {
@@ -78,7 +84,7 @@ describe('RENAME Autocomplete', () => {
     });
 
     it('ignores comments between the parts of a clause', async () => {
-      await renameExpectSuggestions('from a | rename textField /* note */ ', ['AS ']);
+      await renameExpectSuggestions('from a | rename textField /* note */ ', ['AS ', '= ']);
       await renameExpectSuggestions('from a | rename textField /* note */ AS /* note */ ', []);
     });
 
@@ -87,8 +93,41 @@ describe('RENAME Autocomplete', () => {
     });
 
     it('handles clauses split across lines', async () => {
-      await renameExpectSuggestions('from a\n| rename textField\n  ', ['AS ']);
+      await renameExpectSuggestions('from a\n| rename textField\n  ', ['AS ', '= ']);
       await renameExpectSuggestions('from a\n| rename textField\n  AS foo\n  ', ['| ', ', ', '\n']);
+    });
+  });
+
+  describe('from the grammar roles', () => {
+    it('suggests the keywords, not columns, while AS is typed in full', async () => {
+      await renameExpectSuggestions('from a | rename textField AS', ['AS ', '= ']);
+      await renameExpectSuggestions('from a | rename textField as', ['AS ', '= ']);
+    });
+
+    it('suggests nothing while the new name is typed after AS', async () => {
+      await renameExpectSuggestions('from a | rename textField AS fo', []);
+    });
+
+    it('suggests only columns while the column after = is typed', async () => {
+      await renameExpectSuggestions('from a | rename field = ke', getFieldNamesByType('any'));
+    });
+
+    it('suggests names while a dotted name is typed', async () => {
+      await renameExpectSuggestions('from a | rename kubernetes.', [
+        ' = ',
+        ...getFieldNamesByType('any'),
+      ]);
+    });
+
+    it('adds a space before AS right after a backtick-quoted column', async () => {
+      await renameExpectSuggestions('from a | rename `textField`', [' AS ', '= ']);
+    });
+
+    it('is used by the full suggest()', async () => {
+      const { assertSuggestions } = await setup();
+
+      await assertSuggestions('FROM a | RENAME keywordField /', ['AS ', '= ']);
+      await assertSuggestions('FROM a | RENAME keywordField AS /', []);
     });
   });
 });

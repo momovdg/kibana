@@ -640,8 +640,8 @@ describe('autocomplete', () => {
       ...getFieldNamesByType('any').map((name) => `${name} `),
     ]);
 
-    // RENAME field AS
-    testSuggestions('FROM index1 | RENAME field A/', ['AS ']);
+    // RENAME field AS: while a keyword is typed, both stay for the editor to filter
+    testSuggestions('FROM index1 | RENAME field A/', ['AS ', '= ']);
 
     // STATS argument
     testSuggestions('FROM index1 | STATS f/', [
