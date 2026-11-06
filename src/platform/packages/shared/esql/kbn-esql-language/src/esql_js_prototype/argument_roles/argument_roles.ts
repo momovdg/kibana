@@ -11,6 +11,17 @@ import type { ArgumentRole } from './types';
 /** The string column types, which DISSECT, GROK and the URI and domain commands read. */
 const STRING_TYPES = ['keyword', 'text'];
 
+/** The numeric column types, which CHANGE_POINT's value takes. */
+const NUMBER_TYPES = [
+  'integer',
+  'counter_integer',
+  'double',
+  'unsigned_long',
+  'long',
+  'counter_long',
+  'counter_double',
+];
+
 /**
  * The role of each labelled command argument, keyed by `rule.label` from the grammar labels.
  * Hand-maintained; upstream this would live next to the command definitions.
@@ -37,10 +48,11 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
     constraints: { greaterThan: '0', lessThan: '1' },
   },
 
-  'changePointCommand.value': { kind: 'column' },
+  'changePointCommand.value': { kind: 'column', types: NUMBER_TYPES },
   'changePointCommand.key': { kind: 'column' },
   'changePointCommand.targetType': { kind: 'new_column' },
   'changePointCommand.targetPvalue': { kind: 'new_column' },
+  'changePointCommand.booleanExpression': { kind: 'expression' },
 
   'completionCommand.targetField': { kind: 'new_column' },
   'completionCommand.prompt': { kind: 'expression' },
@@ -64,6 +76,7 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
  */
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
+  'limitByGroupKey>booleanExpression': { kind: 'expression' },
 
   'dissectCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
   'dissectCommand>string': {
@@ -117,7 +130,6 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
  * to the generic autocomplete.
  */
 export const UNCLASSIFIED_ARGUMENTS: Readonly<Record<string, string>> = {
-  'changePointCommand.booleanExpression': 'grouping after BY; check with CHANGE_POINT',
   'rerankCommand.rerankFields': 'a list of fields or expressions; check with RERANK',
   'fuseCommand.fuseType': 'a fusion method (rrf, linear); check with FUSE',
   'fuseConfiguration.score': 'check with FUSE',

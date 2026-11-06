@@ -40,6 +40,7 @@ import {
   none,
   optionNames,
   policies,
+  suggestedColumnName,
 } from './providers';
 import { isExpressionSlot } from './slot_matching';
 import type { SlotDefinition, SlotProvider, SuggestContext } from './types';
@@ -210,8 +211,15 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
         },
       });
     case 'new_column':
-      // `name = ` where an assignment follows; otherwise the name is typed freely.
-      return site.followedBy.includes('ASSIGN') ? newName() : none();
+      // A name Kibana suggests at the position, else `name = ` where an assignment follows;
+      // otherwise the name is typed freely.
+      return (
+        (site.label &&
+          suggestedColumnName(`${site.rule}.${site.label}`, {
+            comma: site.followedBy.includes('COMMA') && !site.followedBy.includes(RULE_END),
+          })) ||
+        (site.followedBy.includes('ASSIGN') ? newName() : none())
+      );
     case 'constant':
       return exampleValues(role);
     case 'option_name':

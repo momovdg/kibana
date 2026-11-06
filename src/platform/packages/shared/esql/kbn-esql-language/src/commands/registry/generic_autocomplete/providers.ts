@@ -16,10 +16,19 @@ import {
   isStringLiteral,
   Walker,
 } from '@elastic/esql';
-import type { ESQLAstItem, ESQLAstNode, ESQLMap, ESQLSingleAstItem } from '@elastic/esql/types';
+import type {
+  ESQLAstItem,
+  ESQLAstNode,
+  ESQLCommandOption,
+  ESQLMap,
+  ESQLSingleAstItem,
+} from '@elastic/esql/types';
 import type { MapParameter } from '../../../esql_js_prototype';
 import { suggestForExpression } from '../../definitions/utils';
-import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
+import {
+  buildUserDefinedColumnsDefinitions,
+  withAutoSuggest,
+} from '../../definitions/utils/autocomplete/helpers';
 import {
   getCommandMapExpressionSuggestions,
   type MapParameters,
@@ -52,14 +61,21 @@ import type { ExpressionSpec, SlotDefinition, SlotProvider, SuggestContext } fro
 type ColumnsOptions = Parameters<GetColumnsByTypeFn>[2];
 
 /** The arguments of the option the cursor is in, as LIMIT's `BY`, or else of the command. */
-const argsAtCursor = ({ command, cursorPosition }: SuggestContext): ESQLAstItem[] => {
+const argsAtCursor = (ctx: SuggestContext): ESQLAstItem[] =>
+  optionAtCursor(ctx)?.args ?? ctx.command.args;
+
+/** The last option starting before the cursor, as LIMIT's `BY`; the cursor may be past its end. */
+const optionAtCursor = ({
+  command,
+  cursorPosition,
+}: SuggestContext): ESQLCommandOption | undefined => {
   for (let index = command.args.length - 1; index >= 0; index--) {
     const arg = command.args[index];
     if (!Array.isArray(arg) && isOptionNode(arg) && arg.location.min < cursorPosition) {
-      return arg.args;
+      return arg;
     }
   }
-  return command.args;
+  return undefined;
 };
 
 /**
@@ -138,6 +154,29 @@ export const newName =
   (): SlotProvider =>
   async ({ callbacks }) =>
     [getNewUserDefinedColumnSuggestion(callbacks?.getSuggestedUserDefinedColumnName?.() || '')];
+
+const SUGGESTED_COLUMN_NAMES: Readonly<Record<string, string>> = {
+  'changePointCommand.targetType': 'changePointType',
+  'changePointCommand.targetPvalue': 'pValue',
+};
+
+/**
+ * The name Kibana suggests for a new column at a labelled position, e.g. `changePointType` after
+ * CHANGE_POINT's `AS`, with the comma when one must follow. Undefined where it suggests none.
+ */
+export const suggestedColumnName = (
+  position: string,
+  { comma }: { comma: boolean }
+): SlotProvider | undefined => {
+  const name = SUGGESTED_COLUMN_NAMES[position];
+  if (!name) {
+    return undefined;
+  }
+  return async () =>
+    buildUserDefinedColumnsDefinitions([name]).map((item) =>
+      withAutoSuggest({ ...item, text: comma ? `${item.text}, ` : item.text })
+    );
+};
 
 /** Nothing: the user types the value freely. */
 export const none = (): SlotProvider => async () => [];
@@ -286,11 +325,17 @@ export const suggestExpression = async (
     expressionRoot: getRoot(ctx),
     command,
     cursorPosition,
-    // Derived from the command and option, as validation does. A command with no location of
-    // its own takes the scalar functions, as EVAL does.
+    // Derived from the command and option, as validation does; inside the option even when the
+    // cursor is past its end, as after `LIMIT 10 BY a, `. A command with no location of its own
+    // takes the scalar functions, as EVAL does.
     location:
       location ??
-      getLocationInfo(cursorPosition, command, Boolean(context?.isTimeseriesSource), false).id ??
+      getLocationInfo(
+        Math.min(cursorPosition, optionAtCursor(ctx)?.location.max ?? cursorPosition),
+        command,
+        Boolean(context?.isTimeseriesSource),
+        false
+      ).id ??
       Location.EVAL,
     context,
     callbacks,
