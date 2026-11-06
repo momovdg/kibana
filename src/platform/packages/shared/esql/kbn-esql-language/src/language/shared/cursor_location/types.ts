@@ -22,6 +22,12 @@ export interface ExpectedRule {
   /** The rules above the slot, outermost first. */
   stack: string[];
   /**
+   * For each rule of `[...stack, rule]`, the ATN state of the rule above that called it, when
+   * known. It tells apart calls of the same rule after the same token, as the columns after
+   * FUSE's `SCORE BY` and `GROUP BY`.
+   */
+  invokingStates?: Array<number | undefined>;
+  /**
    * How many of the innermost rules in `stack` start where the slot starts, e.g. 1 for a column
    * at `DISSECT ` (`primaryExpression`) but 0 for one inside `DISSECT TRIM(`.
    */

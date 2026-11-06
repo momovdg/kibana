@@ -15,6 +15,7 @@ export const PREFERRED_RULES = [
   'indexPattern',
   'functionName',
   'constant',
+  'integerValue',
   'parameter',
   'identifierPattern',
   'string',
