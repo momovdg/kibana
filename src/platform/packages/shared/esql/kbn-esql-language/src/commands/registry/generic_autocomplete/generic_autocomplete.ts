@@ -36,6 +36,7 @@ import {
   withoutUsedClauses,
 } from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
+import type { ExpressionComputedMetadata } from '../../definitions/utils/autocomplete/expressions/types';
 
 export type CommandAutocomplete = (
   query: string,
@@ -166,9 +167,16 @@ const typedName = ({ partial, expectedRules, previousTokenType }: CursorLocation
   return `${prefix}${partial?.text ?? ''}`;
 };
 
+/**
+ * The items without repeats. Actions insert no text, as "Choose from the time picker" and
+ * "Create control", so an item is its label and text together.
+ */
 const withoutDuplicates = (items: ISuggestionItem[]): ISuggestionItem[] => {
   const seen = new Set<string>();
-  return items.filter(({ text }) => !seen.has(text) && Boolean(seen.add(text)));
+  return items.filter(({ label, text }) => {
+    const key = `${label}\u0000${text}`;
+    return !seen.has(key) && Boolean(seen.add(key));
+  });
 };
 
 /** An autocomplete that fills the slots and keywords the grammar expects, as `spec` declares. */
@@ -217,12 +225,21 @@ export const createGenericAutocomplete =
           word !== undefined &&
           location.expectedTokens.has(word) &&
           keywords.has(getTokenName(word));
-        const followUps =
+        const keywordFollowUps =
           (isCompleteKeyword || completesSlot) && !isNested
             ? adjustKeywords(keywordsAt(after), { ...ctx, location: after })
             : [];
+        // A complete name inside an expression continues with operators, as `bytes > $0`.
+        const expressionFollowUps =
+          completesSlot && !completesLiteral && !isNested
+            ? await getExpressionFollowUps(ctx, spec, after)
+            : undefined;
+        const followUps = [
+          ...(expressionFollowUps?.items ?? []),
+          ...(expressionFollowUps?.argumentDone === false ? [] : keywordFollowUps).map(toFollowUp),
+        ];
         if (followUps.length) {
-          return withoutDuplicates(followUps.map(toFollowUp));
+          return withoutDuplicates(followUps);
         }
         // A whole literal nothing follows here, as `SET a = 123` before a `;`.
         if (completesLiteral && !isNested) {
@@ -240,6 +257,58 @@ export const createGenericAutocomplete =
 
     return withoutDuplicates(await suggestAt(ctx, spec, slotMatches, adjustKeywords));
   };
+
+/**
+ * An expression slot, or a token only expressions take, like an operator after `SORT (col) `
+ * or `NULL` after `IS NOT `. A closing `)` is no sign of an expression: it may close a FORK
+ * branch or a subquery. Where a role says what the argument is, as the column of `DISSECT `,
+ * the role fills it.
+ */
+const isInExpression = (location: CursorLocation): boolean =>
+  location.expectedRules.some((slot) => isExpressionSlot(slot) && !getRoleSlot(slot)) ||
+  [...location.expectedTokens].some((type) => {
+    const name = getTokenName(type);
+    return (
+      EXPRESSION_ENGINE_TOKENS.has(name) &&
+      !CLOSING_TOKENS.includes(name) &&
+      !isCoveredByRole(location.tokenStacks.get(type)?.rules ?? [])
+    );
+  });
+
+/** The expression is a whole boolean, outside any function call. */
+const isWholeBoolean = (computed: ExpressionComputedMetadata | undefined): boolean =>
+  computed?.expressionType === 'boolean' && computed.isComplete && !computed.insideFunction;
+
+/**
+ * After a complete name in an expression, the operators that continue it, keeping the name
+ * (`bytes > $0`), and whether the argument is complete, for what follows it.
+ */
+const getExpressionFollowUps = async (
+  ctx: SuggestContext,
+  spec: CommandAutocompleteSpec,
+  after: CursorLocation
+): Promise<{ items: ISuggestionItem[]; argumentDone: boolean } | undefined> => {
+  if (!isInExpression(after)) {
+    return undefined;
+  }
+  const { query, cursorPosition } = ctx;
+  const atAfter: SuggestContext = {
+    ...ctx,
+    query: `${query.slice(0, cursorPosition)} `,
+    cursorPosition: cursorPosition + 1,
+    location: after,
+  };
+  const options = getExpressionOptions(after);
+  const { suggestions, computed } = await suggestExpression(atAfter, spec.expression, options);
+  return {
+    items: suggestions.map((item) => ({
+      ...item,
+      text: ` ${item.text}`,
+      preserveTypedPrefix: true,
+    })),
+    argumentDone: !options.completeAsBoolean || isWholeBoolean(computed),
+  };
+};
 
 /** The slot, expression and keyword items for the position before the word being typed. */
 const suggestAt = async (
@@ -260,27 +329,23 @@ const suggestAt = async (
         : items;
     })
   );
-  // An expression slot, or a token only expressions take, like an operator after `SORT (col) `
-  // or `NULL` after `IS NOT `. Right after a value such as `(col)`, only what follows it.
-  // A closing `)` is no sign of an expression: it may close a FORK branch or a subquery.
-  // Where a role says what the argument is, as the column of `DISSECT `, the role fills it.
-  const inExpression =
-    location.expectedRules.some((slot) => isExpressionSlot(slot) && !getRoleSlot(slot)) ||
-    [...location.expectedTokens].some((type) => {
-      const name = getTokenName(type);
-      return (
-        EXPRESSION_ENGINE_TOKENS.has(name) &&
-        !CLOSING_TOKENS.includes(name) &&
-        !isCoveredByRole(location.tokenStacks.get(type)?.rules ?? [])
-      );
-    });
+  const inExpression = isInExpression(location);
+  const glued = isGluedToValue(location);
+  const options = getExpressionOptions(location);
   // A name that can only be a new column, as `COMPLETION x `, continues no expression.
-  const expressionItems =
-    inExpression && !isGluedToValue(location) && getNameReading(ctx) !== 'new_column'
-      ? await suggestExpression(ctx, spec.expression, getExpressionOptions(location))
-      : [];
-  const exampleItems =
-    inExpression && !isGluedToValue(location) ? await getExpressionExamples(ctx) : [];
+  const expression =
+    inExpression && getNameReading(ctx) !== 'new_column'
+      ? await suggestExpression(ctx, spec.expression, options)
+      : undefined;
+  // Right after a complete value, as `(a IN (…))`, only the operators that continue it, spaced.
+  const expressionItems = !expression
+    ? []
+    : !glued
+    ? expression.suggestions
+    : expression.suggestions
+        .filter(({ kind }) => kind === 'Operator')
+        .map((item) => ({ ...item, text: ` ${item.text}` }));
+  const exampleItems = inExpression && !glued ? await getExpressionExamples(ctx) : [];
   const valueItems = [...slotItems.flat(), ...expressionItems, ...exampleItems];
 
   // Right after `=` or `ON` something has to follow, even where the grammar leaves it out, as
@@ -288,9 +353,14 @@ const suggestAt = async (
   const needsValue =
     valueItems.length > 0 &&
     VALUE_INTRODUCING_TOKENS.some((name) => getTokenType(name) === location.previousTokenType);
-  const keywordItems = needsValue
-    ? []
-    : adjustKeywords(keywordsAt(location), ctx).map((keyword) => toItem(keyword, location));
+  // An argument complete only as a boolean, as WHERE's, is followed by nothing until it is one.
+  const argumentDone = !options.completeAsBoolean || isWholeBoolean(expression?.computed);
+  // Inside an open string, as KQL's `"""…`, no keyword fits.
+  const inString = location.partial?.text.startsWith('"') ?? false;
+  const keywordItems =
+    needsValue || !argumentDone || inString
+      ? []
+      : adjustKeywords(keywordsAt(location), ctx).map((keyword) => toItem(keyword, location));
 
   return [...valueItems, ...keywordItems];
 };

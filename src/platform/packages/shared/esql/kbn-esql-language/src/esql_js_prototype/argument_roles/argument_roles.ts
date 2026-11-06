@@ -140,6 +140,13 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
   'limitByGroupKey>booleanExpression': { kind: 'expression' },
+  // A filter, complete only as a whole boolean; it may hold subqueries, as
+  // `a IN (FROM b | KEEP a)`.
+  'whereCommand>booleanExpression': {
+    kind: 'expression',
+    types: ['boolean'],
+    constraints: { subqueries: 'true', complete: 'boolean' },
+  },
   // A JOIN condition reads the columns of the input and of the lookup index.
   'joinCondition>booleanExpression': {
     kind: 'expression',
