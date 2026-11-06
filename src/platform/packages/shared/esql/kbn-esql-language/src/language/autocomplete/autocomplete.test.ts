@@ -1536,6 +1536,30 @@ describe('autocomplete', () => {
     });
   });
 
+  describe('after a header statement', () => {
+    // Picking a SET value ends the statement with `;` on its line; the query may start below.
+    it.each(['SET project_routing = "_alias:*";/', 'SET project_routing = "_alias:*"; /'])(
+      'offers a new line first right after the semicolon: %j',
+      async (query) => {
+        const { suggest: suggestAt } = await setup();
+        const texts = (await suggestAt(query)).map(({ text }) => text);
+
+        expect(texts[0]).toBe('\n');
+        expect(texts).toContain('FROM ');
+      }
+    );
+
+    it('offers no new line once the line has ended', async () => {
+      const { suggest: suggestAt } = await setup();
+      const texts = (await suggestAt('SET project_routing = "_alias:*";\n/')).map(
+        ({ text }) => text
+      );
+
+      expect(texts).not.toContain('\n');
+      expect(texts).toContain('FROM ');
+    });
+  });
+
   describe('Unmmapped fields', () => {
     describe('should suggest unmapped field after its first usage if unmapped is LOAD or NULLIFY', () => {
       testSuggestions('SET unmapped_fields = "LOAD"; FROM a | WHERE unmappedField > 0 | KEEP /', [
