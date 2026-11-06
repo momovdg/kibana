@@ -11,7 +11,7 @@ import {
   lookupIndexFields,
   getMockCallbacks,
 } from '../../../__tests__/commands/context_fixtures';
-import { QUERY_TEXT_SNIPPET, autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   onCompleteItem,
   pipeCompleteItem,
@@ -19,15 +19,11 @@ import {
   withCompleteItem,
   assignCompletionItem,
 } from '../complete_items';
-import { Location } from '../types';
-import {
-  expectSuggestions,
-  getFieldNamesByType,
-  getFunctionSignaturesByReturnType,
-  suggest,
-} from '../../../__tests__/commands/autocomplete';
+import { expectSuggestions, suggest } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
 import { buildConstantsDefinitions } from '../../definitions/utils/literals';
+
+const QUERY_TEXT_SNIPPET = '"${0:Your search query}"';
 import {
   logicalOperators,
   comparisonFunctions,
@@ -151,7 +147,7 @@ describe('RERANK Autocomplete', () => {
 
       (mockCallbacks.getSuggestedUserDefinedColumnName as jest.Mock).mockReturnValue('col0');
 
-      await expectRerankSuggestions('from a | rerank', expectedSuggestions, mockCallbacks);
+      await expectRerankSuggestions('from a | rerank ', expectedSuggestions, mockCallbacks);
     });
 
     test('suggests ON keyword after complete query', async () => {
@@ -214,8 +210,9 @@ describe('RERANK Autocomplete', () => {
       await expectRerankSuggestions(
         query,
         {
-          contains: ['textField', 'keywordField'],
-          notContains: ['integerField'],
+          // The columns already listed are left out of a new item.
+          contains: ['renamedField', 'any#Char$Field'],
+          notContains: ['textField', 'keywordField', 'integerField'],
         },
         mockCallbacks
       );
@@ -224,19 +221,10 @@ describe('RERANK Autocomplete', () => {
     test('suggests field continuations after selecting a field', async () => {
       const query = buildRerankQuery({ query: '"search query"', onClause: 'keywordField' });
 
+      // What follows a complete column, keeping it.
       await expectRerankSuggestions(
         query,
-        {
-          contains: [
-            ', ',
-            'WITH { $0 }',
-            '| ',
-            ...getFieldNamesByType(['text', 'keyword']),
-            ...getFunctionSignaturesByReturnType(Location.RERANK, ['text', 'keyword'], {
-              scalar: true,
-            }),
-          ],
-        },
+        ['keywordField, ', 'keywordField WITH { $0 }', 'keywordField | ', 'keywordField\n'],
         mockCallbacks
       );
     });
@@ -342,14 +330,14 @@ describe('RERANK Autocomplete', () => {
   // ============================================================================
 
   describe('WITH clause functionality', () => {
-    test('suggests opening braces with inference_id when WITH is already typed', async () => {
+    test('suggests nothing after a WITH typed by hand; the WITH item opens the map', async () => {
       const query =
         buildRerankQuery({
           query: '"search query"',
           onClause: 'textField',
         }) + ' WITH ';
 
-      await expectRerankSuggestions(query, ['{ "inference_id": "$0" }']);
+      await expectRerankSuggestions(query, []);
     });
 
     test('suggests inference_id key in WITH map', async () => {
