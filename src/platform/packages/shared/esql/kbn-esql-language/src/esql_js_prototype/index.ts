@@ -10,10 +10,14 @@
 // Prototype of what esql-js would provide; see README.md. Kibana code imports only this file.
 import { GRAMMAR_LABELS } from './grammar_labels/grammar_labels.generated';
 import type { CallSite, GrammarLabel } from './grammar_labels/types';
-import { ARGUMENT_ROLES, UNLABELLED_ARGUMENT_ROLES } from './argument_roles/argument_roles';
+import {
+  ARGUMENT_ROLES,
+  SINGLE_USE_RULES,
+  UNLABELLED_ARGUMENT_ROLES,
+} from './argument_roles/argument_roles';
 import type { ArgumentRole, MapParameter } from './argument_roles/types';
 
-export { GRAMMAR_LABELS };
+export { GRAMMAR_LABELS, SINGLE_USE_RULES };
 export { getCallSites } from './grammar_labels/call_sites';
 export { RULE_END, RULE_START } from './grammar_labels/types';
 export type { CallSite, GrammarLabel, ArgumentRole, MapParameter };
@@ -23,4 +27,10 @@ export type { CallSite, GrammarLabel, ArgumentRole, MapParameter };
  * rule called when the grammar does not label it, as LIMIT's row count.
  */
 export const getArgumentRole = ({ rule, label, invokes }: CallSite): ArgumentRole | undefined =>
-  label ? ARGUMENT_ROLES[`${rule}.${label}`] : UNLABELLED_ARGUMENT_ROLES[`${rule}>${invokes}`];
+  label
+    ? getLabelledArgumentRole(`${rule}.${label}`)
+    : UNLABELLED_ARGUMENT_ROLES[`${rule}>${invokes}`];
+
+/** The role of a labelled argument by its `rule.label` name, e.g. `fuseCommand.fuseType`. */
+export const getLabelledArgumentRole = (name: string): ArgumentRole | undefined =>
+  ARGUMENT_ROLES[name];

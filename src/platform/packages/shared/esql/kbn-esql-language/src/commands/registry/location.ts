@@ -81,9 +81,10 @@ export function getLocationInfo(
   }
 
   // Cast: WalkerProperNode now includes PromQL nodes; isOptionNode expects ESQLAstNode.
+  // An option the parser made up for a missing keyword starts nowhere (-1) and spans the rest.
   const option = Walker.find(
     parentCommand,
-    (node) => isOptionNode(node as ESQLAstNode) && within(position, node)
+    (node) => isOptionNode(node as ESQLAstNode) && node.location.min >= 0 && within(position, node)
   );
 
   if (option) {

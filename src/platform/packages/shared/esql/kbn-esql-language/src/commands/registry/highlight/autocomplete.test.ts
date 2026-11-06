@@ -11,19 +11,18 @@ import {
   lookupIndexFields,
   getMockCallbacks,
 } from '../../../__tests__/commands/context_fixtures';
-import { getQueryTextSnippet, autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
+import { stringSnippet } from '../generic_autocomplete/providers';
 import {
   onCompleteItem,
   withCompleteItem,
   pipeCompleteItem,
   newLineCompleteItem,
-  commaCompleteItem,
 } from '../complete_items';
 import { expectSuggestions, suggest } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
-import { buildConstantsDefinitions } from '../../definitions/utils/literals';
 
-const QUERY_LITERAL = buildConstantsDefinitions([getQueryTextSnippet()], '')[0].text;
+const QUERY_LITERAL = stringSnippet('Your search query').text;
 
 interface QueryComponents {
   prefix?: string;
@@ -150,9 +149,9 @@ describe('HIGHLIGHT Autocomplete', () => {
       );
     });
 
-    test('does not suggest prefix modifier once a query expression is started', async () => {
+    test('does not suggest prefix modifier once a query expression is typed', async () => {
       await expectHighlightSuggestions(
-        'from a | highlight "fo',
+        'from a | highlight "fox" ',
         {
           notContains: [`prefix = "\${0:highlight_}"`],
         },
@@ -161,9 +160,11 @@ describe('HIGHLIGHT Autocomplete', () => {
     });
 
     test('suggests ON, WITH and the end of the command after a complete string query', async () => {
+      // `:` is the expression engine's match operator, which may follow a string.
       await expectHighlightSuggestions(
         buildHighlightQuery({ query: '"search query"' }) + ' ',
         [
+          ': $0',
           onCompleteItem.text,
           withCompleteItem.text,
           newLineCompleteItem.text,
@@ -232,19 +233,15 @@ describe('HIGHLIGHT Autocomplete', () => {
       );
     });
 
-    test('suggests field continuations after a complete field', async () => {
+    test('suggests field continuations after a complete field, keeping it', async () => {
       await expectHighlightSuggestions(
         buildHighlightQuery({ query: '"search query"', onClause: 'keywordField' }),
-        {
-          contains: [
-            commaCompleteItem.text.endsWith(' ')
-              ? commaCompleteItem.text
-              : `${commaCompleteItem.text} `,
-            withCompleteItem.text,
-            pipeCompleteItem.text,
-            'textField',
-          ],
-        },
+        [
+          'keywordField, ',
+          `keywordField ${withCompleteItem.text}`,
+          'keywordField | ',
+          'keywordField\n',
+        ],
         mockCallbacks
       );
     });
@@ -286,10 +283,11 @@ describe('HIGHLIGHT Autocomplete', () => {
       );
     });
 
-    test('only suggests WITH or the end of the command after *', async () => {
+    // The grammar takes a list after `*` too; validation reports the extra fields.
+    test('suggests WITH, the end of the command and a comma after *', async () => {
       await expectHighlightSuggestions(
         buildHighlightQuery({ query: '"search query"', onClause: '* ' }),
-        [withCompleteItem.text, newLineCompleteItem.text, pipeCompleteItem.text],
+        [', ', withCompleteItem.text, newLineCompleteItem.text, pipeCompleteItem.text],
         mockCallbacks
       );
     });
@@ -316,10 +314,22 @@ describe('HIGHLIGHT Autocomplete', () => {
   });
 
   describe('WITH clause functionality', () => {
-    test('suggests opening braces when WITH is already typed', async () => {
+    test('suggests nothing after a WITH typed by hand; the WITH item opens the map', async () => {
       await expectHighlightSuggestions(
         buildHighlightQuery({ query: '"search query"', onClause: 'textField' }) + ' WITH ',
-        ['{ $0 }'],
+        [],
+        mockCallbacks
+      );
+    });
+
+    test('suggests the default value of a numeric parameter', async () => {
+      await expectHighlightSuggestions(
+        buildHighlightQuery({
+          query: '"search query"',
+          onClause: 'textField',
+          withClause: '{ "fragment_size": ',
+        }),
+        ['100'],
         mockCallbacks
       );
     });

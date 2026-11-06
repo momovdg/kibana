@@ -78,8 +78,52 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'inlineStatsCommand.stats': { kind: 'aggregation' },
   'inlineStatsCommand.grouping': { kind: 'expression' },
 
-  'mmrCommand.diversifyField': { kind: 'column' },
+  // A vector the query compares rows with: a literal, a parameter or a function's result, as
+  // the `constantOnly` hint of a function parameter.
+  'mmrCommand.queryVector': {
+    kind: 'expression',
+    types: ['dense_vector'],
+    constraints: { constantOnly: 'true' },
+  },
+  'mmrCommand.diversifyField': { kind: 'column', types: ['dense_vector'] },
   'mmrCommand.limitValue': { kind: 'constant', valueType: 'integer' },
+
+  'fuseCommand.fuseType': {
+    kind: 'constant',
+    valueType: 'identifier',
+    allowedValues: ['linear', 'rrf'],
+    default: 'rrf',
+  },
+  'fuseConfiguration.score': { kind: 'column', types: ['double'] },
+  'fuseConfiguration.key': { kind: 'column', types: STRING_TYPES },
+  'fuseConfiguration.group': { kind: 'column', types: STRING_TYPES },
+  'fuseConfiguration.options': {
+    kind: 'map',
+    parameters: {
+      rank_constant: { type: 'integer', default: '60', when: { 'fuseCommand.fuseType': ['rrf'] } },
+      normalizer: {
+        type: 'keyword',
+        values: ['none', 'minmax'],
+        when: { 'fuseCommand.fuseType': ['linear'] },
+      },
+      weights: { type: 'map', when: { 'fuseCommand.fuseType': ['rrf', 'linear'] } },
+    },
+  },
+
+  'highlightCommand.prefixKeyword': { kind: 'option_name', allowedValues: ['prefix'] },
+  'highlightCommand.prefix': { kind: 'constant', valueType: 'string', default: 'highlight_' },
+  // A search: a string, or full-text functions such as MATCH, never a bare column.
+  'highlightCommand.queryExpression': {
+    kind: 'expression',
+    types: ['boolean'],
+    constraints: { format: 'search_query', fullTextQuery: 'true' },
+  },
+  // `*` alone stands for every text and keyword column.
+  'highlightCommand.highlightFields': {
+    kind: 'column',
+    types: STRING_TYPES,
+    constraints: { wildcard: 'alone' },
+  },
 
   'joinTarget.index': { kind: 'entity', entityType: 'lookup_index' },
 
@@ -135,6 +179,7 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
   },
   'completionCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
   'qualifiedNames>qualifiedName': { kind: 'column', types: STRING_TYPES },
+  'fuseKeyByFields>qualifiedName': { kind: 'column', types: STRING_TYPES },
   'denseVectorCommand>commandNamedParameters': {
     kind: 'map',
     parameters: {
@@ -144,6 +189,26 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
     },
   },
   'rerankCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
+  'mmrCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: { lambda: { type: 'double', default: '0.5' } },
+  },
+  'highlightCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: {
+      analyzer: { type: 'keyword' },
+      pre_tags: { type: 'keyword', default: '<em>' },
+      post_tags: { type: 'keyword', default: '</em>' },
+      number_of_fragments: { type: 'integer', default: '5' },
+      fragment_size: { type: 'integer', default: '100' },
+      encoder: { type: 'keyword', values: ['default', 'html'], default: 'default' },
+      boundary_scanner: { type: 'keyword', values: ['sentence', 'word'], default: 'sentence' },
+      boundary_scanner_locale: { type: 'keyword' },
+      order: { type: 'keyword', values: ['none', 'score'], default: 'none' },
+      no_match_size: { type: 'integer', default: '0' },
+      max_analyzed_offset: { type: 'integer', default: '-1' },
+    },
+  },
   'ipLocationCommand>qualifiedName': { kind: 'new_column' },
   'ipLocationCommand>primaryExpression': { kind: 'expression', types: ['ip', ...STRING_TYPES] },
   'ipLocationCommand>commandNamedParameters': {
@@ -158,22 +223,18 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
 };
 
 /**
+ * Rules a command repeats in the grammar whose alternatives may each appear only once, as FUSE's
+ * `(fuseConfiguration)*`: Elasticsearch rejects a second `SCORE BY`.
+ */
+export const SINGLE_USE_RULES: readonly string[] = ['fuseConfiguration'];
+
+/**
  * Labelled arguments not classified yet, with why. Each is classified when its command moves
  * to the generic autocomplete.
  */
 export const UNCLASSIFIED_ARGUMENTS: Readonly<Record<string, string>> = {
-  'fuseCommand.fuseType': 'a fusion method (rrf, linear); check with FUSE',
-  'fuseConfiguration.score': 'check with FUSE',
-  'fuseConfiguration.key': 'check with FUSE',
-  'fuseConfiguration.group': 'check with FUSE',
-  'fuseConfiguration.options': 'a map of options; check with FUSE',
   'lookupCommand.tableName': 'dev-only LOOKUP',
   'lookupCommand.matchFields': 'dev-only LOOKUP',
-  'highlightCommand.prefixKeyword': 'check with HIGHLIGHT',
-  'highlightCommand.queryExpression': 'check with HIGHLIGHT',
-  'highlightCommand.highlightFields': 'check with HIGHLIGHT',
-  'mmrCommand.queryVector': 'a vector or expression; check with MMR',
-  'highlightCommand.prefix': 'check with HIGHLIGHT',
 };
 
 /** Labels inside expressions, names and PROMQL: not command arguments. */

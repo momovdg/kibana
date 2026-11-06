@@ -77,9 +77,16 @@ export const matchSlots = (
     const definition = isExpressionSlot(slot)
       ? fromRoles(slot)
       : bestMatch(command, slot) ?? fromRoles(slot) ?? bestMatch(defaults, slot);
+    // Calls of the same rule at one position, as both RENAME names at `RENAME `, are filled
+    // once per argument, or once per definition when it does not name one.
     const filled = definition?.argument
       ? result.some((match) => match.definition.argument === definition.argument)
-      : false;
+      : result.some(
+          (match) =>
+            match.definition === definition &&
+            match.slot.rule === slot.rule &&
+            match.slot.stack.join() === slot.stack.join()
+        );
     if (definition && !filled) {
       result.push({ slot, definition });
     }

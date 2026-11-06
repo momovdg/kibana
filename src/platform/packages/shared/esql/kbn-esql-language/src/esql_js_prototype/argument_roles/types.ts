@@ -19,6 +19,11 @@ export interface MapParameter {
   default?: string;
   /** The value names a thing outside the query, e.g. an inference endpoint. */
   entityType?: 'inference_endpoint';
+  /**
+   * The parameter applies only while the arguments named `rule.label` take one of the values,
+   * e.g. FUSE's `rank_constant` with `{ 'fuseCommand.fuseType': ['rrf'] }`.
+   */
+  when?: Record<string, string[]>;
 }
 
 /**
@@ -39,12 +44,14 @@ export type ArgumentRole =
     }
   /**
    * A literal value. A string's `format` constraint says what it holds, e.g. a GROK pattern
-   * (`grok_pattern`).
+   * (`grok_pattern`). An `identifier` is an unquoted name, one of `allowedValues`, e.g. FUSE's
+   * method. `default` is the value Elasticsearch uses when the argument is left out.
    */
   | {
       kind: 'constant';
-      valueType: 'integer' | 'double' | 'string';
+      valueType: 'integer' | 'double' | 'string' | 'identifier';
       allowedValues?: string[];
+      default?: string;
       constraints?: Record<string, string>;
     }
   /** The name of a command option, set as `name = value`, e.g. DISSECT's `APPEND_SEPARATOR`. */

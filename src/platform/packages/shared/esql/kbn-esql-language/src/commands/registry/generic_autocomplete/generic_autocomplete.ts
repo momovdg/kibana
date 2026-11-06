@@ -32,6 +32,7 @@ import {
   getRoleSlot,
   isCompleteName,
   isCoveredByRole,
+  withoutUsedClauses,
 } from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
 
@@ -138,7 +139,7 @@ export const createGenericAutocomplete =
     const spec = getSpec(command);
     const ctx: SuggestContext = { query, command, cursorPosition, location, callbacks, context };
     const adjustKeywords = (keywords: KeywordItem[], at: SuggestContext) => {
-      const allowed = filterKeywordsByRoles(keywords, at);
+      const allowed = filterKeywordsByRoles(withoutUsedClauses(keywords, at), at);
       return spec.keywords ? spec.keywords(allowed, at) : allowed;
     };
 
@@ -216,7 +217,8 @@ const suggestAt = async (
     inExpression && !isGluedToValue(location) && getNameReading(ctx) !== 'new_column'
       ? await suggestExpression(ctx, spec.expression, getExpressionOptions(location))
       : [];
-  const exampleItems = inExpression ? await getExpressionExamples(ctx) : [];
+  const exampleItems =
+    inExpression && !isGluedToValue(location) ? await getExpressionExamples(ctx) : [];
   const valueItems = [...slotItems.flat(), ...expressionItems, ...exampleItems];
 
   // Right after `=` or `ON` something has to follow, even where the grammar leaves it out, as

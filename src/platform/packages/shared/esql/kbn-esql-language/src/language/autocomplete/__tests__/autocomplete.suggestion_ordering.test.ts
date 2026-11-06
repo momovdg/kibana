@@ -65,17 +65,18 @@ describe('Suggestion Ordering', () => {
     it('should order the ON list continuations as WITH, comma, new line, pipe', async () => {
       const { suggest } = await setup();
 
-      for (const query of [
-        'FROM a | HIGHLIGHT "fox" ON textField /',
-        'FROM a | HIGHLIGHT ON textField/',
+      // Right after the field, the continuations keep it.
+      for (const [query, field] of [
+        ['FROM a | HIGHLIGHT "fox" ON textField /', ''],
+        ['FROM a | HIGHLIGHT ON textField/', 'textField'],
       ]) {
         const suggestions = await suggest(query);
 
         expect(suggestions.slice(0, 4).map((s) => s.text)).toEqual([
-          'WITH { $0 }',
-          ', ',
-          '\n',
-          '| ',
+          `${field}${field ? ' ' : ''}WITH { $0 }`,
+          `${field}, `,
+          `${field}\n`,
+          `${field}${field ? ' ' : ''}| `,
         ]);
       }
     });
@@ -84,7 +85,7 @@ describe('Suggestion Ordering', () => {
       const { suggest } = await setup();
       const texts = (await suggest('FROM a | HIGHLIGHT /')).map((s) => s.text);
       const relevant = [
-        '"${0:The text to highlight}"',
+        '"${0:Your search query}"',
         'prefix = "${0:highlight_}"',
         'MATCH($0)',
         'ON ',
@@ -100,7 +101,8 @@ describe('Suggestion Ordering', () => {
       const { suggest } = await setup();
       const suggestions = await suggest('FROM a | HIGHLIGHT "fox" /');
 
-      expect(suggestions.map((s) => s.text)).toEqual(['ON ', 'WITH { $0 }', '\n', '| ']);
+      // `:` is the expression engine's match operator, which may follow a string.
+      expect(suggestions.map((s) => s.text)).toEqual([': $0', 'ON ', 'WITH { $0 }', '\n', '| ']);
     });
 
     it('should order * before the fields of the ON list', async () => {
