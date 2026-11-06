@@ -50,6 +50,7 @@ describe('autocomplete cursor location', () => {
     ['completion', 'FROM index | COMPLETION ^'],
     ['fuse', 'FROM index | FUSE ^'],
     ['mmr', 'FROM index | MMR ^'],
+    ['join', 'FROM index | LOOKUP JOIN ^'],
     ['rename', 'FROM index | FORK (RENAME a AS b) (RENAME ^'],
   ])(
     'computes the location once for %s on the generic autocomplete',

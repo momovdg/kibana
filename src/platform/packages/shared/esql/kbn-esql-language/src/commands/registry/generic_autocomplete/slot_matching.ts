@@ -16,8 +16,11 @@ const EXPRESSION_RULES = ['booleanExpression', 'primaryExpression'];
 export const isExpressionSlot = ({ stack }: ExpectedRule): boolean =>
   stack.some((rule) => EXPRESSION_RULES.includes(rule));
 
-/** Tokens after which a slot that started earlier continues, rather than being done. */
-const CONTINUING_TOKENS = ['DOT', 'OPENING_BRACKET', 'COMMA'];
+/**
+ * Tokens after which a slot that started earlier continues, rather than being done: a `:` after
+ * an index's qualifier, as `_coordinator:` in LOOKUP JOIN.
+ */
+const CONTINUING_TOKENS = ['DOT', 'OPENING_BRACKET', 'COMMA', 'COLON'];
 
 export interface SlotMatch {
   slot: ExpectedRule;

@@ -19,6 +19,7 @@ import {
   fuseGroupByCompleteItem,
   fuseKeyByCompleteItem,
   fuseScoreByCompleteItem,
+  joinKeywordCompleteItem,
   joinOnCompleteItem,
   mmrLimitKeywordSuggestion,
   newLineAndPipeCompleteItems,
@@ -68,6 +69,9 @@ const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'ASSIGN', items: [assignCompletionItem] },
   { token: 'SEMICOLON', items: [semiColonCompleteItem] },
   { token: 'AS', items: [asCompletionItem] },
+  // A JOIN qualifier (`idx AS q`) is not offered: Elasticsearch may not support it yet.
+  { token: 'AS', command: 'joinCommand', items: [] },
+  { token: 'JOIN', items: [joinKeywordCompleteItem] },
   { token: 'BY', items: [byCompleteItem] },
   { token: 'BY', command: 'statsCommand', items: [statsByCompleteItem] },
   { token: 'BY', command: 'inlineStatsCommand', items: [statsByCompleteItem] },

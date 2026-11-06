@@ -20,6 +20,7 @@ import {
 import type {
   ESQLAstAllCommands,
   ESQLAstItem,
+  ESQLAstJoinCommand,
   ESQLAstNode,
   ESQLCommandOption,
   ESQLMap,
@@ -31,6 +32,7 @@ import { getAssignmentExpressionRoot } from '../../definitions/utils/expressions
 import {
   buildUserDefinedColumnsDefinitions,
   createInferenceEndpointToCompletionItem,
+  getLookupIndexCreateSuggestion,
   withAutoSuggest,
 } from '../../definitions/utils/autocomplete/helpers';
 import { SuggestionCategory } from '../../../language/autocomplete/utils/sorting/types';
@@ -60,6 +62,8 @@ import { getTokenType } from '../../../language/shared/cursor_location/cursor_lo
 import type { ExpectedRule } from '../../../language/shared/cursor_location/types';
 import { isExpressionSlot } from './slot_matching';
 import { getLocationInfo } from '../location';
+import { specialIndicesToSuggestions } from '../../definitions/utils/sources';
+import { createEnrichedContext, createEnrichedGetByType } from '../join/utils';
 import { Location, type ESQLPolicy, type GetColumnsByTypeFn, type ISuggestionItem } from '../types';
 import type { ExpressionSpec, SlotDefinition, SlotProvider, SuggestContext } from './types';
 
@@ -303,6 +307,48 @@ export const policies =
     return rangeToReplace ? items.map((item) => ({ ...item, rangeToReplace })) : items;
   };
 
+/**
+ * Lookup indices and their aliases, and an item to create the index typed when it is new and
+ * the user may create it. A qualifier such as `_coordinator:` is a token of its own, not part
+ * of the name typed.
+ */
+export const lookupIndices =
+  (): SlotProvider =>
+  async ({ context, callbacks, location }) => {
+    const name = location.partial?.text ?? '';
+    const sources = context?.joinSources ?? [];
+    const exists = sources.some((source) => source.name === name || source.aliases.includes(name));
+    const canCreate = !exists && ((await callbacks?.canCreateLookupIndex?.(name)) ?? false);
+    return [
+      ...(canCreate ? [getLookupIndexCreateSuggestion(name)] : []),
+      ...specialIndicesToSuggestions(sources),
+    ];
+  };
+
+/**
+ * The callbacks and context of an expression that also reads the columns of the command's
+ * lookup index, as a JOIN condition.
+ */
+const withLookupColumns = async ({
+  command,
+  callbacks,
+  context,
+}: SuggestContext): Promise<Pick<SuggestContext, 'callbacks' | 'context'>> => {
+  const join = command as ESQLAstJoinCommand;
+  const getColumnsForQuery = (query: string) =>
+    callbacks?.getColumnsForQuery?.(query) ?? Promise.resolve([]);
+  const getByType = await createEnrichedGetByType(
+    callbacks?.getByType ?? (() => Promise.resolve([])),
+    join,
+    getColumnsForQuery,
+    context
+  );
+  return {
+    callbacks: { ...callbacks, getByType },
+    context: await createEnrichedContext(context, join, getColumnsForQuery),
+  };
+};
+
 /** The enrich policy the command names, looked up without its `_mode:` prefix as validation does. */
 export const getEnrichPolicy = ({ command, context }: SuggestContext): ESQLPolicy | undefined => {
   const source = command.args.find((arg) => isSource(arg));
@@ -421,9 +467,16 @@ export const suggestExpression = async (
     types,
     valuesControl = false,
     noColumns = false,
-  }: { types?: string[]; valuesControl?: boolean; noColumns?: boolean } = {}
+    lookupColumns = false,
+  }: {
+    types?: string[];
+    valuesControl?: boolean;
+    noColumns?: boolean;
+    lookupColumns?: boolean;
+  } = {}
 ): Promise<ISuggestionItem[]> => {
-  const { query, command, cursorPosition, context, callbacks } = ctx;
+  const { query, command, cursorPosition } = ctx;
+  const { context, callbacks } = lookupColumns ? await withLookupColumns(ctx) : ctx;
   const resolvedOptions = typeof options === 'function' ? options(ctx) : options;
   const { suggestions } = await suggestForExpression({
     query,
@@ -455,8 +508,15 @@ export const suggestExpression = async (
     },
   });
 
-  return suggestions;
+  // `=` and `AS` are offered by location, as JOIN's; they fit only where the grammar expects them.
+  return suggestions.filter(({ label }) => {
+    const token = GRAMMAR_PLACED_OPERATORS[label.toLowerCase()];
+    return !token || ctx.location.expectedTokens.has(getTokenType(token));
+  });
 };
+
+/** Operators the expression engine offers by location, with the token the grammar places. */
+const GRAMMAR_PLACED_OPERATORS: Readonly<Record<string, string>> = { '=': 'ASSIGN', as: 'AS' };
 
 const MAP_PARAMETER_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'userAgentCommand.regex_file': i18n.translate(

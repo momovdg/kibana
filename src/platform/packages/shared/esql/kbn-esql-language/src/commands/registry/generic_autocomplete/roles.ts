@@ -37,6 +37,7 @@ import {
   fixed,
   getEnrichPolicy,
   identifiers,
+  lookupIndices,
   mapEntries,
   matchingColumns,
   merged,
@@ -178,7 +179,7 @@ const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
  */
 export const getExpressionOptions = (
   location: CursorLocation
-): { types?: string[]; valuesControl: boolean; noColumns: boolean } => {
+): { types?: string[]; valuesControl: boolean; noColumns: boolean; lookupColumns: boolean } => {
   const role = getExpressionRole(location)?.role;
   return {
     types: role?.types,
@@ -186,6 +187,8 @@ export const getExpressionOptions = (
     // A constant, or a full-text search, is never a bare column.
     noColumns:
       role?.constraints?.constantOnly === 'true' || role?.constraints?.fullTextQuery === 'true',
+    // A JOIN condition also reads the lookup index's columns.
+    lookupColumns: role?.constraints?.columnsOf === 'joinTarget.index',
   };
 };
 
@@ -396,6 +399,9 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
       if (role.entityType === 'enrich_policy') {
         return policies();
       }
+      if (role.entityType === 'lookup_index') {
+        return lookupIndices();
+      }
       return role.entityType === 'enrich_field' ? enrichFields() : none();
     default:
       return none();
@@ -461,10 +467,15 @@ const isExistingAs = (
   if (role?.kind === 'entity' && role.entityType === 'enrich_policy') {
     return ctx.context?.policies?.has(unescapeColumnName(name));
   }
+  if (role?.kind === 'entity' && role.entityType === 'lookup_index') {
+    return ctx.context?.joinSources?.some(
+      (source) => source.name === name || source.aliases.includes(name)
+    );
+  }
   return undefined;
 };
 
-const NAME_RULES = ['qualifiedName', 'qualifiedNamePattern', 'enrichPolicyName'];
+const NAME_RULES = ['qualifiedName', 'qualifiedNamePattern', 'enrichPolicyName', 'indexPattern'];
 
 /**
  * Whether `name` fills one of the slots expected at the cursor with something that exists: a
