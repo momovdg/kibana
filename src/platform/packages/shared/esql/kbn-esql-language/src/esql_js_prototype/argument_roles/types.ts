@@ -39,7 +39,12 @@ export type ArgumentRole =
   /** A named thing outside the query, e.g. an enrich policy or an inference endpoint. */
   | {
       kind: 'entity';
-      entityType: 'enrich_policy' | 'enrich_field' | 'lookup_index' | 'inference_endpoint';
+      entityType:
+        | 'enrich_policy'
+        | 'enrich_field'
+        | 'lookup_index'
+        | 'inference_endpoint'
+        | 'setting';
       constraints?: Record<string, string>;
     }
   /**
@@ -64,4 +69,9 @@ export type ArgumentRole =
    */
   | { kind: 'expression'; types?: string[]; constraints?: Record<string, string> }
   /** An aggregation, as in a function parameter's `{ kind: 'aggregation' }` hint. */
-  | { kind: 'aggregation' };
+  | { kind: 'aggregation' }
+  /**
+   * A value of the setting another argument names (`rule>invokes` of its call), which defines
+   * its type and values, e.g. SET's value: a constant, or a map of the setting's parameters.
+   */
+  | { kind: 'setting_value'; setting: string };

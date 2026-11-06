@@ -499,6 +499,9 @@ export const semiColonCompleteItem = buildCharCompleteItem(
   { quoted: true, advanceCursorAndOpenSuggestions: true }
 );
 
+/** The `;` ending a header statement, as SET's; the query starts on the next line. */
+export const statementEndCompleteItem: ISuggestionItem = { ...semiColonCompleteItem, text: ';\n' };
+
 export const listCompleteItem: ISuggestionItem = withAutoSuggest({
   label: '( ... )',
   text: '($0)',
