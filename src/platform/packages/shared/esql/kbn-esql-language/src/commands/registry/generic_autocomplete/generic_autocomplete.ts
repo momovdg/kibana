@@ -73,6 +73,9 @@ const SEPARATING_TOKENS = [
 
 const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'SEMICOLON'];
 
+/** Rules a `*` may end, as a name pattern. */
+const NAME_RULES = ['qualifiedNamePattern', 'identifierPattern'];
+
 const CLOSING_TOKENS = ['RP', 'CLOSING_BRACKET', 'RIGHT_BRACES'];
 
 /** Tokens a value always follows in the language, whatever the grammar allows after them. */
@@ -81,12 +84,23 @@ const VALUE_INTRODUCING_TOKENS = ['ASSIGN', 'ON'];
 const needsLeadingSpace = ({ token, item }: KeywordItem): boolean =>
   !SEPARATOR_TOKENS.includes(token) && item !== newLineCompleteItem;
 
-/** Nothing separates the cursor from the value before it, e.g. `SORT (col)` or `` `a b` ``. */
-const isGluedToValue = ({ partial, whitespaceBefore, previousTokenType }: CursorLocation) =>
+/**
+ * Nothing separates the cursor from the value before it, e.g. `SORT (col)` or `` `a b` ``. A
+ * `*` that ends a name pattern, as in HIGHLIGHT's `ON *` or KEEP's `text*`, is part of the
+ * value, not the multiplication operator.
+ */
+const isGluedToValue = ({
+  partial,
+  whitespaceBefore,
+  previousTokenType,
+  expectedRules,
+}: CursorLocation) =>
   !partial &&
   !whitespaceBefore &&
   previousTokenType !== undefined &&
-  !SEPARATING_TOKENS.some((name) => getTokenType(name) === previousTokenType);
+  (!SEPARATING_TOKENS.some((name) => getTokenType(name) === previousTokenType) ||
+    (previousTokenType === getTokenType('ASTERISK') &&
+      expectedRules.some(({ rule, continuation }) => continuation && NAME_RULES.includes(rule))));
 
 const toItem = (keyword: KeywordItem, location: CursorLocation): ISuggestionItem => {
   if (isGluedToValue(location) && needsLeadingSpace(keyword)) {

@@ -292,6 +292,15 @@ describe('HIGHLIGHT Autocomplete', () => {
       );
     });
 
+    // `*` ends the name pattern here; it is not the multiplication operator.
+    test('adds a space before the keywords right after *', async () => {
+      await expectHighlightSuggestions(
+        buildHighlightQuery({ query: '"search query"', onClause: '*' }),
+        { contains: [` ${withCompleteItem.text}`, ` ${pipeCompleteItem.text}`] },
+        mockCallbacks
+      );
+    });
+
     test('does not suggest a new column definition in the ON list', async () => {
       await expectHighlightSuggestions(
         buildHighlightQuery({ query: '"search query"' }) + ' ON ',
