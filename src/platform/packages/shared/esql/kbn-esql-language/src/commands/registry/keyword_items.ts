@@ -24,7 +24,7 @@ import {
   mmrLimitKeywordSuggestion,
   newLineAndPipeCompleteItems,
   onCompleteItem,
-  semiColonCompleteItem,
+  statementEndCompleteItem,
   showInfoCompleteItem,
   whereCompleteItem,
   withCompleteItem,
@@ -67,7 +67,8 @@ const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'PIPE', items: newLineAndPipeCompleteItems },
   { token: 'COMMA', items: [withAutoSuggest({ ...commaCompleteItem, text: ', ' })] },
   { token: 'ASSIGN', items: [assignCompletionItem] },
-  { token: 'SEMICOLON', items: [semiColonCompleteItem] },
+  // The grammar's `;` only ends a header statement (SET).
+  { token: 'SEMICOLON', items: [statementEndCompleteItem] },
   { token: 'AS', items: [asCompletionItem] },
   // A JOIN qualifier (`idx AS q`) is not offered: Elasticsearch may not support it yet.
   { token: 'AS', command: 'joinCommand', items: [] },

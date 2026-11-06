@@ -10,7 +10,7 @@ import { mockContext } from '../../../__tests__/commands/context_fixtures';
 import { getFieldNamesByType, suggest } from '../../../__tests__/commands/autocomplete';
 import { locateCursor } from '../../../language/shared/cursor_location/cursor_location';
 import { createGenericAutocomplete } from './generic_autocomplete';
-import { getSlotSites } from './roles';
+import { endsStatement, getSlotSites } from './roles';
 import { ESQL_STRING_TYPES } from '../../definitions/types';
 
 // No command spec: everything comes from the grammar labels and the argument roles.
@@ -40,6 +40,21 @@ describe('grammar roles', () => {
       ['FROM a | ENRICH pol WITH x = ', ['enrichField']],
     ])('tells the labels apart by the token before the slot at %j', (text, expected) => {
       expect(labelsAt(text)).toEqual(expected);
+    });
+  });
+
+  describe('endsStatement', () => {
+    const [valueSlot] = locateCursor('SET a = ', 8).expectedRules;
+    const [mapKeySlot] = locateCursor('SET a = { ', 10).expectedRules;
+    const [columnSlot] = locateCursor('FROM a | KEEP ', 14).expectedRules;
+
+    it("is true where only the statement end follows the value, as SET's", () => {
+      expect(endsStatement(valueSlot)).toBe(true);
+    });
+
+    it('is false inside the value and in other commands', () => {
+      expect(endsStatement(mapKeySlot)).toBe(false);
+      expect(endsStatement(columnSlot)).toBe(false);
     });
   });
 

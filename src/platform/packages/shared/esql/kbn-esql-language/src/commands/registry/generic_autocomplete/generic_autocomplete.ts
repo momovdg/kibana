@@ -25,6 +25,7 @@ import type { ICommandCallbacks, ICommandContext, ISuggestionItem } from '../typ
 import { DEFAULT_SLOTS, suggestExpression } from './providers';
 import { isExpressionSlot, matchSlots } from './slot_matching';
 import {
+  endsStatement,
   filterKeywordsByRoles,
   getExpressionExamples,
   getExpressionOptions,
@@ -126,6 +127,36 @@ const toFollowUp = (keyword: KeywordItem): ISuggestionItem => ({
   preserveTypedPrefix: true,
 });
 
+/** A `;` right after the cursor already ends the statement, as in `SET a = ^;`. */
+const isStatementEndAhead = ({ query, cursorPosition }: SuggestContext): boolean =>
+  /^\s*;/.test(query.slice(cursorPosition));
+
+const LITERAL_TOKENS = ['TRUE', 'FALSE', 'INTEGER_LITERAL', 'DECIMAL_LITERAL'];
+
+/**
+ * The word typed is a whole literal in a slot a role fills, and no value the role offers
+ * continues it: `SET a = true` is done, while `LIMIT 1` may still become `10`.
+ */
+const isCompleteLiteral = async (
+  ctx: SuggestContext,
+  slotMatches: ReturnType<typeof matchSlots>
+): Promise<boolean> => {
+  const { location, query, cursorPosition } = ctx;
+  const typed = location.partial?.text;
+  if (!typed || !slotMatches.length) {
+    return false;
+  }
+  const after = locateCursor(`${query.slice(0, cursorPosition)} `, cursorPosition + 1);
+  const isLiteral = LITERAL_TOKENS.some((name) => getTokenType(name) === after.previousTokenType);
+  if (!isLiteral) {
+    return false;
+  }
+  const items = (
+    await Promise.all(slotMatches.map(({ slot, definition }) => definition.provide(ctx, slot)))
+  ).flat();
+  return !items.some(({ text }) => text !== typed && text.startsWith(typed));
+};
+
 /** The name typed so far: a dotted prefix the word continues (`kubernetes.`), then the word. */
 const typedName = ({ partial, expectedRules, previousTokenType }: CursorLocation): string => {
   const prefix =
@@ -152,8 +183,12 @@ export const createGenericAutocomplete =
 
     const spec = getSpec(command);
     const ctx: SuggestContext = { query, command, cursorPosition, location, callbacks, context };
+    const statementEndAhead = isStatementEndAhead(ctx);
     const adjustKeywords = (keywords: KeywordItem[], at: SuggestContext) => {
-      const allowed = filterKeywordsByRoles(withoutUsedClauses(keywords, at), at);
+      const notAhead = statementEndAhead
+        ? keywords.filter(({ token }) => token !== 'SEMICOLON')
+        : keywords;
+      const allowed = filterKeywordsByRoles(withoutUsedClauses(notAhead, at), at);
       return spec.keywords ? spec.keywords(allowed, at) : allowed;
     };
 
@@ -170,7 +205,8 @@ export const createGenericAutocomplete =
       const expectsKeyword = [...location.expectedTokens].some((type) =>
         keywords.has(getTokenName(type))
       );
-      const completesSlot = isCompleteName(typedName(location), ctx);
+      const completesLiteral = await isCompleteLiteral(ctx, slotMatches);
+      const completesSlot = isCompleteName(typedName(location), ctx) || completesLiteral;
       // The word's token depends on the lexer mode, so it is read from the position after it.
       if (expectsKeyword || completesSlot) {
         const after = locateCursor(`${query.slice(0, cursorPosition)} `, cursorPosition + 1);
@@ -187,6 +223,10 @@ export const createGenericAutocomplete =
             : [];
         if (followUps.length) {
           return withoutDuplicates(followUps.map(toFollowUp));
+        }
+        // A whole literal nothing follows here, as `SET a = 123` before a `;`.
+        if (completesLiteral && !isNested) {
+          return [];
         }
         // A keyword typed in full that nothing listed follows, as `WITH` before `{`: only the
         // keywords fit the word, so the editor can complete it.
@@ -209,8 +249,16 @@ const suggestAt = async (
   adjustKeywords: (keywords: KeywordItem[], at: SuggestContext) => KeywordItem[]
 ): Promise<ISuggestionItem[]> => {
   const { location } = ctx;
+  // A value only the statement's `;` may follow ends it, as SET's `"_alias:*";`, unless the `;`
+  // is already there or the value fills an open string's quotes.
+  const endStatement = !isStatementEndAhead(ctx) && !location.partial?.text.startsWith('"');
   const slotItems = await Promise.all(
-    slotMatches.map(({ slot, definition }) => definition.provide(ctx, slot))
+    slotMatches.map(async ({ slot, definition }) => {
+      const items = await definition.provide(ctx, slot);
+      return endStatement && endsStatement(slot)
+        ? items.map((item) => ({ ...item, text: `${item.text};` }))
+        : items;
+    })
   );
   // An expression slot, or a token only expressions take, like an operator after `SORT (col) `
   // or `NULL` after `IS NOT `. Right after a value such as `(col)`, only what follows it.

@@ -45,6 +45,8 @@ import {
   none,
   optionNames,
   policies,
+  settingNames,
+  settingValues,
   stringSnippet,
   suggestedColumnName,
   wildcard,
@@ -147,6 +149,8 @@ const getListSites = ({ rule, stack, invokingStates }: ExpectedRule): CallSite[]
  * above the map with a map role, as `userAgentCommand>commandNamedParameters`. A map inside a
  * function or another map is not the command's.
  */
+const MAP_ROLE_KINDS: readonly string[] = ['map', 'setting_value'];
+
 const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
   const { stack } = slot;
   const mapIndex = stack.indexOf('mapExpression');
@@ -154,13 +158,13 @@ const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
     return undefined;
   }
   // The map itself, as FUSE's `WITH options=mapExpression`, or the rule calling it, as
-  // `commandNamedParameters`.
+  // `commandNamedParameters`. A setting's value may be a map of its parameters (SET).
   const site = [
     ...getCallSites(stack[mapIndex - 1], 'mapExpression'),
     ...getCallSites(stack[mapIndex - 2] ?? '', stack[mapIndex - 1]),
-  ].find((candidate) => getArgumentRole(candidate)?.kind === 'map');
+  ].find((candidate) => MAP_ROLE_KINDS.includes(getArgumentRole(candidate)?.kind ?? ''));
   const role = site && getArgumentRole(site);
-  if (!site || role?.kind !== 'map') {
+  if (!site || !role) {
     return undefined;
   }
   const nested = stack.indexOf('mapExpression', mapIndex + 1) >= 0;
@@ -395,12 +399,17 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
       return optionNames(role.allowedValues);
     case 'map':
       return mapEntries(site.rule, role.parameters);
+    case 'setting_value':
+      return settingValues();
     case 'entity':
       if (role.entityType === 'enrich_policy') {
         return policies();
       }
       if (role.entityType === 'lookup_index') {
         return lookupIndices();
+      }
+      if (role.entityType === 'setting') {
+        return settingNames();
       }
       return role.entityType === 'enrich_field' ? enrichFields() : none();
     default:
@@ -435,6 +444,32 @@ export const getRoleSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
     argument: `${rule}>${invokes}:${sites.map(({ state }) => state).join()}`,
     provide: merged(...providers),
   };
+};
+
+/**
+ * Whether only the statement's `;` may follow a value at the slot, as SET's value: its call
+ * ends `setField`, which only `;` follows in `setCommand`.
+ */
+export const endsStatement = ({ rule, stack, invokingStates }: ExpectedRule): boolean => {
+  let invokes = rule;
+  for (let index = stack.length - 1; index >= 0; index--) {
+    const state = invokingStates?.[index + 1];
+    const sites = getCallSites(stack[index], invokes).filter(
+      (site) => state === undefined || site.state === state
+    );
+    const follows = new Set(sites.flatMap(({ followedBy }) => followedBy));
+    if (follows.size !== 1) {
+      return false;
+    }
+    if (follows.has('SEMICOLON')) {
+      return true;
+    }
+    if (!follows.has(RULE_END)) {
+      return false;
+    }
+    invokes = stack[index];
+  }
+  return false;
 };
 
 /**

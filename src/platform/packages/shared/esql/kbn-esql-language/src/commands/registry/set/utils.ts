@@ -7,12 +7,9 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { i18n } from '@kbn/i18n';
-import type { ESQLAstItem } from '@elastic/esql/types';
-import { isMap } from '@elastic/esql';
 import { UnmappedFieldsStrategy, type ISuggestionItem } from '../types';
 import { SuggestionCategory } from '../../../..';
 import type { MapParameters } from '../../definitions/utils/autocomplete/map_expression';
-import { getCommandMapExpressionSuggestions } from '../../definitions/utils/autocomplete/map_expression';
 import { settings } from '../../definitions/generated/settings';
 import { confidenceLevelValueItems, numOfRowsValueItems } from '../complete_items';
 import { parseMapParams } from '../../definitions/utils/maps';
@@ -88,21 +85,19 @@ const getUnmappedFieldsCompletionItems = (): ISuggestionItem[] => {
 };
 
 type ApproximateSetting = (typeof settings)[0] & { mapParams: string };
-const getApproximateCompletionItems = (
-  innerText: string,
-  settingRightSide: ESQLAstItem | null
-): ISuggestionItem[] => {
-  if (isMap(settingRightSide)) {
-    const approximateSetting = settings.find(
-      (s) => s.name === Settings.APPROXIMATION
-    ) as ApproximateSetting;
-    const parsedParameters = parseMapParams(approximateSetting?.mapParams || '');
-    const availableParameters: MapParameters = { ...parsedParameters };
-    availableParameters.confidence_level.suggestions = confidenceLevelValueItems;
-    availableParameters.rows.suggestions = numOfRowsValueItems;
-    return getCommandMapExpressionSuggestions(innerText, availableParameters);
-  }
 
+/** The parameters of `approximation`'s map, with example values. */
+const getApproximationMapParameters = (): MapParameters => {
+  const approximateSetting = settings.find(
+    (s) => s.name === Settings.APPROXIMATION
+  ) as ApproximateSetting;
+  const parameters: MapParameters = { ...parseMapParams(approximateSetting?.mapParams || '') };
+  parameters.confidence_level.suggestions = confidenceLevelValueItems;
+  parameters.rows.suggestions = numOfRowsValueItems;
+  return parameters;
+};
+
+const getApproximationValueItems = (): ISuggestionItem[] => {
   return [
     {
       label: 'false',
@@ -148,17 +143,20 @@ const getApproximateCompletionItems = (
   ];
 };
 
-const COMPLETIONS_BY_SETTING_NAME: Record<string, Function> = {
+const VALUE_ITEMS_BY_SETTING_NAME: Readonly<Record<string, () => ISuggestionItem[]>> = {
   [Settings.PROJECT_ROUTING]: getProjectRoutingCommonCompletionItems,
   [Settings.UNMAPPED_FIELDS]: getUnmappedFieldsCompletionItems,
-  [Settings.APPROXIMATION]: getApproximateCompletionItems,
+  [Settings.APPROXIMATION]: getApproximationValueItems,
 };
 
-export const getCompletionItemsBySettingName: (
-  settingName: string,
-  innerText: string,
-  settingRightSide: ESQLAstItem | null
-) => ISuggestionItem[] = (settingName, innerText, settingRightSide) =>
-  COMPLETIONS_BY_SETTING_NAME[settingName]
-    ? COMPLETIONS_BY_SETTING_NAME[settingName](innerText, settingRightSide)
-    : [];
+const MAP_PARAMETERS_BY_SETTING_NAME: Readonly<Record<string, () => MapParameters>> = {
+  [Settings.APPROXIMATION]: getApproximationMapParameters,
+};
+
+/** The values the editor offers for a setting, unquoted; none for an unknown setting. */
+export const getSettingValueItems = (settingName: string): ISuggestionItem[] =>
+  VALUE_ITEMS_BY_SETTING_NAME[settingName]?.() ?? [];
+
+/** The parameters of a setting that takes a map, as `approximation`. */
+export const getSettingMapParameters = (settingName: string): MapParameters | undefined =>
+  MAP_PARAMETERS_BY_SETTING_NAME[settingName]?.();
