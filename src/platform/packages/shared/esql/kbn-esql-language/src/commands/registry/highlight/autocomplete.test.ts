@@ -22,7 +22,7 @@ import {
 import { expectSuggestions, suggest } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
 
-const QUERY_LITERAL = stringSnippet('Your search query').text;
+const QUERY_LITERAL = stringSnippet('The text to highlight').text;
 
 interface QueryComponents {
   prefix?: string;

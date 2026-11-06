@@ -300,7 +300,10 @@ const patternDetail = () =>
     defaultMessage: 'A pattern string',
   });
 
-/** Example values for a string, by what it holds: a DISSECT or GROK pattern, or a separator. */
+/**
+ * Example values for a string, by what it holds: a DISSECT or GROK pattern, a separator, or the
+ * text of a prompt, a search or a HIGHLIGHT query.
+ */
 const stringExamples = (format: string | undefined): SlotProvider => {
   switch (format) {
     case 'dissect_pattern':
@@ -316,6 +319,14 @@ const stringExamples = (format: string | undefined): SlotProvider => {
       return fixed([stringSnippet('Your prompt to the LLM.')]);
     case 'search_query':
       return fixed([stringSnippet('Your search query')]);
+    case 'highlight_text':
+      return fixed([
+        stringSnippet(
+          i18n.translate('esqlLanguage.commands.highlight.autocomplete.queryTextPlaceholder', {
+            defaultMessage: 'The text to highlight',
+          })
+        ),
+      ]);
     default:
       return none();
   }

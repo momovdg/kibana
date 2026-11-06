@@ -116,7 +116,7 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'highlightCommand.queryExpression': {
     kind: 'expression',
     types: ['boolean'],
-    constraints: { format: 'search_query', fullTextQuery: 'true' },
+    constraints: { format: 'highlight_text', fullTextQuery: 'true' },
   },
   // `*` alone stands for every text and keyword column.
   'highlightCommand.highlightFields': {
