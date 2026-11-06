@@ -214,6 +214,14 @@ describe('attachReplacementRanges', () => {
     expect(result[1].rangeToReplace).toEqual({ start: 43, end: 52 });
   });
 
+  it('ignores an overlap that covers only part of the word typed', () => {
+    // `vec` ends with the `c` that starts `col0 = `: replacing only it would give `vecol0 = `.
+    const suggestions = [makeSuggestion('col0 = ')];
+    const result = attachRanges('FROM a | URI_PARTS vec', suggestions);
+
+    expect(result[0].rangeToReplace).toEqual({ start: 19, end: 22 });
+  });
+
   it('falls back to prefix range when no overlap exists', () => {
     const suggestions = [makeSuggestion('field1')];
     const result = attachRanges('FROM a | WHERE x > ', suggestions);
