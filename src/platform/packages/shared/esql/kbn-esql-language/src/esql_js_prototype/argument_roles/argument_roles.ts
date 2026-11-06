@@ -140,6 +140,12 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
   'limitByGroupKey>booleanExpression': { kind: 'expression' },
+  // A JOIN condition reads the columns of the input and of the lookup index.
+  'joinCondition>booleanExpression': {
+    kind: 'expression',
+    types: ['boolean'],
+    constraints: { columnsOf: 'joinTarget.index' },
+  },
   // `name = expression` in a field list (EVAL, STATS, RERANK's ON): the name is a new column.
   'field>qualifiedName': { kind: 'new_column' },
 

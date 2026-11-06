@@ -8,61 +8,12 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ESQLFieldWithMetadata } from '@kbn/esql-types';
-import { within, isOptionNode } from '@elastic/esql';
-import type {
-  ESQLAstAllCommands,
-  ESQLAstJoinCommand,
-  ESQLCommand,
-  ESQLCommandOption,
-  ESQLSingleAstItem,
-} from '@elastic/esql/types';
+import { isOptionNode } from '@elastic/esql';
+import type { ESQLAstJoinCommand, ESQLCommand, ESQLCommandOption } from '@elastic/esql/types';
 import { buildFieldsDefinitionsWithMetadata } from '../../definitions/utils';
-
-import type { ICommand } from '../registry';
 import type { GetColumnsByTypeFn, ICommandContext, ISuggestionItem } from '../types';
-import type { JoinCommandPosition, JoinStaticPosition } from './types';
 import { SuggestionCategory } from '../../../language/autocomplete/utils/sorting/types';
 import { getLookupJoinSource } from '../../definitions/utils/sources';
-import { endsWithComma } from '../../definitions/utils/regex';
-
-const REGEX =
-  /^(?<type>\w+((?<after_type>\s+((?<mnemonic>(JOIN|JOI|JO|J)((?<after_mnemonic>\s+((?<index>\S+((?<after_index>\s+(?<as>(AS|A))?(?<after_as>\s+(((?<alias>\S+)?(?<after_alias>\s+)?)?))?((?<on>(ON|O))?))?))?))?))?))?))?/i;
-
-const positions: JoinStaticPosition[] = [
-  'on',
-  'after_alias',
-  'alias',
-  'after_as',
-  'as',
-  'after_index',
-  'index',
-  'after_mnemonic',
-  'mnemonic',
-  'after_type',
-  'type',
-];
-
-export const getFullCommandMnemonics = (
-  command: ICommand
-): Array<[mnemonic: string, description: string]> => {
-  const types = command.metadata.types ?? [];
-
-  if (!types.length) {
-    return [[command.name, command.metadata.description]];
-  }
-
-  return types.map((type) => [
-    `${type.name.toUpperCase()} ${command.name.toUpperCase()}`,
-    type.description ?? command.metadata.description,
-  ]);
-};
-
-// facilitates fast checks for the existence of fields in the lookup index
-// by caching the fields of the last lookup index pattern
-const lookupIndexFieldSet = {
-  set: new Set<string>(),
-  key: '',
-};
 
 export const getLookupFields = async (
   command: ESQLCommand,
@@ -73,86 +24,13 @@ export const getLookupFields = async (
     return [];
   }
   const joinTarget = getLookupJoinSource(command as ESQLAstJoinCommand);
-  const columns = await getColumnsForQuery(`FROM ${joinTarget}`);
-
-  if (joinTarget && lookupIndexFieldSet.key !== joinTarget) {
-    lookupIndexFieldSet.set = new Set<string>(columns.map((c) => c.name));
-    lookupIndexFieldSet.key = joinTarget;
-  }
-
-  return columns;
-};
-
-/** Returns the position based on regex matching. */
-export const getStaticPosition = (text: string): JoinStaticPosition => {
-  const match = text.match(REGEX);
-
-  if (!match || !match.groups) {
-    return 'none';
-  }
-
-  let pos: JoinStaticPosition = 'none';
-
-  for (const position of positions) {
-    if (match.groups[position]) {
-      pos = position;
-      break;
-    }
-  }
-
-  return pos;
+  return getColumnsForQuery(`FROM ${joinTarget}`);
 };
 
 export const getOnOption = (command: ESQLAstJoinCommand): ESQLCommandOption | undefined => {
   return command.args?.find((arg) => isOptionNode(arg) && arg.name === 'on') as
     | ESQLCommandOption
     | undefined;
-};
-
-export const getPosition = (
-  text: string,
-  command: ESQLAstAllCommands,
-  cursorPosition: number
-): JoinCommandPosition => {
-  const pos = getStaticPosition(text);
-  const joinCommand = command as ESQLAstJoinCommand;
-  const onOption = getOnOption(joinCommand);
-
-  if (onOption) {
-    const expressions = onOption.args as ESQLSingleAstItem[];
-
-    // No expressions yet or starting new expression after comma
-    if (expressions.length === 0 || endsWithComma(text)) {
-      return { pos: 'on_expression', expression: undefined, isExpressionComplete: false };
-    }
-
-    const lastExpression = expressions[expressions.length - 1];
-
-    // Cursor within incomplete expression
-    if (
-      lastExpression?.incomplete &&
-      lastExpression.location &&
-      within(cursorPosition, lastExpression)
-    ) {
-      return { pos: 'on_expression', expression: lastExpression, isExpressionComplete: false };
-    }
-
-    // Cursor within any complete expression
-    for (const expr of expressions) {
-      if (expr.location && within(cursorPosition, expr)) {
-        return { pos: 'on_expression', expression: expr, isExpressionComplete: !expr.incomplete };
-      }
-    }
-
-    // Cursor after all expressions
-    return {
-      pos: 'on_expression',
-      expression: lastExpression,
-      isExpressionComplete: !lastExpression?.incomplete,
-    };
-  }
-
-  return { pos };
 };
 
 /**
@@ -273,13 +151,4 @@ export const createEnrichedGetByType = async (
 
     return [...markedSourceSuggestions, ...uniqueLookupSuggestions];
   };
-};
-
-// Check if a field is common (exists in both source and lookup tables)
-export const isCommonField = (fieldName: string, context?: ICommandContext): boolean => {
-  if (!context?.columns) {
-    return false;
-  }
-
-  return context.columns.has(fieldName) && lookupIndexFieldSet.set.has(fieldName);
 };

@@ -313,6 +313,16 @@ export const withCompleteItem: ISuggestionItem = withAutoSuggest({
   category: SuggestionCategory.LANGUAGE_KEYWORD,
 });
 
+/** `JOIN` after the join type, e.g. `LOOKUP `. */
+export const joinKeywordCompleteItem: ISuggestionItem = withAutoSuggest({
+  label: 'JOIN',
+  text: 'JOIN ',
+  detail: i18n.translate('esqlLanguage.esql.definitions.joinLookupDoc', {
+    defaultMessage: 'Join with a "lookup" mode index',
+  }),
+  kind: 'Keyword',
+});
+
 export const joinOnCompleteItem: ISuggestionItem = withAutoSuggest({
   label: 'ON',
   text: 'ON ',
