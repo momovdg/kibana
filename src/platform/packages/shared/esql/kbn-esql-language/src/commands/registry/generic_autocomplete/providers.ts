@@ -84,13 +84,22 @@ const optionAtCursor = ({
 
 /**
  * The columns that are already whole items of the command's list before the word being typed,
- * e.g. `a` and `b` in `SORT a ASC, b, `; they are not suggested again.
+ * e.g. `a` and `b` in `SORT a ASC, b, `; they are not suggested again. In a list of columns, an
+ * assignment's column counts too, as `message` in `DENSE_VECTOR vec = message, `; expressions
+ * may use it again.
  */
-export const listedColumns = (ctx: SuggestContext): string[] => {
+export const listedColumns = (
+  ctx: SuggestContext,
+  { assignedColumns = false }: { assignedColumns?: boolean } = {}
+): string[] => {
   const end = ctx.location.partial?.start ?? ctx.cursorPosition;
   const names: string[] = [];
   for (const arg of argsAtCursor(ctx)) {
-    const item = !Array.isArray(arg) && arg.type === 'order' ? arg.args[0] : arg;
+    const listed = !Array.isArray(arg) && arg.type === 'order' ? arg.args[0] : arg;
+    const item =
+      assignedColumns && !Array.isArray(listed) && isAssignment(listed)
+        ? getAssignmentExpressionRoot(listed)
+        : listed;
     if (isColumn(item) && item.location.max < end) {
       names.push(item.parts.join('.'));
     }
@@ -109,7 +118,7 @@ const isTypingString = ({ location }: SuggestContext): boolean =>
 export const columns =
   ({
     types = 'any',
-    ignored = listedColumns,
+    ignored = (ctx) => listedColumns(ctx, { assignedColumns: true }),
     options,
   }: {
     types?: string | string[];

@@ -184,9 +184,21 @@ describe('DENSE_VECTOR Autocomplete', () => {
     });
 
     test('suggests more columns after a comma following a named target, as the grammar does', async () => {
+      // The assigned column is listed already.
       await expectDenseVectorSuggestions(
         'from a | dense_vector vec = textField, ',
-        { contains: ['keywordField'] },
+        { contains: ['keywordField'], notContains: ['textField'] },
+        mockCallbacks
+      );
+    });
+
+    test('suggests only columns right after the target, where a field has to follow', async () => {
+      await expectDenseVectorSuggestions(
+        'from a | dense_vector vec = ',
+        {
+          contains: ['textField', 'keywordField'],
+          notContains: [withCompleteItem.text, pipeCompleteItem.text, newLineCompleteItem.text],
+        },
         mockCallbacks
       );
     });
@@ -241,7 +253,8 @@ describe('DENSE_VECTOR Autocomplete', () => {
         'from a | dense_vector suffix = "_dv" ON ',
         {
           contains: ['textField', 'keywordField'],
-          notContains: ['integerField'],
+          // A field has to follow ON, even where the grammar lets the command end.
+          notContains: ['integerField', withCompleteItem.text, pipeCompleteItem.text],
         },
         mockCallbacks
       );
