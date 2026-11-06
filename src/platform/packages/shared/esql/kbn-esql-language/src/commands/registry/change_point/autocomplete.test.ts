@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -68,21 +68,21 @@ describe('CHANGE_POINT Autocomplete', () => {
       expectedNumericFields.map((name) => ({ label: name, text: name }))
     );
     await changePointExpectSuggestions(
-      `from a | change_point /`,
+      `from a | change_point `,
       expectedNumericFields,
       mockCallbacks
     );
   });
 
   it('suggests ON after value column', async () => {
-    await changePointExpectSuggestions(`from a | change_point value /`, ['\n', ON, AS, BY, PIPE]);
+    await changePointExpectSuggestions(`from a | change_point value `, ['\n', ON, AS, BY, PIPE]);
   });
 
   it('suggests fields after ON', async () => {
     const expectedFields = getFieldNamesByType('any');
-    await changePointExpectSuggestions(`from a | change_point value on /`, expectedFields);
+    await changePointExpectSuggestions(`from a | change_point value on `, expectedFields);
 
-    await changePointExpectSuggestions(`from a | change_point value on fi/`, expectedFields);
+    await changePointExpectSuggestions(`from a | change_point value on fi`, expectedFields);
   });
 
   describe('AS', () => {
@@ -99,7 +99,7 @@ describe('CHANGE_POINT Autocomplete', () => {
       await changePointExpectSuggestions(`from a | change_point value as `, ['changePointType, ']);
 
       await changePointExpectSuggestions(
-        `from a | change_point value on field as changePointType,/`,
+        `from a | change_point value on field as changePointType,`,
         ['pValue']
       );
     });
@@ -110,14 +110,14 @@ describe('CHANGE_POINT Autocomplete', () => {
       ]);
 
       await changePointExpectSuggestions(
-        `from a | change_point value on field as changePointType,/`,
+        `from a | change_point value on field as changePointType,`,
         ['pValue']
       );
     });
 
     it('suggests a default pValue column name', async () => {
       await changePointExpectSuggestions(
-        `from a | change_point value on field as changePointType,pValu/`,
+        `from a | change_point value on field as changePointType,pValu`,
         ['pValue']
       );
     });
