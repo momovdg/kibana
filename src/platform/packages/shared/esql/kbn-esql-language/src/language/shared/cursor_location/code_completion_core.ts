@@ -145,7 +145,11 @@ export interface CandidatesCollection {
   tokens: Map<number, TokenList>;
   /** The call stack under which each token was first collected. */
   tokenCallStacks: Map<number, RuleWithStartToken[]>;
-  rules: Map<number, CandidateRule>;
+  /**
+   * For each rule, one candidate per call path, as `qualifiedName` both as DENSE_VECTOR's target
+   * name and as its first column at `DENSE_VECTOR `.
+   */
+  rules: Map<number, CandidateRule[]>;
   /** Whether the start rule can end right before the caret, without consuming it. */
   startRuleCanEndAtCaret: boolean;
 }
@@ -301,19 +305,18 @@ export class CodeCompletionCore {
 
     const callStack = stack.slice(0, i);
     const path = callStack.map((entry) => entry.ruleIndex);
-    let addNew = true;
-    for (const [candidateRule, { ruleList }] of this.candidates.rules) {
-      if (candidateRule !== ruleIndex || ruleList.length !== path.length) {
-        continue;
-      }
-      if (path.every((value, j) => value === ruleList[j])) {
-        addNew = false;
-        break;
-      }
-    }
+    const candidates = this.candidates.rules.get(ruleIndex) ?? [];
+    const known = candidates.some(
+      ({ ruleList }) =>
+        ruleList.length === path.length && path.every((value, j) => value === ruleList[j])
+    );
 
-    if (addNew) {
-      this.candidates.rules.set(ruleIndex, { startTokenIndex, ruleList: path, callStack });
+    // Unlike c3, which keeps one candidate per rule, every call path is kept.
+    if (!known) {
+      this.candidates.rules.set(ruleIndex, [
+        ...candidates,
+        { startTokenIndex, ruleList: path, callStack },
+      ]);
     }
 
     return true;

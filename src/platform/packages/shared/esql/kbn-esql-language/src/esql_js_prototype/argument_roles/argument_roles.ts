@@ -91,6 +91,8 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
   'limitByGroupKey>booleanExpression': { kind: 'expression' },
+  // `name = expression` in a field list (EVAL, STATS, RERANK's ON): the name is a new column.
+  'field>qualifiedName': { kind: 'new_column' },
 
   'dissectCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
   'dissectCommand>string': {
@@ -157,8 +159,11 @@ export const UNCLASSIFIED_ARGUMENTS: Readonly<Record<string, string>> = {
   'highlightCommand.queryExpression': 'check with HIGHLIGHT',
   'highlightCommand.highlightFields': 'check with HIGHLIGHT',
   'mmrCommand.queryVector': 'a vector or expression; check with MMR',
+  'highlightCommand.prefix': 'check with HIGHLIGHT',
   'denseVectorNaming.targetField': 'check with DENSE_VECTOR',
   'denseVectorNaming.suffixKeyword': 'check with DENSE_VECTOR',
+  'denseVectorNaming.suffix': 'check with DENSE_VECTOR',
+  'denseVectorNaming.literalInput': 'check with DENSE_VECTOR',
 };
 
 /** Labels inside expressions, names and PROMQL: not command arguments. */

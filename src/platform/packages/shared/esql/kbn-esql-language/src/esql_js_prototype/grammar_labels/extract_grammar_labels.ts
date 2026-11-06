@@ -134,9 +134,11 @@ export const extractGrammarLabels = (
 ): GrammarLabel[] => {
   const labels: GrammarLabel[] = [];
 
-  for (const [, stateNumber, label, invokes] of parserSource.matchAll(LABELLED_RULE_CALL)) {
+  for (const [, stateNumber, label, method] of parserSource.matchAll(LABELLED_RULE_CALL)) {
     const state = grammar.atn.states[Number(stateNumber)];
     const call = state?.transitions.find((t) => t.serializationType === RULE_TRANSITION);
+    // ANTLR appends `_` to a rule's method whose name is reserved: `string` is `string_()`.
+    const invokes = grammar.ruleNames.includes(method) ? method : method.replace(/_$/, '');
     // Only rule calls; token labels such as `operator` are left out.
     if (!call || grammar.ruleNames[call.target.ruleIndex] !== invokes) {
       continue;
