@@ -1322,7 +1322,8 @@ describe('autocomplete', () => {
 
     testSuggestions(
       'FROM kibana_sample_data_logs | WHERE agent NOT IN (FROM kibana_sample_data_logs)/',
-      ['\n', 'AND $0', 'OR $0', '| ']
+      // Right after the `)`, what follows gets a leading space.
+      ['\n', ' AND $0', ' OR $0', ' | ']
     );
 
     it.each([

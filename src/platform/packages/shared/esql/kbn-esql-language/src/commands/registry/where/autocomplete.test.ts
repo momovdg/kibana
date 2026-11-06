@@ -8,7 +8,7 @@
  */
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
 import { Location } from '../types';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   DATE_DIFF_TIME_UNITS,
   expectSuggestions,
@@ -43,6 +43,13 @@ export const EXPECTED_COMPARISON_WITH_TEXT_FIELD_SUGGESTIONS = [
     scalar: true,
   }),
 ];
+
+/**
+ * A function or literal picked after an operator is followed by a space, opening what comes
+ * next. Columns get it from `getByType`, which these tests mock.
+ */
+const afterOperator = (texts: string[]): string[] =>
+  texts.map((text) => (text === '' || text.endsWith(' ') ? text : `${text} `));
 
 const whereExpectSuggestions = (
   query: string,
@@ -180,12 +187,14 @@ describe('WHERE Autocomplete', () => {
       const expectedFields = getFieldNamesByType(['date', 'date_nanos']);
       mockFieldsWithTypes(mockCallbacks, expectedFields);
       const expectedComparisonWithDateSuggestions = [
-        ...getDateLiterals().map((item) => item.text),
+        ...afterOperator(getDateLiterals().map((item) => item.text)),
         ...getFieldNamesByType(['date']),
         ...getFieldNamesByType(['date_nanos']),
-        ...getFunctionSignaturesByReturnType(Location.WHERE, ['date', 'date_nanos'], {
-          scalar: true,
-        }),
+        ...afterOperator(
+          getFunctionSignaturesByReturnType(Location.WHERE, ['date', 'date_nanos'], {
+            scalar: true,
+          })
+        ),
       ];
       await whereExpectSuggestions(
         'from a | where dateField == ',
@@ -211,12 +220,30 @@ describe('WHERE Autocomplete', () => {
       mockFieldsWithTypes(mockCallbacks, expectedFields);
       await whereExpectSuggestions(
         'from a | where textField >= ',
-        EXPECTED_COMPARISON_WITH_TEXT_FIELD_SUGGESTIONS,
+        [
+          ...getFieldNamesByType(['text', 'keyword', 'ip', 'version']),
+          ...afterOperator(
+            getFunctionSignaturesByReturnType(
+              Location.WHERE,
+              ['text', 'keyword', 'ip', 'version'],
+              { scalar: true }
+            )
+          ),
+        ],
         mockCallbacks
       );
       await whereExpectSuggestions(
         'from a | where textField >= textFiel',
-        EXPECTED_COMPARISON_WITH_TEXT_FIELD_SUGGESTIONS,
+        [
+          ...getFieldNamesByType(['text', 'keyword', 'ip', 'version']),
+          ...afterOperator(
+            getFunctionSignaturesByReturnType(
+              Location.WHERE,
+              ['text', 'keyword', 'ip', 'version'],
+              { scalar: true }
+            )
+          ),
+        ],
         mockCallbacks
       );
     });
@@ -225,7 +252,9 @@ describe('WHERE Autocomplete', () => {
       for (const op of ['and', 'or']) {
         await whereExpectSuggestions(`from a | where keywordField >= keywordField ${op} `, [
           ...getFieldNamesByType('any'),
-          ...getFunctionSignaturesByReturnType(Location.WHERE, 'any', { scalar: true }),
+          ...afterOperator(
+            getFunctionSignaturesByReturnType(Location.WHERE, 'any', { scalar: true })
+          ),
         ]);
         await whereExpectSuggestions(
           `from a | where keywordField >= keywordField ${op} doubleField `,
@@ -243,7 +272,9 @@ describe('WHERE Autocomplete', () => {
         `from a | where doubleField < 1 AND doubleField > 2 OR doubleField == 3 AND `,
         [
           ...getFieldNamesByType('any'),
-          ...getFunctionSignaturesByReturnType(Location.WHERE, 'any', { scalar: true }),
+          ...afterOperator(
+            getFunctionSignaturesByReturnType(Location.WHERE, 'any', { scalar: true })
+          ),
         ]
       );
     });
@@ -253,12 +284,14 @@ describe('WHERE Autocomplete', () => {
         `from a | where CASE(doubleField < 1 AND doubleField > 2 OR doubleField == 3 AND `,
         [
           ...getFieldNamesByType('any'),
-          ...getFunctionSignaturesByReturnType(
-            Location.WHERE,
-            'any',
-            { scalar: true },
-            undefined,
-            FULL_TEXT_SEARCH_DEFINITIONS
+          ...afterOperator(
+            getFunctionSignaturesByReturnType(
+              Location.WHERE,
+              'any',
+              { scalar: true },
+              undefined,
+              FULL_TEXT_SEARCH_DEFINITIONS
+            )
           ),
         ]
       );
@@ -272,9 +305,11 @@ describe('WHERE Autocomplete', () => {
           `from a | where keywordField >= keywordField ${op} doubleField == `,
           [
             ...getFieldNamesByType(ESQL_COMMON_NUMERIC_TYPES),
-            ...getFunctionSignaturesByReturnType(Location.WHERE, ESQL_COMMON_NUMERIC_TYPES, {
-              scalar: true,
-            }),
+            ...afterOperator(
+              getFunctionSignaturesByReturnType(Location.WHERE, ESQL_COMMON_NUMERIC_TYPES, {
+                scalar: true,
+              })
+            ),
           ],
           mockCallbacks
         );
@@ -437,14 +472,17 @@ describe('WHERE Autocomplete', () => {
       );
     });
 
+    // Right after the `)`, what follows gets a leading space.
     test.each([
-      'from index | WHERE (doubleField in (FROM index | KEEP doubleField))',
-      'from index | WHERE (doubleField not in (FROM index | KEEP doubleField)) ',
-    ])('suggests null checks after a parenthesized IN subquery (%s)', async (query) => {
+      ['from index | WHERE (doubleField in (FROM index | KEEP doubleField))', ' '],
+      ['from index | WHERE (doubleField not in (FROM index | KEEP doubleField)) ', ''],
+    ])('suggests null checks after a parenthesized IN subquery (%s)', async (query, space) => {
       await whereExpectSuggestions(query, [
         '\n',
-        ...getOperatorSuggestions([...logicalOperators, ...nullCheckOperators]),
-        '| ',
+        ...getOperatorSuggestions([...logicalOperators, ...nullCheckOperators]).map(
+          (text) => `${space}${text}`
+        ),
+        `${space}| `,
       ]);
     });
 
@@ -470,6 +508,46 @@ describe('WHERE Autocomplete', () => {
           [':']
         ),
       ]);
+    });
+
+    // The command may end only after a whole boolean.
+    test('no pipe or new line after an expression that is not a boolean', async () => {
+      const texts = (await whereSuggest('from index | WHERE keywordField ')).map(
+        ({ text }) => text
+      );
+      expect(texts).not.toContain('| ');
+      expect(texts).not.toContain('\n');
+    });
+
+    test('operators continue a column typed in full, keeping it', async () => {
+      const texts = (
+        await suggest(
+          'from index | WHERE keywordField',
+          mockContext,
+          'where',
+          mockCallbacks,
+          autocomplete
+        )
+      ).map(({ text }) => text);
+      expect(texts).toEqual(
+        expect.arrayContaining(['keywordField == $0', 'keywordField IS NULL', 'keywordField : $0'])
+      );
+      expect(texts).not.toContain('keywordField | ');
+    });
+
+    test('pipe and new line after a boolean column typed in full', async () => {
+      const texts = (
+        await suggest(
+          'from index | WHERE booleanField',
+          mockContext,
+          'where',
+          mockCallbacks,
+          autocomplete
+        )
+      ).map(({ text }) => text);
+      expect(texts).toEqual(
+        expect.arrayContaining(['booleanField AND $0', 'booleanField | ', 'booleanField\n'])
+      );
     });
 
     test('pipe suggestion after complete expression', async () => {

@@ -183,16 +183,31 @@ const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
  */
 export const getExpressionOptions = (
   location: CursorLocation
-): { types?: string[]; valuesControl: boolean; noColumns: boolean; lookupColumns: boolean } => {
-  const role = getExpressionRole(location)?.role;
+): {
+  types?: string[];
+  valuesControl: boolean;
+  noColumns: boolean;
+  lookupColumns: boolean;
+  subqueries: boolean;
+  completeAsBoolean: boolean;
+} => {
+  const role = getExpressionRole(location)?.role ?? getTokenExpressionRole(location);
+  // The whole argument may hold subqueries, also inside a function call, as `CASE(a IN (FROM`.
+  const argumentRole =
+    getExpressionRole(location, { throughFunctions: true })?.role ??
+    getTokenExpressionRole(location, { throughFunctions: true });
   return {
-    types: role?.types,
+    types: argumentRole?.types,
     valuesControl: Boolean(role?.constraints?.format),
     // A constant, or a full-text search, is never a bare column.
     noColumns:
       role?.constraints?.constantOnly === 'true' || role?.constraints?.fullTextQuery === 'true',
     // A JOIN condition also reads the lookup index's columns.
     lookupColumns: role?.constraints?.columnsOf === 'joinTarget.index',
+    // Subqueries as operands, as WHERE's `a IN (FROM b | KEEP a)`.
+    subqueries: argumentRole?.constraints?.subqueries === 'true',
+    // What follows the argument comes once it is a whole boolean, as WHERE's pipe.
+    completeAsBoolean: role?.constraints?.complete === 'boolean',
   };
 };
 
@@ -201,9 +216,10 @@ export const getExpressionOptions = (
  * out of the slot until a function call, e.g. RERANK's `ON` list from `RERANK "q" ON a, b = `.
  * `startsArgument`: the slot starts the whole argument, as at `COMPLETION `.
  */
-const getExpressionRole = ({
-  expectedRules,
-}: CursorLocation):
+const getExpressionRole = (
+  { expectedRules }: CursorLocation,
+  { throughFunctions = false }: { throughFunctions?: boolean } = {}
+):
   | {
       role: Extract<ArgumentRole, { kind: 'expression' }>;
       slot: ExpectedRule;
@@ -216,7 +232,7 @@ const getExpressionRole = ({
     }
     const rules = [...slot.stack, slot.rule];
     for (let index = rules.length - 1; index > 0; index--) {
-      if (rules[index] === 'functionExpression') {
+      if (rules[index] === 'functionExpression' && !throughFunctions) {
         break;
       }
       const role = getCallSites(rules[index - 1], rules[index])
@@ -226,6 +242,31 @@ const getExpressionRole = ({
       if (role?.kind === 'expression') {
         const startsArgument = !slot.continuation && rules.length - 1 - index <= slot.startsRules;
         return { role, slot, startsArgument };
+      }
+    }
+  }
+  return undefined;
+};
+
+/**
+ * The expression role of the argument an expected token is in, where no expression slot is
+ * expected, as the `(` after WHERE's `a IN `.
+ */
+const getTokenExpressionRole = (
+  { expectedTokens, tokenStacks }: CursorLocation,
+  { throughFunctions = false }: { throughFunctions?: boolean } = {}
+): Extract<ArgumentRole, { kind: 'expression' }> | undefined => {
+  for (const type of expectedTokens) {
+    const rules = tokenStacks.get(type)?.rules ?? [];
+    for (let index = rules.length - 1; index > 0; index--) {
+      if (rules[index] === 'functionExpression' && !throughFunctions) {
+        break;
+      }
+      const role = getCallSites(rules[index - 1], rules[index])
+        .map(getArgumentRole)
+        .find((candidate) => candidate?.kind === 'expression');
+      if (role?.kind === 'expression') {
+        return role;
       }
     }
   }
