@@ -17,6 +17,8 @@ export interface MapParameter {
   values?: string[];
   /** The value Elasticsearch uses when the parameter is left out. */
   default?: string;
+  /** The value names a thing outside the query, e.g. an inference endpoint. */
+  entityType?: 'inference_endpoint';
 }
 
 /**
@@ -49,7 +51,10 @@ export type ArgumentRole =
   | { kind: 'option_name'; allowedValues: string[] }
   /** A map of named parameters, `{ "name": value, … }`, e.g. USER_AGENT's `WITH` options. */
   | { kind: 'map'; parameters: Record<string, MapParameter> }
-  /** An expression, filled by the expression grammar, of one of `types` when given. */
-  | { kind: 'expression'; types?: string[] }
+  /**
+   * An expression, filled by the expression grammar, of one of `types` when given. A `format`
+   * constraint says what a string there holds, e.g. a prompt to an LLM (`llm_prompt`).
+   */
+  | { kind: 'expression'; types?: string[]; constraints?: Record<string, string> }
   /** An aggregation, as in a function parameter's `{ kind: 'aggregation' }` hint. */
   | { kind: 'aggregation' };

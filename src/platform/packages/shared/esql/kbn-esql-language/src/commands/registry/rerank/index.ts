@@ -9,7 +9,6 @@
 
 import { i18n } from '@kbn/i18n';
 import type { ICommand, ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import { validate } from './validate';
 import type { ICommandContext } from '../types';
 import { columnsAfter } from './columns_after';
@@ -17,7 +16,6 @@ import { summary } from './summary';
 import { Commands } from '../../definitions/keywords';
 
 const rerankCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
   validate,
   columnsAfter,
   summary,

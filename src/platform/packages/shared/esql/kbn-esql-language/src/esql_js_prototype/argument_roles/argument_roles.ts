@@ -11,6 +11,11 @@ import type { ArgumentRole } from './types';
 /** The string column types, which DISSECT, GROK and the URI and domain commands read. */
 const STRING_TYPES = ['keyword', 'text'];
 
+/** The `WITH` parameters of the commands that call an inference endpoint. */
+const INFERENCE_PARAMETERS = {
+  inference_id: { type: 'keyword', entityType: 'inference_endpoint' as const },
+};
+
 /** The numeric column types, which CHANGE_POINT's value takes. */
 const NUMBER_TYPES = [
   'integer',
@@ -55,9 +60,18 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'changePointCommand.booleanExpression': { kind: 'expression' },
 
   'completionCommand.targetField': { kind: 'new_column' },
-  'completionCommand.prompt': { kind: 'expression' },
+  'completionCommand.prompt': {
+    kind: 'expression',
+    types: STRING_TYPES,
+    constraints: { format: 'llm_prompt' },
+  },
   'rerankCommand.targetField': { kind: 'new_column' },
-  'rerankCommand.queryText': { kind: 'constant', valueType: 'string' },
+  'rerankCommand.queryText': {
+    kind: 'constant',
+    valueType: 'string',
+    constraints: { format: 'search_query' },
+  },
+  'rerankCommand.rerankFields': { kind: 'expression', types: STRING_TYPES },
 
   'statsCommand.stats': { kind: 'aggregation' },
   'statsCommand.grouping': { kind: 'expression' },
@@ -112,6 +126,8 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
       properties: { type: 'keyword', list: true, values: ['name', 'version', 'os', 'device'] },
     },
   },
+  'completionCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
+  'rerankCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
   'ipLocationCommand>qualifiedName': { kind: 'new_column' },
   'ipLocationCommand>primaryExpression': { kind: 'expression', types: ['ip', ...STRING_TYPES] },
   'ipLocationCommand>commandNamedParameters': {
@@ -130,7 +146,6 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
  * to the generic autocomplete.
  */
 export const UNCLASSIFIED_ARGUMENTS: Readonly<Record<string, string>> = {
-  'rerankCommand.rerankFields': 'a list of fields or expressions; check with RERANK',
   'fuseCommand.fuseType': 'a fusion method (rrf, linear); check with FUSE',
   'fuseConfiguration.score': 'check with FUSE',
   'fuseConfiguration.key': 'check with FUSE',

@@ -197,6 +197,54 @@ describe('grammar roles', () => {
     });
   });
 
+  describe('a name that may start an assignment', () => {
+    it('reads an existing column as the expression, any other name as a new column', async () => {
+      expect(await texts('from a | completion textField ', 'completion')).toEqual(
+        ['\n', 'WITH { $0 }', '| '].sort()
+      );
+      expect(await texts('from a | completion newColumn ', 'completion')).toEqual(['= ']);
+      expect(await texts('from a | rerank "q" on newColumn ', 'rerank')).toEqual(['= ']);
+    });
+
+    it('reads a parameter as the expression', async () => {
+      expect(await texts('from a | completion ? ', 'completion')).not.toContain('= ');
+    });
+  });
+
+  describe('expression roles', () => {
+    it('offers the example for a formatted expression where the argument starts', async () => {
+      const items = await texts('from a | completion ', 'completion');
+      expect(items).toEqual(expect.arrayContaining(['"${0:Your prompt to the LLM.}"', ' = ']));
+      expect(await texts('from a | completion c = CONCAT(', 'completion')).not.toContain(
+        '"${0:Your prompt to the LLM.}"'
+      );
+    });
+
+    it('keeps functions whose type depends on their arguments, as CASE', async () => {
+      expect(await texts('from a | completion ', 'completion')).toContain('CASE($0)');
+    });
+
+    it('applies the role types to every item of the argument', async () => {
+      const second = await texts('from a | rerank "q" on textField, ', 'rerank');
+      expect(second).toContain('keywordField');
+      expect(second).not.toContain('integerField');
+    });
+
+    it('keeps the function as the root after a comma between its arguments', async () => {
+      const items = await texts('from a | completion c = CONCAT("a",', 'completion');
+      expect(items).toContain('keywordField');
+      expect(items).not.toContain('"${0:Your prompt to the LLM.}"');
+    });
+  });
+
+  describe('inference endpoints', () => {
+    it('offers the endpoints for an inference_id map parameter', async () => {
+      expect(await texts('from a | completion "p" WITH { "inference_id": ', 'completion')).toEqual([
+        '"inference_1"',
+      ]);
+    });
+  });
+
   describe('new column names', () => {
     it("offers Kibana's suggested name for a labelled position, with the comma that follows", async () => {
       expect(await texts('from a | change_point doubleField as ', 'change_point')).toEqual([
