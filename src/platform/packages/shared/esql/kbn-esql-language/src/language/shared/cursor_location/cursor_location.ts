@@ -20,6 +20,8 @@ import type { CommandSegment, CursorLocation, ExpectedRule } from './types';
 interface GrammarInfo {
   ruleNames: string[];
   symbolicNames: Array<string | null>;
+  /** Each token's fixed text in the grammar, quoted, e.g. `'group'`; null for names and values. */
+  literalNames: Array<string | null>;
   pipe: number;
   lp: number;
   dot: number;
@@ -38,7 +40,7 @@ const getGrammarInfo = (): GrammarInfo => {
     return grammarInfo;
   }
 
-  const { ruleNames, symbolicNames } = Parser.create('').parser;
+  const { ruleNames, symbolicNames, literalNames } = Parser.create('').parser;
   const ruleIndexes = (names: readonly string[]) =>
     new Set(names.map((name) => ruleNames.indexOf(name)));
   // Each lexer mode has its own comment tokens, e.g. `FROM_LINE_COMMENT`.
@@ -55,6 +57,7 @@ const getGrammarInfo = (): GrammarInfo => {
   grammarInfo = {
     ruleNames,
     symbolicNames,
+    literalNames,
     pipe: symbolicNames.indexOf('PIPE'),
     lp: symbolicNames.indexOf('LP'),
     dot: symbolicNames.indexOf('DOT'),
@@ -78,6 +81,37 @@ export const getTokenName = (type: number): string =>
   type === Token.EOF ? 'EOF' : getGrammarInfo().symbolicNames[type] ?? '';
 
 const isVisible = (token: Token) => token.channel === Token.DEFAULT_CHANNEL;
+
+/** The lexer's mode and the modes below it, where a token would start. */
+interface LexerModes {
+  mode: number;
+  stack: number[];
+}
+
+const lexableCache = new Map<string, boolean>();
+
+/**
+ * Whether the lexer, in `modes`, reads a token's fixed text as that token. The parser may
+ * expect a keyword the lexer cannot produce there, as `GROUP` after FUSE's `WITH { … }`, which
+ * leaves the FUSE mode: `group` would be a name.
+ */
+const isLexable = (type: number, { mode, stack }: LexerModes, grammar: GrammarInfo): boolean => {
+  const literal = grammar.literalNames[type];
+  if (!literal) {
+    return true;
+  }
+  const key = `${type}:${mode}:${stack.join()}`;
+  let lexable = lexableCache.get(key);
+  if (lexable === undefined) {
+    const { lexer } = Parser.create(literal.slice(1, -1));
+    const [bottom = mode, ...above] = [...stack, mode];
+    lexer.setMode(bottom);
+    above.forEach((next) => lexer.pushMode(next));
+    lexable = lexer.nextToken().type === type;
+    lexableCache.set(key, lexable);
+  }
+  return lexable;
+};
 
 /**
  * Lexer modes treat an unterminated `/*` differently (dropped, or lexed as `/` and `*`), so close
@@ -149,8 +183,9 @@ const emptyLocation = (offset: number, inComment: boolean): CursorLocation => ({
  */
 export const locateCursor = (text: string, offset: number): CursorLocation => {
   const textBeforeCursor = text.slice(0, offset);
-  const { parser, tokens } = Parser.create(textBeforeCursor);
+  const { lexer, parser, tokens } = Parser.create(textBeforeCursor);
   tokens.fill();
+  const modesAtEnd: LexerModes = { mode: lexer.getMode(), stack: [...lexer.getModeStack()] };
 
   const grammar = getGrammarInfo();
   const allTokens = tokens.tokens;
@@ -245,7 +280,16 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     candidates = core.collectCandidates(caret.tokenIndex);
   }
 
-  const expectedTokens = new Set(candidates.tokens.keys());
+  // Before a word being typed the modes are those at its start, which the word may change.
+  let modes = modesAtEnd;
+  if (caret !== eof) {
+    const { lexer: before } = Parser.create(textBeforeCursor.slice(0, caret.start));
+    before.getAllTokens();
+    modes = { mode: before.getMode(), stack: [...before.getModeStack()] };
+  }
+  const expectedTokens = new Set(
+    [...candidates.tokens.keys()].filter((type) => isLexable(type, modes, grammar))
+  );
   let commandCanEnd: boolean;
   if (anchorToken) {
     commandCanEnd = candidates.startRuleCanEndAtCaret;
@@ -260,7 +304,7 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
 
   const { ruleNames } = grammar;
   const expectedRules: ExpectedRule[] = [...candidates.rules].flatMap(([ruleIndex, entries]) =>
-    entries.map(({ callStack, startTokenIndex }) => {
+    entries.map(({ callStack, startTokenIndex, invokingState }) => {
       const continuation = startTokenIndex < caret.tokenIndex;
       const slotStart = allTokens[startTokenIndex].start;
       const enclosingStart = callStack.findLastIndex(
@@ -269,6 +313,7 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
       return {
         rule: ruleNames[ruleIndex],
         stack: callStack.map((entry) => ruleNames[entry.ruleIndex]),
+        invokingStates: [...callStack.map((entry) => entry.invokingState), invokingState],
         startsRules: callStack.length - 1 - enclosingStart,
         continuation,
         text:
@@ -299,15 +344,17 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
     ruleStack: sharedStack.map(({ ruleIndex }) => ruleNames[ruleIndex]),
     expectedTokens,
     tokenStacks: new Map(
-      [...candidates.tokenCallStacks].map(([type, callStack]) => [
-        type,
-        {
-          rules: callStack.map(({ ruleIndex }) => ruleNames[ruleIndex]),
-          startsCommand:
-            callStack.findLast(({ ruleIndex }) => ruleNames[ruleIndex].endsWith('Command'))
-              ?.startTokenIndex === caret.tokenIndex,
-        },
-      ])
+      [...candidates.tokenCallStacks]
+        .filter(([type]) => expectedTokens.has(type))
+        .map(([type, callStack]) => [
+          type,
+          {
+            rules: callStack.map(({ ruleIndex }) => ruleNames[ruleIndex]),
+            startsCommand:
+              callStack.findLast(({ ruleIndex }) => ruleNames[ruleIndex].endsWith('Command'))
+                ?.startTokenIndex === caret.tokenIndex,
+          },
+        ])
     ),
     expectedRules,
     commandCanEnd,

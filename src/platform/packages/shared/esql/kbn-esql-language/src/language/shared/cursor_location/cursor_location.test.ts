@@ -343,6 +343,44 @@ describe('locateCursor', () => {
     });
   });
 
+  describe('invokingStates', () => {
+    const callStates = (text: string) =>
+      locate(text).expectedRules.map(({ invokingStates }) => invokingStates?.at(-1));
+
+    it('tells calls of the same rule after the same token apart', () => {
+      const [scoreBy] = callStates('FROM a | FUSE SCORE BY ');
+      const [groupBy] = callStates('FROM a | FUSE GROUP BY ');
+
+      expect(scoreBy).toEqual(expect.any(Number));
+      expect(groupBy).toEqual(expect.any(Number));
+      expect(scoreBy).not.toBe(groupBy);
+    });
+
+    // Both RENAME forms start with a name; each call is a slot of its own.
+    it.each(['FROM a | RENAME ', 'FROM a | RENAME kubernetes.'])(
+      'reports each call of a rule at %j',
+      (text) => {
+        expect(new Set(callStates(text)).size).toBe(2);
+      }
+    );
+  });
+
+  describe('lexer modes', () => {
+    // WITH leaves the FUSE lexer mode, where `group` would be a name, not a keyword.
+    it('leaves out keywords the lexer cannot produce at the cursor', () => {
+      expect(tokenNames('FROM a | FUSE SCORE BY x ')).toEqual(
+        expect.arrayContaining(['GROUP', 'KEY', 'WITH'])
+      );
+      expect(tokenNames('FROM a | FUSE WITH { "rank_constant": 60 } ')).not.toEqual(
+        expect.arrayContaining(['GROUP'])
+      );
+    });
+
+    it('reads the modes where the word being typed starts', () => {
+      expect(tokenNames('FROM a | FUSE SCORE BY x WIT')).toContain('WITH');
+    });
+  });
+
   describe('getTokenName', () => {
     it('names token types', () => {
       expect(getTokenName(getTokenType('AS'))).toBe('AS');
