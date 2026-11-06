@@ -26,7 +26,9 @@ import { DEFAULT_SLOTS, suggestExpression } from './providers';
 import { isExpressionSlot, matchSlots } from './slot_matching';
 import {
   filterKeywordsByRoles,
-  getExpressionTypes,
+  getExpressionExamples,
+  getExpressionOptions,
+  getNameReading,
   getRoleSlot,
   isCompleteName,
   isCoveredByRole,
@@ -206,13 +208,16 @@ const suggestAt = async (
         !isCoveredByRole(location.tokenStacks.get(type)?.rules ?? [])
       );
     });
+  // A name that can only be a new column, as `COMPLETION x `, continues no expression.
   const expressionItems =
-    inExpression && !isGluedToValue(location)
-      ? await suggestExpression(ctx, spec.expression, getExpressionTypes(location))
+    inExpression && !isGluedToValue(location) && getNameReading(ctx) !== 'new_column'
+      ? await suggestExpression(ctx, spec.expression, getExpressionOptions(location))
       : [];
   const keywordItems = adjustKeywords(keywordsAt(location), ctx).map((keyword) =>
     toItem(keyword, location)
   );
 
-  return [...slotItems.flat(), ...expressionItems, ...keywordItems];
+  const exampleItems = inExpression ? await getExpressionExamples(ctx) : [];
+
+  return [...slotItems.flat(), ...expressionItems, ...exampleItems, ...keywordItems];
 };

@@ -40,9 +40,11 @@ import {
   none,
   optionNames,
   policies,
+  stringSnippet,
   suggestedColumnName,
 } from './providers';
 import { isExpressionSlot } from './slot_matching';
+import type { ISuggestionItem } from '../types';
 import type { SlotDefinition, SlotProvider, SuggestContext } from './types';
 
 const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'PIPE', 'SEMICOLON'];
@@ -118,19 +120,90 @@ const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
  * The types an expression role prefers for the expression at the cursor, e.g. a string for
  * USER_AGENT's input. Inside a function call the argument's own types apply instead.
  */
-export const getExpressionTypes = ({ expectedRules }: CursorLocation): string[] | undefined => {
+/**
+ * How the expression engine should treat the expression at the cursor, from the role of the
+ * argument it belongs to: the types it prefers, and a value control for a string such as a
+ * prompt. Inside a function call the call's own parameters apply instead.
+ */
+export const getExpressionOptions = (
+  location: CursorLocation
+): { types?: string[]; valuesControl: boolean } => {
+  const role = getExpressionRole(location)?.role;
+  return { types: role?.types, valuesControl: Boolean(role?.constraints?.format) };
+};
+
+/**
+ * The expression role of the argument an expression slot at the cursor is in, found by walking
+ * out of the slot until a function call, e.g. RERANK's `ON` list from `RERANK "q" ON a, b = `.
+ * `startsArgument`: the slot starts the whole argument, as at `COMPLETION `.
+ */
+const getExpressionRole = ({
+  expectedRules,
+}: CursorLocation):
+  | {
+      role: Extract<ArgumentRole, { kind: 'expression' }>;
+      slot: ExpectedRule;
+      startsArgument: boolean;
+    }
+  | undefined => {
   for (const slot of expectedRules) {
     if (!isExpressionSlot(slot)) {
       continue;
     }
-    for (const site of getArgumentSites(slot)) {
-      const role = getArgumentRole(site);
-      if (role?.kind === 'expression' && role.types) {
-        return role.types;
+    const rules = [...slot.stack, slot.rule];
+    for (let index = rules.length - 1; index > 0; index--) {
+      if (rules[index] === 'functionExpression') {
+        break;
+      }
+      const role = getCallSites(rules[index - 1], rules[index])
+        .map(getArgumentRole)
+        .find((candidate) => candidate?.kind === 'expression');
+      if (role?.kind === 'expression') {
+        const startsArgument = !slot.continuation && rules.length - 1 - index <= slot.startsRules;
+        return { role, slot, startsArgument };
       }
     }
   }
   return undefined;
+};
+
+/**
+ * Example strings for an expression argument the cursor starts, by its format, e.g. a prompt
+ * snippet at `COMPLETION `.
+ */
+export const getExpressionExamples = (ctx: SuggestContext): Promise<ISuggestionItem[]> => {
+  const found = getExpressionRole(ctx.location);
+  const format = found?.role.constraints?.format;
+  return found && format && found.startsArgument
+    ? stringExamples(format)(ctx, found.slot)
+    : Promise.resolve([]);
+};
+
+/**
+ * A bare name that continues an expression where `=` may also follow, as `COMPLETION x ` or
+ * `RERANK "q" ON x `: `=` reads it as a new column, anything else as the expression, where it
+ * must be an existing column. An existing column is read as the expression, any other name as
+ * a new column.
+ */
+export const getNameReading = ({
+  location,
+  context,
+}: SuggestContext): 'new_column' | 'expression' | undefined => {
+  if (location.partial || !location.expectedTokens.has(getTokenType('ASSIGN'))) {
+    return undefined;
+  }
+  const slot = location.expectedRules.find(
+    (candidate) =>
+      candidate.continuation && candidate.rule === 'qualifiedName' && isExpressionSlot(candidate)
+  );
+  if (!slot) {
+    return undefined;
+  }
+  // A parameter (`?`, `?name`) is a value, never a new column's name.
+  if (slot.text.startsWith('?')) {
+    return 'expression';
+  }
+  return columnExists(slot.text, context) ? 'expression' : 'new_column';
 };
 
 /** Roles the expression engine fills. */
@@ -168,6 +241,10 @@ const stringExamples = (format: string | undefined): SlotProvider => {
       };
     case 'separator':
       return fixed([colonCompleteItem, semiColonCompleteItem]);
+    case 'llm_prompt':
+      return fixed([stringSnippet('Your prompt to the LLM.')]);
+    case 'search_query':
+      return fixed([stringSnippet('Your search query')]);
     default:
       return none();
   }
@@ -328,6 +405,11 @@ export const filterKeywordsByRoles = (
   const { location } = ctx;
   if (location.partial) {
     return keywords;
+  }
+  const nameReading = getNameReading(ctx);
+  if (nameReading) {
+    const assigns = nameReading === 'new_column';
+    return keywords.filter(({ token }) => (token === 'ASSIGN') === assigns);
   }
   const slot = location.expectedRules.find(
     (candidate) => candidate.continuation && !isExpressionSlot(candidate)
