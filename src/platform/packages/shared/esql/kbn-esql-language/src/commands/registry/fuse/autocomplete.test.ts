@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import { expectSuggestions, getFieldNamesByType } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
 import { ESQL_STRING_TYPES } from '../../definitions/types';
@@ -37,7 +37,7 @@ describe('FUSE Autocomplete', () => {
 
   describe('FUSE arguments', () => {
     it('suggests all FUSE arguments + FUSE types if FUSE has no arguments', async () => {
-      await fuseExpectSuggestions('FROM a | FUSE /', [
+      await fuseExpectSuggestions('FROM a | FUSE ', [
         '\n',
         'linear ',
         'rrf ',
@@ -50,7 +50,7 @@ describe('FUSE Autocomplete', () => {
     });
 
     it('does not suggest FUSE types if FUSE already has one', async () => {
-      await fuseExpectSuggestions('FROM a | FUSE linear /', [
+      await fuseExpectSuggestions('FROM a | FUSE linear ', [
         '\n',
         'SCORE BY ',
         'KEY BY ',
@@ -63,23 +63,20 @@ describe('FUSE Autocomplete', () => {
     it('does not suggest already used arguments', async () => {
       await fuseExpectSuggestions('FROM a | FUSE linear SCORE BY x KEY BY y ', [
         '\n',
+        ', ',
         'GROUP BY ',
         'WITH { $0 }',
         '| ',
       ]);
     });
 
-    // A bug in the parser makes it to missbehave if the map is not the last argument
-    // - unskip when fixed in ES side.
-    it.skip('allows WITH map to be at any configuration place', async () => {
-      await fuseExpectSuggestions(
-        'FROM a | FUSE WITH { "item": "value", "item2": 33 } SCORE BY duration ',
-        ['GROUP BY ', 'KEY BY ', '| ']
-      );
+    // WITH leaves the FUSE lexer mode, so no configuration can follow the map.
+    it('suggests only pipe and new line after the WITH map', async () => {
+      await fuseExpectSuggestions('FROM a | FUSE WITH { "rank_constant": 60 } ', ['\n', '| ']);
     });
 
     it('does not suggest FUSE type if another argument has been added', async () => {
-      await fuseExpectSuggestions('FROM a | FUSE SCORE BY x /', [
+      await fuseExpectSuggestions('FROM a | FUSE SCORE BY x ', [
         '\n',
         'KEY BY ',
         'GROUP BY ',
@@ -97,7 +94,7 @@ describe('FUSE Autocomplete', () => {
         expectedDoubleFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear SCORE BY /',
+        'FROM a | FUSE linear SCORE BY ',
         expectedDoubleFields,
         mockCallbacks
       );
@@ -110,7 +107,7 @@ describe('FUSE Autocomplete', () => {
         expectedDoubleFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear SCORE BY doubleFi/',
+        'FROM a | FUSE linear SCORE BY doubleFi',
         expectedDoubleFields,
         mockCallbacks
       );
@@ -125,7 +122,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear GROUP BY /',
+        'FROM a | FUSE linear GROUP BY ',
         expectedStringFields,
         mockCallbacks
       );
@@ -138,7 +135,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear GROUP BY textFi/',
+        'FROM a | FUSE linear GROUP BY textFi',
         expectedStringFields,
         mockCallbacks
       );
@@ -153,7 +150,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear KEY BY /',
+        'FROM a | FUSE linear KEY BY ',
         expectedStringFields,
         mockCallbacks
       );
@@ -166,7 +163,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear KEY BY textFi/',
+        'FROM a | FUSE linear KEY BY textFi',
         expectedStringFields,
         mockCallbacks
       );
@@ -179,7 +176,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear KEY BY keywordField, /',
+        'FROM a | FUSE linear KEY BY keywordField, ',
         expectedStringFields,
         mockCallbacks
       );
@@ -192,7 +189,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear KEY BY keywordField, textFi/',
+        'FROM a | FUSE linear KEY BY keywordField, textFi',
         expectedStringFields,
         mockCallbacks
       );
@@ -205,7 +202,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE KEY BY keywordField, textField, /',
+        'FROM a | FUSE KEY BY keywordField, textField, ',
         expectedStringFields,
         mockCallbacks
       );
@@ -219,6 +216,7 @@ describe('FUSE Autocomplete', () => {
     it('suggests other config arguments after KEY BY fields', async () => {
       await fuseExpectSuggestions('FROM a | FUSE KEY BY keywordField, textField ', [
         '\n',
+        ', ',
         'SCORE BY ',
         'GROUP BY ',
         'WITH { $0 }',
@@ -235,7 +233,7 @@ describe('FUSE Autocomplete', () => {
       await fuseExpectSuggestions(
         'FROM a | FUSE KEY BY keywordField, textField',
         [
-          'textField \n',
+          'textField\n',
           'textField GROUP BY ',
           'textField SCORE BY ',
           'textField WITH { $0 }',
@@ -253,7 +251,7 @@ describe('FUSE Autocomplete', () => {
         expectedStringFields.map((name) => ({ label: name, text: name }))
       );
       await fuseExpectSuggestions(
-        'FROM a | FUSE linear SCORE BY keywordField GROUP BY keywordField WITH {} KEY BY /',
+        'FROM a | FUSE linear SCORE BY keywordField GROUP BY keywordField KEY BY ',
         expectedStringFields,
         mockCallbacks
       );
@@ -261,8 +259,18 @@ describe('FUSE Autocomplete', () => {
   });
 
   describe('WITH', () => {
-    it('suggests empty map if WITH is empty', async () => {
-      await fuseExpectSuggestions('FROM a | FUSE linear WITH ', ['{ $0 }']);
+    it('suggests nothing after a WITH typed by hand; the WITH item opens the map', async () => {
+      await fuseExpectSuggestions('FROM a | FUSE linear WITH ', []);
+    });
+
+    it('suggests no rrf parameter when the FUSE method is linear', async () => {
+      await fuseExpectSuggestions('FROM a | FUSE linear WITH { "normalizer": "none", ', [
+        '"weights": { $0 }',
+      ]);
+    });
+
+    it('suggests no parameter for an unknown FUSE method', async () => {
+      await fuseExpectSuggestions('FROM a | FUSE other WITH { ', []);
     });
 
     it('suggests rank_constant and weights as parameters when FUSE method is rrf', async () => {

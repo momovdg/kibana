@@ -87,10 +87,10 @@ describe('COMPLETION Autocomplete', () => {
   });
 
   it('suggests PROMPT_SUGGESTIONS when typing a column', async () => {
-    // After a dot only a column fits, not a new target name.
+    // A dotted name may be a column or a new target name, as `kubernetes.some = "…"`.
     await completionExpectSuggestions(
       `FROM a | COMPLETION kubernetes.some`,
-      PROMPT_SUGGESTIONS.filter((text) => text !== ' = '),
+      PROMPT_SUGGESTIONS,
       mockCallbacks
     );
   });

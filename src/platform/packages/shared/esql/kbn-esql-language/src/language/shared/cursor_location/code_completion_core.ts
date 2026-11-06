@@ -130,11 +130,18 @@ export interface CandidateRule {
   ruleList: RuleList;
   /** The rules above this one, with the tokens they start at. */
   callStack: RuleWithStartToken[];
+  /** The ATN state of the rule above that called this one. */
+  invokingState?: number;
 }
 
 export interface RuleWithStartToken {
   startTokenIndex: number;
   ruleIndex: number;
+  /**
+   * The ATN state of the rule above that called this one, telling apart calls of the same rule,
+   * as FUSE's `SCORE BY` and `GROUP BY` columns. Unset for the start rule.
+   */
+  invokingState?: number;
 }
 
 /**
@@ -163,6 +170,8 @@ export interface CollectionStart {
 interface FollowSetWithPath {
   symbols: number[];
   path: RuleList;
+  /** For each rule of `path`, the ATN state that called it. */
+  invokingStates: number[];
   following: TokenList;
 }
 
@@ -225,7 +234,15 @@ export class CodeCompletionCore {
   private readonly atn: RuntimeAtn;
   private tokens: Token[] = [];
   private precedenceStack: number[] = [];
+  /**
+   * Where a rule's walk from a token can end, by rule as in c3. Unlike c3, a walk that reached
+   * the caret is not reused, so that each call records its candidates under its own call stack,
+   * as both RENAME names at `RENAME a.`. Left-recursive rules, which call themselves from
+   * several states at one token, are reused anyway: their calls are not told apart.
+   */
   private shortcutMap = new Map<number, Map<number, RuleEndStatus>>();
+  /** How many times a walk reached the caret. */
+  private caretVisits = 0;
   private candidates = createCandidates();
 
   constructor(private readonly parser: EsqlParser, private readonly tokenStream: TokenSource) {
@@ -276,6 +293,7 @@ export class CodeCompletionCore {
   }
 
   private translateStackToRuleIndex(stack: RuleWithStartToken[]): boolean {
+    this.caretVisits++;
     if (this.preferredRules.size === 0) {
       return false;
     }
@@ -298,7 +316,7 @@ export class CodeCompletionCore {
   }
 
   private translateToRuleIndex(i: number, stack: RuleWithStartToken[]): boolean {
-    const { ruleIndex, startTokenIndex } = stack[i];
+    const { ruleIndex, startTokenIndex, invokingState } = stack[i];
     if (!this.preferredRules.has(ruleIndex)) {
       return false;
     }
@@ -307,15 +325,17 @@ export class CodeCompletionCore {
     const path = callStack.map((entry) => entry.ruleIndex);
     const candidates = this.candidates.rules.get(ruleIndex) ?? [];
     const known = candidates.some(
-      ({ ruleList }) =>
-        ruleList.length === path.length && path.every((value, j) => value === ruleList[j])
+      (candidate) =>
+        candidate.invokingState === invokingState &&
+        candidate.ruleList.length === path.length &&
+        path.every((value, j) => value === candidate.ruleList[j])
     );
 
     // Unlike c3, which keeps one candidate per rule, every call path is kept.
     if (!known) {
       this.candidates.rules.set(ruleIndex, [
         ...candidates,
-        { startTokenIndex, ruleList: path, callStack },
+        { startTokenIndex, ruleList: path, callStack, invokingState },
       ]);
     }
 
@@ -350,7 +370,7 @@ export class CodeCompletionCore {
 
   private determineFollowSets(start: RuntimeAtnState, stop: RuntimeAtnState): FollowSetsHolder {
     const sets: FollowSetWithPath[] = [];
-    const isExhaustive = this.collectFollowSets(start, stop, sets, [], []);
+    const isExhaustive = this.collectFollowSets(start, stop, sets, [], [], []);
     const combined = new Set<number>();
     for (const { symbols } of sets) {
       for (const symbol of symbols) {
@@ -377,7 +397,8 @@ export class CodeCompletionCore {
     stopState: RuntimeAtnState,
     followSets: FollowSetWithPath[],
     stateStack: RuntimeAtnState[],
-    ruleStack: number[]
+    ruleStack: number[],
+    invokingStates: number[]
   ): boolean {
     if (stateStack.includes(state)) {
       return true;
@@ -399,14 +420,17 @@ export class CodeCompletionCore {
         }
 
         ruleStack.push(transition.target.ruleIndex);
+        invokingStates.push(state.stateNumber);
         const ruleIsExhaustive = this.collectFollowSets(
           transition.target,
           stopState,
           followSets,
           stateStack,
-          ruleStack
+          ruleStack,
+          invokingStates
         );
         ruleStack.pop();
+        invokingStates.pop();
 
         // The subrule can be passed without consuming input, so continue after it.
         if (!ruleIsExhaustive && transition.followState) {
@@ -415,7 +439,8 @@ export class CodeCompletionCore {
             stopState,
             followSets,
             stateStack,
-            ruleStack
+            ruleStack,
+            invokingStates
           );
           isExhaustive = isExhaustive && nextIsExhaustive;
         }
@@ -426,7 +451,8 @@ export class CodeCompletionCore {
             stopState,
             followSets,
             stateStack,
-            ruleStack
+            ruleStack,
+            invokingStates
           );
           isExhaustive = isExhaustive && nextIsExhaustive;
         }
@@ -436,11 +462,17 @@ export class CodeCompletionCore {
           stopState,
           followSets,
           stateStack,
-          ruleStack
+          ruleStack,
+          invokingStates
         );
         isExhaustive = isExhaustive && nextIsExhaustive;
       } else if (type === TransitionType.WILDCARD) {
-        followSets.push({ symbols: this.allUserTokens(), path: ruleStack.slice(), following: [] });
+        followSets.push({
+          symbols: this.allUserTokens(),
+          path: ruleStack.slice(),
+          invokingStates: invokingStates.slice(),
+          following: [],
+        });
       } else {
         let symbols = toSymbols(transition.label);
         if (symbols.length > 0) {
@@ -451,6 +483,7 @@ export class CodeCompletionCore {
           followSets.push({
             symbols,
             path: ruleStack.slice(),
+            invokingStates: invokingStates.slice(),
             following: this.getFollowingTokens(transition),
           });
         }
@@ -512,7 +545,8 @@ export class CodeCompletionCore {
     startState: RuntimeAtnState,
     tokenListIndex: number,
     callStack: RuleWithStartToken[],
-    precedence: number
+    precedence: number,
+    invokingState?: number
   ): RuleEndStatus {
     let positionMap = this.shortcutMap.get(startState.ruleIndex);
     if (!positionMap) {
@@ -526,10 +560,11 @@ export class CodeCompletionCore {
     }
 
     const result: RuleEndStatus = new Set();
+    const caretVisitsBefore = this.caretVisits;
     const followSets = this.getFollowSets(startState);
     const startTokenIndex = this.tokens[tokenListIndex].tokenIndex;
 
-    callStack.push({ startTokenIndex, ruleIndex: startState.ruleIndex });
+    callStack.push({ startTokenIndex, ruleIndex: startState.ruleIndex, invokingState });
 
     if (tokenListIndex >= this.tokens.length - 1) {
       // At the caret: report the rule's follow set, translated to preferred rules where possible.
@@ -538,9 +573,9 @@ export class CodeCompletionCore {
       } else {
         for (const set of followSets.sets) {
           const fullPath = callStack.slice();
-          for (const ruleIndex of set.path) {
-            fullPath.push({ startTokenIndex, ruleIndex });
-          }
+          set.path.forEach((ruleIndex, index) => {
+            fullPath.push({ startTokenIndex, ruleIndex, invokingState: set.invokingStates[index] });
+          });
 
           if (!this.translateStackToRuleIndex(fullPath)) {
             for (const symbol of set.symbols) {
@@ -595,7 +630,8 @@ export class CodeCompletionCore {
               transition.target,
               entry.tokenListIndex,
               callStack,
-              transition.precedence ?? 0
+              transition.precedence ?? 0,
+              entry.state.stateNumber
             );
             if (transition.followState) {
               for (const position of endStatus) {
@@ -687,7 +723,9 @@ export class CodeCompletionCore {
       this.precedenceStack.pop();
     }
 
-    positionMap.set(tokenListIndex, result);
+    if (startState.isPrecedenceRule || this.caretVisits === caretVisitsBefore) {
+      positionMap.set(tokenListIndex, result);
+    }
 
     return result;
   }

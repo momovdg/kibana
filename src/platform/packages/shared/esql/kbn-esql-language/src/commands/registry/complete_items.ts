@@ -10,7 +10,7 @@ import { i18n } from '@kbn/i18n';
 import type { ISuggestionItem } from './types';
 import { esqlCommandRegistry } from '.';
 import { buildDocumentation } from '../definitions/utils/documentation';
-import { buildConstantsDefinitions, TIME_SYSTEM_PARAMS } from '../definitions/utils/literals';
+import { TIME_SYSTEM_PARAMS } from '../definitions/utils/literals';
 import { withAutoSuggest } from '../definitions/utils/autocomplete/helpers';
 import { techPreviewLabel } from '../definitions/utils/shared';
 import { SuggestionCategory } from '../../language/autocomplete/utils/sorting/types';
@@ -367,7 +367,7 @@ export const withMapCompleteItem: ISuggestionItem = withAutoSuggest({
   detail: 'Inference endpoint',
 });
 
-export const mmrQueryVectorSuggestion: ISuggestionItem = {
+export const denseVectorLiteralCompleteItem: ISuggestionItem = {
   label: 'query vector',
   text: '[${0:0.1}, ${1:0.2}]::dense_vector ',
   asSnippet: true,
@@ -388,37 +388,6 @@ export const mmrLimitKeywordSuggestion: ISuggestionItem = {
 };
 
 export const defaultLimitValueSuggestions = ['10', '100', '1000'];
-
-// wrapping in a function to avoid circular dependency issues with the tests
-export const mmrLimitValueSuggestions: () => ISuggestionItem[] = () =>
-  buildConstantsDefinitions(
-    defaultLimitValueSuggestions,
-    i18n.translate('esqlLanguage.commands.mmr.autocomplete.limitValueSuggestion', {
-      defaultMessage: 'Suggested limit',
-    }),
-    {
-      advanceCursorAndOpenSuggestions: true,
-    }
-  );
-
-export const mmrLambdaMapSuggestion: ISuggestionItem = {
-  label: 'lambda',
-  text: '{ "lambda": ${0:0.5} }',
-  asSnippet: true,
-  kind: 'Value',
-  detail: i18n.translate('esqlLanguage.commands.mmr.autocomplete.lambdaMapSuggestion', {
-    defaultMessage: 'MMR options configuration',
-  }),
-};
-
-export const mmrLambdaValueSuggestion: ISuggestionItem = {
-  label: '0.5',
-  text: '0.5',
-  kind: 'Value',
-  detail: i18n.translate('esqlLanguage.commands.mmr.autocomplete.lambdaSuggestion', {
-    defaultMessage: 'Suggested lambda',
-  }),
-};
 
 // ================================
 // Map Expression Builders
@@ -471,22 +440,6 @@ export function buildSubqueryCompleteItems(options?: {
       buildSubqueryCompleteItem(name, previewCommands?.includes(name.toLowerCase()) ?? false)
     );
 }
-
-export const minMaxValueCompleteItem: ISuggestionItem = {
-  label: 'minmax',
-  text: 'minmax',
-  kind: 'Value',
-  detail: 'minmax',
-  category: SuggestionCategory.VALUE,
-};
-
-export const noneValueCompleteItem: ISuggestionItem = {
-  label: 'none',
-  text: 'none',
-  kind: 'Value',
-  detail: 'none',
-  category: SuggestionCategory.VALUE,
-};
 
 export const getNewUserDefinedColumnSuggestion = (label: string): ISuggestionItem => {
   return withAutoSuggest({
