@@ -138,20 +138,33 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
     defaultMessage:
       'The character(s) that separate the appended fields. Default to empty string ("").',
   }),
+  suffix: i18n.translate('esqlLanguage.commands.denseVector.autocomplete.suffixModifierDetail', {
+    defaultMessage: 'Custom suffix for the generated columns (default: _dense_vector)',
+  }),
+};
+
+/** How an option is inserted when more than `name = ` helps, e.g. DENSE_VECTOR's suffix clause. */
+const OPTION_SNIPPETS: Readonly<Record<string, { label: string; text: string }>> = {
+  suffix: { label: 'suffix = "..." ON', text: 'suffix = "${1:_dense_vector}" ON $0' },
 };
 
 /** Option names with their `=`, e.g. `APPEND_SEPARATOR = `. */
 export const optionNames =
   (names: string[]): SlotProvider =>
   async () =>
-    names.map((name) =>
-      withAutoSuggest({
-        label: name,
-        text: `${name} = `,
-        kind: 'Reference',
-        detail: OPTION_DESCRIPTIONS[name] ?? '',
-      })
-    );
+    names.map((name) => {
+      const snippet = OPTION_SNIPPETS[name];
+      const detail = OPTION_DESCRIPTIONS[name] ?? '';
+      return snippet
+        ? {
+            ...snippet,
+            kind: 'Keyword',
+            detail,
+            asSnippet: true,
+            category: SuggestionCategory.LANGUAGE_KEYWORD,
+          }
+        : withAutoSuggest({ label: name, text: `${name} = `, kind: 'Reference', detail });
+    });
 
 /** A new column name, e.g. `col0 = `. */
 export const newName =
@@ -399,6 +412,24 @@ const MAP_PARAMETER_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'ipLocationCommand.properties': i18n.translate(
     'esqlLanguage.commands.ipLocation.autocomplete.propertiesDescription',
     { defaultMessage: 'List of properties to extract' }
+  ),
+  'denseVectorCommand.inference_id': i18n.translate(
+    'esqlLanguage.commands.denseVector.autocomplete.inferenceIdDescription',
+    {
+      defaultMessage:
+        'Inference endpoint used to generate the embeddings. For text the endpoint must be text_embedding or multimodal embedding; for image it must be multimodal embedding. Defaults to the built-in text embedding endpoint.',
+    }
+  ),
+  'denseVectorCommand.type': i18n.translate(
+    'esqlLanguage.commands.denseVector.autocomplete.typeDescription',
+    {
+      defaultMessage:
+        'Input modality: "text" (default) embeds the field value as text; "image" expects a base64 data URI and requires a multimodal embedding endpoint.',
+    }
+  ),
+  'denseVectorCommand.timeout': i18n.translate(
+    'esqlLanguage.commands.denseVector.autocomplete.timeoutDescription',
+    { defaultMessage: 'Maximum time to wait for each inference request (default: 30s)' }
   ),
 };
 

@@ -11,14 +11,12 @@ import {
   lookupIndexFields,
   getMockCallbacks,
 } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   onCompleteItem,
   withCompleteItem,
-  withMapCompleteItem,
   pipeCompleteItem,
   newLineCompleteItem,
-  commaCompleteItem,
   assignCompletionItem,
 } from '../complete_items';
 import { expectSuggestions, suggest } from '../../../__tests__/commands/autocomplete';
@@ -98,9 +96,15 @@ describe('DENSE_VECTOR Autocomplete', () => {
     });
 
     test('suggests the assignment operator after an unrecognized first name', async () => {
+      // While the name is typed, the new-name item; after it, only `=`.
       await expectDenseVectorSuggestions(
         'from a | dense_vector vec',
-        { contains: [assignCompletionItem.text] },
+        { contains: [' = '] },
+        mockCallbacks
+      );
+      await expectDenseVectorSuggestions(
+        'from a | dense_vector vec ',
+        [assignCompletionItem.text],
         mockCallbacks
       );
     });
@@ -116,18 +120,20 @@ describe('DENSE_VECTOR Autocomplete', () => {
     });
 
     test('suggests continuations after a complete field', async () => {
+      // What follows the column, keeping it; an existing column is no target, so no `=`.
       await expectDenseVectorSuggestions(
         'from a | dense_vector keywordField',
-        {
-          contains: [
-            commaCompleteItem.text.endsWith(' ')
-              ? commaCompleteItem.text
-              : `${commaCompleteItem.text} `,
-            withCompleteItem.text,
-            pipeCompleteItem.text,
-            'textField',
-          ],
-        },
+        [
+          'keywordField, ',
+          `keywordField ${withCompleteItem.text}`,
+          'keywordField | ',
+          'keywordField\n',
+        ],
+        mockCallbacks
+      );
+      await expectDenseVectorSuggestions(
+        'from a | dense_vector keywordField ',
+        [', ', withCompleteItem.text, pipeCompleteItem.text, newLineCompleteItem.text],
         mockCallbacks
       );
     });
@@ -160,10 +166,11 @@ describe('DENSE_VECTOR Autocomplete', () => {
 
     // A target names one output column, so the list cannot continue — a comma here could only
     // lead to "Output name [vec] accepts a single field".
-    test('suggests continuations, but no comma, after the assigned field', async () => {
+    // The grammar takes a list after a named target too; validation reports the extra fields.
+    test('suggests continuations after the assigned field', async () => {
       await expectDenseVectorSuggestions(
         'from a | dense_vector vec = textField ',
-        [withCompleteItem.text, newLineCompleteItem.text, pipeCompleteItem.text],
+        [', ', withCompleteItem.text, newLineCompleteItem.text, pipeCompleteItem.text],
         mockCallbacks
       );
     });
@@ -176,12 +183,10 @@ describe('DENSE_VECTOR Autocomplete', () => {
       );
     });
 
-    // A user may type a comma manually even though autocomplete won't offer one. Suggesting
-    // fields there would only mislead — any selection immediately fires the validation error.
-    test('offers only pipe and newline after a manually typed comma following a named target', async () => {
+    test('suggests more columns after a comma following a named target, as the grammar does', async () => {
       await expectDenseVectorSuggestions(
         'from a | dense_vector vec = textField, ',
-        [newLineCompleteItem.text, pipeCompleteItem.text],
+        { contains: ['keywordField'] },
         mockCallbacks
       );
     });
@@ -214,8 +219,8 @@ describe('DENSE_VECTOR Autocomplete', () => {
       );
     });
 
-    // The parser builds nothing until ON arrives, so this state is invisible in the AST. The
-    // field list must not be offered here: it would produce `suffix = "_dv" textField`.
+    // Until ON, the grammar also reads `suffix = "_dv"` as a target named `suffix` with a literal
+    // input, which a column list may follow; ON is offered with what that reading allows.
     test.each([
       'from a | dense_vector suffix = "_dense_vector"',
       'from a | dense_vector suffix = "_dense_vector" ',
@@ -223,8 +228,12 @@ describe('DENSE_VECTOR Autocomplete', () => {
       // The keyword is only recognised once whole, so the guard has to survive its first
       // keystroke — otherwise the field list appears mid-word.
       'from a | dense_vector suffix = "_dv" O',
-    ])('suggests only ON while the suffix clause awaits it: %s', async (query) => {
-      await expectDenseVectorSuggestions(query, [onCompleteItem.text], mockCallbacks);
+    ])('suggests ON while the suffix clause awaits it: %s', async (query) => {
+      await expectDenseVectorSuggestions(
+        query,
+        { contains: [query.endsWith('"') ? ` ${onCompleteItem.text}` : onCompleteItem.text] },
+        mockCallbacks
+      );
     });
 
     test('suggests text and keyword fields after ON', async () => {
@@ -258,10 +267,10 @@ describe('DENSE_VECTOR Autocomplete', () => {
   });
 
   describe('WITH clause', () => {
-    test('suggests the map opener once WITH is typed', async () => {
+    test('suggests nothing after a WITH typed by hand; the WITH item opens the map', async () => {
       await expectDenseVectorSuggestions(
         'from a | dense_vector textField WITH ',
-        [withMapCompleteItem.text],
+        [],
         mockCallbacks
       );
     });

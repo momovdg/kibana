@@ -82,6 +82,11 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'mmrCommand.limitValue': { kind: 'constant', valueType: 'integer' },
 
   'joinTarget.index': { kind: 'entity', entityType: 'lookup_index' },
+
+  'denseVectorNaming.targetField': { kind: 'new_column' },
+  'denseVectorNaming.suffixKeyword': { kind: 'option_name', allowedValues: ['suffix'] },
+  'denseVectorNaming.suffix': { kind: 'constant', valueType: 'string' },
+  'denseVectorNaming.literalInput': { kind: 'constant', valueType: 'string' },
 };
 
 /**
@@ -129,6 +134,15 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
     },
   },
   'completionCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
+  'qualifiedNames>qualifiedName': { kind: 'column', types: STRING_TYPES },
+  'denseVectorCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: {
+      ...INFERENCE_PARAMETERS,
+      type: { type: 'keyword', values: ['text', 'image'], default: 'text' },
+      timeout: { type: 'keyword', default: '30s' },
+    },
+  },
   'rerankCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
   'ipLocationCommand>qualifiedName': { kind: 'new_column' },
   'ipLocationCommand>primaryExpression': { kind: 'expression', types: ['ip', ...STRING_TYPES] },
@@ -160,10 +174,6 @@ export const UNCLASSIFIED_ARGUMENTS: Readonly<Record<string, string>> = {
   'highlightCommand.highlightFields': 'check with HIGHLIGHT',
   'mmrCommand.queryVector': 'a vector or expression; check with MMR',
   'highlightCommand.prefix': 'check with HIGHLIGHT',
-  'denseVectorNaming.targetField': 'check with DENSE_VECTOR',
-  'denseVectorNaming.suffixKeyword': 'check with DENSE_VECTOR',
-  'denseVectorNaming.suffix': 'check with DENSE_VECTOR',
-  'denseVectorNaming.literalInput': 'check with DENSE_VECTOR',
 };
 
 /** Labels inside expressions, names and PROMQL: not command arguments. */
