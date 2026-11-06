@@ -181,6 +181,33 @@ describe('grammar roles', () => {
     });
   });
 
+  describe('field lists', () => {
+    it("uses the option's location after its end, so no full-text functions in LIMIT's BY", async () => {
+      for (const query of ['from a | limit 10 by ', 'from a | limit 10 by integerField,']) {
+        const items = await texts(query, 'limit');
+        expect(items).toContain('ABS($0)');
+        expect(items).not.toContain('MATCH($0)');
+      }
+    });
+
+    it('offers comma, pipe and new line after a complete column', async () => {
+      expect(
+        await texts('from a | change_point doubleField by keywordField ', 'change_point')
+      ).toEqual(expect.arrayContaining([', ', '| ', '\n']));
+    });
+  });
+
+  describe('new column names', () => {
+    it("offers Kibana's suggested name for a labelled position, with the comma that follows", async () => {
+      expect(await texts('from a | change_point doubleField as ', 'change_point')).toEqual([
+        'changePointType, ',
+      ]);
+      expect(await texts('from a | change_point doubleField as t, ', 'change_point')).toEqual([
+        'pValue',
+      ]);
+    });
+  });
+
   describe('keywords from roles', () => {
     it('chooses between readings of the name: AS for an existing column, = otherwise', async () => {
       expect(await texts('from a | rename keywordField ', 'rename')).toEqual(['AS ']);
