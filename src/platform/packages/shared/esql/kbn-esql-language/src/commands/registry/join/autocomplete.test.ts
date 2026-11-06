@@ -12,7 +12,7 @@ import {
   getMockCallbacks,
   type MockedICommandCallbacks,
 } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import { expectSuggestions, suggest } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
 import {
@@ -43,9 +43,11 @@ const joinExpectSuggestions = async (
     expect(texts).toEqual(expect.arrayContaining(expected.contains));
   }
 
-  if (expected.notContains?.length) {
-    expect(texts).not.toEqual(expect.arrayContaining(expected.notContains));
-  }
+  // Assert per item: `not.toEqual(arrayContaining([...]))` only fails when *every* listed
+  // suggestion is present, so it would let a partial regression through.
+  expected.notContains?.forEach((text) => {
+    expect(texts).not.toContain(text);
+  });
 };
 
 describe('JOIN Autocomplete', () => {
@@ -57,20 +59,9 @@ describe('JOIN Autocomplete', () => {
     (mockCallbacks.getColumnsForQuery as jest.Mock).mockResolvedValue([...lookupIndexFields]);
   });
   describe('<type> JOIN ...', () => {
-    test('suggests command on first character', async () => {
-      const suggestions = await suggest(
-        'FROM index | LOOKUP J',
-        mockContext,
-        'join',
-        mockCallbacks,
-        autocomplete
-      );
-      const filtered = suggestions.filter((s) => s.label.toUpperCase() === 'LOOKUP JOIN');
-
-      expect(filtered[0].label).toBe('LOOKUP JOIN');
-    });
-
-    test('returns command description, correct type, and suggestion continuation', async () => {
+    // The join type starts the command; JOIN is the keyword that follows it. Before a letter of
+    // it is typed, the parser has no JOIN command yet.
+    test('suggests JOIN with its description while it is typed after the join type', async () => {
       const suggestions = await suggest(
         'FROM index | LOOKUP J',
         mockContext,
@@ -79,12 +70,14 @@ describe('JOIN Autocomplete', () => {
         autocomplete
       );
 
-      expect(suggestions[0]).toMatchObject({
-        label: 'LOOKUP JOIN',
-        text: 'LOOKUP JOIN $0',
-        detail: 'Join with a "lookup" mode index',
-        kind: 'Keyword',
-      });
+      expect(suggestions).toEqual([
+        expect.objectContaining({
+          label: 'JOIN',
+          text: 'JOIN ',
+          detail: 'Join with a "lookup" mode index',
+          kind: 'Keyword',
+        }),
+      ]);
     });
   });
 
@@ -255,8 +248,33 @@ describe('JOIN Autocomplete', () => {
     // Helper to add placeholder to operator labels for test expectations
     const addPlaceholder = (operators: string[]) => operators.map((op) => `${op} $0`);
 
+    // The grammar also takes a qualifier (`AS q`), which Elasticsearch may not support yet.
     test('shows "ON" keyword suggestion', async () => {
       await joinExpectSuggestions('FROM index | LOOKUP JOIN join_index ', ['ON '], mockCallbacks);
+    });
+
+    test('suggests ON after a complete lookup index name, keeping it', async () => {
+      await joinExpectSuggestions(
+        'FROM index | LOOKUP JOIN join_index',
+        ['join_index ON '],
+        mockCallbacks
+      );
+    });
+
+    test('suggests the lookup indices after the _coordinator: qualifier', async () => {
+      await joinExpectSuggestions(
+        'FROM index | LOOKUP JOIN _coordinator:',
+        { contains: ['join_index ', 'lookup_index '] },
+        mockCallbacks
+      );
+    });
+
+    test('does not suggest = or AS inside a condition, where the grammar does not take them', async () => {
+      await joinExpectSuggestions(
+        'FROM index | LOOKUP JOIN join_index ON keywordField == "value" AND textField ',
+        { contains: ['== $0', ', ', '| '], notContains: ['= $0', 'AS $0'] },
+        mockCallbacks
+      );
     });
 
     test('suggests fields and functions after ON keyword', async () => {
@@ -346,7 +364,8 @@ describe('JOIN Autocomplete', () => {
       test('suggests full-text search functions', async () => {
         await joinExpectSuggestions(
           'FROM index | LOOKUP JOIN join_index ON keywordField == "value" AND ',
-          { contains: ['MATCH($0)', 'QSTR("""$0""")'] },
+          // After an operator, an operand is followed by a space.
+          { contains: ['MATCH($0) ', 'QSTR("""$0""") '] },
           mockCallbacks
         );
       });
