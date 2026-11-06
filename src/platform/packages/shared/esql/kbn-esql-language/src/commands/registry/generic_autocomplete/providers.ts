@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { i18n } from '@kbn/i18n';
+import { ESQLVariableType } from '@kbn/esql-types';
 import {
   isAssignment,
   isColumn,
@@ -25,10 +26,13 @@ import type {
 } from '@elastic/esql/types';
 import type { MapParameter } from '../../../esql_js_prototype';
 import { suggestForExpression } from '../../definitions/utils';
+import { getAssignmentExpressionRoot } from '../../definitions/utils/expressions';
 import {
   buildUserDefinedColumnsDefinitions,
+  createInferenceEndpointToCompletionItem,
   withAutoSuggest,
 } from '../../definitions/utils/autocomplete/helpers';
+import { SuggestionCategory } from '../../../language/autocomplete/utils/sorting/types';
 import {
   getCommandMapExpressionSuggestions,
   type MapParameters,
@@ -178,6 +182,19 @@ export const suggestedColumnName = (
     );
 };
 
+/** A quoted string to fill in, e.g. `"Your search query"`, selected on insertion. */
+export const stringSnippet = (text: string): ISuggestionItem => ({
+  ...buildConstantsDefinitions(
+    [`"$\{0:${text}}"`],
+    '',
+    undefined,
+    undefined,
+    SuggestionCategory.CONSTANT_VALUE
+  )[0],
+  label: text,
+  asSnippet: true,
+});
+
 /** Nothing: the user types the value freely. */
 export const none = (): SlotProvider => async () => [];
 
@@ -267,15 +284,18 @@ const startsCommandArgument = (slot: ExpectedRule): boolean =>
 
 /**
  * The last argument starting before the cursor, unless the cursor starts a new one: right
- * after a comma, or while a word is typed after one (`SORT a, b` or an unterminated `SORT a, `b`),
- * or at the start of an argument (`USER_AGENT ua = `, where `ua` is not part of it).
+ * after a comma of the command's list, or while a word is typed after one (`SORT a, b` or an
+ * unterminated `SORT a, `b`), or at the start of an argument (`USER_AGENT ua = `, where `ua`
+ * is not part of it).
  */
 const findExpressionRoot = (ctx: SuggestContext): ESQLSingleAstItem | undefined => {
   const { cursorPosition, location } = ctx;
-  if (
-    location.previousTokenType === getTokenType('COMMA') ||
-    location.expectedRules.some(startsCommandArgument)
-  ) {
+  // A comma between a function's arguments keeps the function as the root. A function name's
+  // own `functionExpression` is its direct parent, not a call around it.
+  const afterListComma =
+    location.previousTokenType === getTokenType('COMMA') &&
+    !location.expectedRules.some(({ stack }) => stack.slice(0, -1).includes('functionExpression'));
+  if (afterListComma || location.expectedRules.some(startsCommandArgument)) {
     return undefined;
   }
 
@@ -285,11 +305,14 @@ const findExpressionRoot = (ctx: SuggestContext): ESQLSingleAstItem | undefined 
     if (Array.isArray(arg) || arg.type === 'option' || arg.location.min >= cursorPosition) {
       continue;
     }
-    // The expression of `ORDER` or of an assignment (`geo = ipField`), not the whole.
-    if (arg.type !== 'order' && !isAssignment(arg)) {
+    // The expression of an assignment (`geo = ipField`) or of `ORDER`, not the whole.
+    if (isAssignment(arg)) {
+      return getAssignmentExpressionRoot(arg);
+    }
+    if (arg.type !== 'order') {
       return arg;
     }
-    const expression = arg.type === 'order' ? arg.args[0] : arg.args[1];
+    const [expression] = arg.args;
     return Array.isArray(expression) ? undefined : expression;
   }
   return undefined;
@@ -316,7 +339,7 @@ export const suggestExpression = async (
     options = defaultExpressionOptions,
     getRoot = findExpressionRoot,
   }: ExpressionSpec = {},
-  types?: string[]
+  { types, valuesControl = false }: { types?: string[]; valuesControl?: boolean } = {}
 ): Promise<ISuggestionItem[]> => {
   const { query, command, cursorPosition, context, callbacks } = ctx;
   const resolvedOptions = typeof options === 'function' ? options(ctx) : options;
@@ -339,9 +362,14 @@ export const suggestExpression = async (
       Location.EVAL,
     context,
     callbacks,
-    options: types
-      ? { ...resolvedOptions, preferredExpressionType: types as PreferredExpressionType[] }
-      : resolvedOptions,
+    options: {
+      ...resolvedOptions,
+      // `unknown` keeps functions whose type depends on their arguments, as CASE.
+      ...(types && {
+        preferredExpressionType: [...types, 'unknown'] as PreferredExpressionType[],
+      }),
+      ...(valuesControl && { controlType: ESQLVariableType.VALUES }),
+    },
   });
 
   return suggestions;
@@ -416,7 +444,11 @@ const outputColumnNames = (
 };
 
 /** How the map helper shows a parameter: its kind of value, description and example values. */
-const toMapParameters = (rule: string, parameters: Record<string, MapParameter>): MapParameters =>
+const toMapParameters = (
+  rule: string,
+  parameters: Record<string, MapParameter>,
+  { context }: SuggestContext
+): MapParameters =>
   Object.fromEntries(
     Object.entries(parameters).map(([name, parameter]) => {
       const description = MAP_PARAMETER_DESCRIPTIONS[`${rule}.${name}`];
@@ -429,6 +461,12 @@ const toMapParameters = (rule: string, parameters: Record<string, MapParameter>)
       if (parameter.type === 'boolean') {
         const suggestions = ['true', 'false'].map((value) => buildMapValueCompleteItem(value));
         return [name, { type: 'boolean', description, suggestions }];
+      }
+      if (parameter.entityType === 'inference_endpoint') {
+        const suggestions = (context?.inferenceEndpoints ?? []).map(
+          createInferenceEndpointToCompletionItem
+        );
+        return [name, { type: 'string', description, suggestions }];
       }
       const values = parameter.values ?? (parameter.default ? [parameter.default] : []);
       return [
@@ -470,6 +508,6 @@ export const mapEntries =
 
     return getCommandMapExpressionSuggestions(
       query.slice(0, cursorPosition),
-      toMapParameters(rule, parameters)
+      toMapParameters(rule, parameters, ctx)
     );
   };
