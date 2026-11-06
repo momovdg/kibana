@@ -10,13 +10,11 @@ import { i18n } from '@kbn/i18n';
 import { Commands } from '../../definitions/keywords';
 import type { ICommandMethods } from '../registry';
 import type { ICommandContext } from '../types';
-import { autocomplete } from './autocomplete';
 import { columnsAfter } from './columns_after';
 import { summary } from './summary';
 import { validate } from './validate';
 
 const userAgentCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
   validate,
   columnsAfter,
   summary,
