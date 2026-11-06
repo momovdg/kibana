@@ -11,7 +11,10 @@ import type { LicenseType } from '@kbn/licensing-types';
 import { EsqlQuery, isHeaderCommand, Walker } from '@elastic/esql';
 import type { ESQLColumn, ESQLCommandOption, ESQLAstAllCommands } from '@elastic/esql/types';
 import { esqlCommandRegistry } from '../../commands';
-import { getCommandAutocompleteDefinitions } from '../../commands/registry/complete_items';
+import {
+  getCommandAutocompleteDefinitions,
+  newLineCompleteItem,
+} from '../../commands/registry/complete_items';
 import { SuggestionOrderingEngine, SuggestionCategory } from './utils';
 import { ESQL_VARIABLES_PREFIX } from '../../commands/registry/constants';
 import { getRecommendedQueriesSuggestionsFromStaticTemplates } from '../../commands/registry/options/recommended_queries';
@@ -187,9 +190,14 @@ export async function suggest(
         tokens,
       });
 
-      return orderingEngine.sort([...headerCommandsSuggestions, ...rootLevelQuerySuggestions], {
-        command: '',
-      });
+      // Right after a header statement's `;` on its line, as after picking `"_alias:*";` in SET,
+      // the query may start on the next line.
+      const afterStatementEnd = /;[^\S\n]*$/.test(innerText) ? [newLineCompleteItem] : [];
+
+      return orderingEngine.sort(
+        [...afterStatementEnd, ...headerCommandsSuggestions, ...rootLevelQuerySuggestions],
+        { command: '' }
+      );
     }
 
     return suggestions.filter(
