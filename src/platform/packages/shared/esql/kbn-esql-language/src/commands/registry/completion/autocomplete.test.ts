@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -61,10 +61,10 @@ const completionExpectSuggestions = async (
 
 const PROMPT_SUGGESTIONS = [
   ' = ',
-  ...getFieldNamesByType(ESQL_STRING_TYPES).map((fieldName) => `${fieldName} `),
+  ...getFieldNamesByType(ESQL_STRING_TYPES),
   ...getFunctionSignaturesByReturnType(Location.COMPLETION, ['text', 'keyword', 'unknown'], {
     scalar: true,
-  }).map((text) => `${text} `),
+  }),
 ];
 
 describe('COMPLETION Autocomplete', () => {
@@ -87,9 +87,10 @@ describe('COMPLETION Autocomplete', () => {
   });
 
   it('suggests PROMPT_SUGGESTIONS when typing a column', async () => {
+    // After a dot only a column fits, not a new target name.
     await completionExpectSuggestions(
-      `FROM a | COMPLETION kubernetes.some/`,
-      PROMPT_SUGGESTIONS,
+      `FROM a | COMPLETION kubernetes.some`,
+      PROMPT_SUGGESTIONS.filter((text) => text !== ' = '),
       mockCallbacks
     );
   });
@@ -99,22 +100,31 @@ describe('COMPLETION Autocomplete', () => {
   });
 
   it('suggests WITH after the user writes a colum name that already exists', async () => {
-    await completionExpectSuggestions(`FROM a | COMPLETION textField `, ['WITH { $0 }']);
+    await completionExpectSuggestions(`FROM a | COMPLETION textField `, [
+      'WITH { $0 }',
+      '| ',
+      '\n',
+    ]);
   });
 
   it('suggests WITH after the user writes a param as prompt', async () => {
-    await completionExpectSuggestions(`FROM a | COMPLETION ? `, ['WITH { $0 }']);
+    await completionExpectSuggestions(`FROM a | COMPLETION ? `, {
+      contains: ['WITH { $0 }', '| '],
+      notContains: ['= '],
+    });
   });
 
   it('suggests WITH after the prompt', async () => {
-    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" /`, ['WITH { $0 }']);
-    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WIT/`, ['WITH { $0 }']);
+    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" `, {
+      contains: ['WITH { $0 }', '| '],
+    });
+    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WIT`, {
+      contains: ['WITH { $0 }'],
+    });
   });
 
-  it('suggests opening braces when WITH is already typed', async () => {
-    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH `, [
-      '{ "inference_id": "$0" }',
-    ]);
+  it('suggests nothing after a WITH typed by hand; the WITH item opens the map', async () => {
+    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH `, []);
   });
 
   it('suggests inference_id parameter within the named parameters map', async () => {
@@ -135,10 +145,10 @@ describe('COMPLETION Autocomplete', () => {
     await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH { "inference_id": "`, [
       '"inference_1"',
     ]);
-    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH { "inference_id": "i/`, [
+    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH { "inference_id": "i`, [
       '"inference_1"',
     ]);
-    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH { "inference_id": "inf/`, [
+    await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH { "inference_id": "inf`, [
       '"inference_1"',
     ]);
   });
@@ -160,14 +170,14 @@ describe('COMPLETION Autocomplete', () => {
   it('suggests pipe after complete command', async () => {
     await completionExpectSuggestions(
       `FROM a | COMPLETION "prompt" WITH { "inference_id": "inference_1" }`,
-      ['\n', '| ']
+      ['\n', ' | ']
     );
   });
 
   it('suggests pipe after incomplete but enclosed map expression', async () => {
     await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH { "inference_id": "" }`, [
       '\n',
-      '| ',
+      ' | ',
     ]);
     await completionExpectSuggestions(`FROM a | COMPLETION "prompt" WITH { "inference_id": "" } `, [
       '\n',
@@ -180,8 +190,8 @@ describe('COMPLETION Autocomplete', () => {
       await completionExpectSuggestions(
         'FROM a | COMPLETION ',
         {
-          contains: ['CONCAT($0) ', 'textField ', 'keywordField '],
-          notContains: ['doubleField '],
+          contains: ['CONCAT($0)', 'textField', 'keywordField'],
+          notContains: ['doubleField'],
         },
         mockCallbacks
       );
