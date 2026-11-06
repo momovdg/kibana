@@ -20,7 +20,7 @@ describe('autocomplete cursor location', () => {
   });
 
   it.each([
-    ['fuse', 'FROM index | FUSE ^', 'FUSE '],
+    ['stats', 'FROM index | STATS ^', 'STATS '],
     ['where', 'FROM index, (FROM other | WHERE ^', 'WHERE '],
     ['where', 'FROM index | FORK (WHERE a > 1 | SORT b) (WHERE ^', 'WHERE '],
     ['eval', 'FROM index\n| EVAL x = ^\n| WHERE b > 1', 'EVAL x = '],
@@ -48,6 +48,8 @@ describe('autocomplete cursor location', () => {
     ['keep', 'FROM index, (FROM other | KEEP ^'],
     ['limit', 'FROM index | LIMIT ^'],
     ['completion', 'FROM index | COMPLETION ^'],
+    ['fuse', 'FROM index | FUSE ^'],
+    ['mmr', 'FROM index | MMR ^'],
     ['rename', 'FROM index | FORK (RENAME a AS b) (RENAME ^'],
   ])(
     'computes the location once for %s on the generic autocomplete',

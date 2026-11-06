@@ -21,10 +21,10 @@ const texts = async (query: string, commandName: string) =>
     .map(({ text }) => text)
     .sort();
 
-const labelsAt = (text: string) => {
-  const [slot] = locateCursor(text, text.length).expectedRules;
-  return getSlotSites(slot).map(({ label }) => label);
-};
+const labelsAt = (text: string) =>
+  locateCursor(text, text.length)
+    .expectedRules.flatMap(getSlotSites)
+    .map(({ label }) => label);
 
 const fieldNames = getFieldNamesByType('any');
 

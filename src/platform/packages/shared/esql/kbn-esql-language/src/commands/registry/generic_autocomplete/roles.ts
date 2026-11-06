@@ -7,10 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { i18n } from '@kbn/i18n';
+import { isOptionNode } from '@elastic/esql';
 import {
   getArgumentRole,
   getCallSites,
   RULE_END,
+  SINGLE_USE_RULES,
   type ArgumentRole,
   type CallSite,
 } from '../../../esql_js_prototype';
@@ -25,6 +27,7 @@ import { getMappedKeywordTokens, type KeywordItem } from '../keyword_items';
 import {
   colonCompleteItem,
   defaultLimitValueSuggestions,
+  denseVectorLiteralCompleteItem,
   semiColonCompleteItem,
 } from '../complete_items';
 import {
@@ -33,6 +36,7 @@ import {
   enrichFields,
   fixed,
   getEnrichPolicy,
+  identifiers,
   mapEntries,
   matchingColumns,
   merged,
@@ -42,6 +46,7 @@ import {
   policies,
   stringSnippet,
   suggestedColumnName,
+  wildcard,
 } from './providers';
 import { isExpressionSlot } from './slot_matching';
 import type { ISuggestionItem } from '../types';
@@ -49,9 +54,21 @@ import type { SlotDefinition, SlotProvider, SuggestContext } from './types';
 
 const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'PIPE', 'SEMICOLON'];
 
-/** The calls of `invokes` in `rule` that can follow the token `previous`. */
-const sitesAfter = (rule: string, invokes: string, previous: string | undefined): CallSite[] => {
+/**
+ * The calls of `invokes` in `rule` that can follow the token `previous`, or the one made from
+ * the ATN `state` when the locator knows it, as FUSE's `GROUP BY` column, also after `BY`.
+ */
+const sitesAfter = (
+  rule: string,
+  invokes: string,
+  previous: string | undefined,
+  state?: number
+): CallSite[] => {
   const sites = getCallSites(rule, invokes);
+  const called = sites.filter((site) => state !== undefined && site.state === state);
+  if (called.length) {
+    return called;
+  }
   const exact = sites.filter(
     ({ precededBy }) => previous !== undefined && precededBy.includes(previous)
   );
@@ -70,7 +87,12 @@ const previousTokenName = ({ previousTokenType }: ExpectedRule): string | undefi
  * the token ended the rule's start or a rule call, as the column before GROK's pattern.
  */
 export const getSlotSites = (slot: ExpectedRule): CallSite[] =>
-  sitesAfter(slot.stack[slot.stack.length - 1] ?? '', slot.rule, previousTokenName(slot));
+  sitesAfter(
+    slot.stack[slot.stack.length - 1] ?? '',
+    slot.rule,
+    previousTokenName(slot),
+    slot.invokingStates?.[slot.stack.length]
+  );
 
 /**
  * The positions of the argument a slot starts: the slot's own, or that of an enclosing rule
@@ -78,16 +100,45 @@ export const getSlotSites = (slot: ExpectedRule): CallSite[] =>
  * function could start the argument `dissectCommand>primaryExpression`, a string column.
  */
 const getArgumentSites = (slot: ExpectedRule): CallSite[] => {
-  const { rule, stack, startsRules } = slot;
+  const { rule, stack, startsRules, invokingStates } = slot;
   const previous = previousTokenName(slot);
   for (let depth = 0; depth <= startsRules; depth++) {
     const invokes = depth === 0 ? rule : stack[stack.length - depth];
-    const sites = sitesAfter(stack[stack.length - 1 - depth] ?? '', invokes, previous);
+    const sites = sitesAfter(
+      stack[stack.length - 1 - depth] ?? '',
+      invokes,
+      previous,
+      invokingStates?.[stack.length - depth]
+    );
     if (sites.some((site) => getArgumentRole(site))) {
       return sites;
     }
   }
-  return getSlotSites(slot);
+  return getListSites(slot) ?? getSlotSites(slot);
+};
+
+/**
+ * For an entry of a list rule, as the second column of HIGHLIGHT's `ON a, b`, the call of the
+ * list, when it has a role: each entry is what the list holds.
+ */
+const getListSites = ({ rule, stack, invokingStates }: ExpectedRule): CallSite[] | undefined => {
+  let entry = rule;
+  for (let depth = 1; depth < stack.length; depth++) {
+    const list = stack[stack.length - depth];
+    const isList = getCallSites(list, entry).some(({ precededBy }) => precededBy.includes('COMMA'));
+    if (!isList) {
+      return undefined;
+    }
+    const state = invokingStates?.[stack.length - depth];
+    const sites = getCallSites(stack[stack.length - 1 - depth] ?? '', list).filter(
+      (site) => state === undefined || site.state === state
+    );
+    if (sites.some((site) => getArgumentRole(site))) {
+      return sites;
+    }
+    entry = list;
+  }
+  return undefined;
 };
 
 /**
@@ -101,9 +152,12 @@ const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
   if (mapIndex < 1) {
     return undefined;
   }
-  const site = getCallSites(stack[mapIndex - 2] ?? '', stack[mapIndex - 1]).find(
-    (candidate) => getArgumentRole(candidate)?.kind === 'map'
-  );
+  // The map itself, as FUSE's `WITH options=mapExpression`, or the rule calling it, as
+  // `commandNamedParameters`.
+  const site = [
+    ...getCallSites(stack[mapIndex - 1], 'mapExpression'),
+    ...getCallSites(stack[mapIndex - 2] ?? '', stack[mapIndex - 1]),
+  ].find((candidate) => getArgumentRole(candidate)?.kind === 'map');
   const role = site && getArgumentRole(site);
   if (!site || role?.kind !== 'map') {
     return undefined;
@@ -117,19 +171,22 @@ const getMapSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
 };
 
 /**
- * The types an expression role prefers for the expression at the cursor, e.g. a string for
- * USER_AGENT's input. Inside a function call the argument's own types apply instead.
- */
-/**
  * How the expression engine should treat the expression at the cursor, from the role of the
- * argument it belongs to: the types it prefers, and a value control for a string such as a
- * prompt. Inside a function call the call's own parameters apply instead.
+ * argument it belongs to: the types it prefers, a value control for a string such as a prompt,
+ * and no columns for a constant such as MMR's query vector. Inside a function call the call's
+ * own parameters apply instead.
  */
 export const getExpressionOptions = (
   location: CursorLocation
-): { types?: string[]; valuesControl: boolean } => {
+): { types?: string[]; valuesControl: boolean; noColumns: boolean } => {
   const role = getExpressionRole(location)?.role;
-  return { types: role?.types, valuesControl: Boolean(role?.constraints?.format) };
+  return {
+    types: role?.types,
+    valuesControl: Boolean(role?.constraints?.format),
+    // A constant, or a full-text search, is never a bare column.
+    noColumns:
+      role?.constraints?.constantOnly === 'true' || role?.constraints?.fullTextQuery === 'true',
+  };
 };
 
 /**
@@ -156,6 +213,7 @@ const getExpressionRole = ({
         break;
       }
       const role = getCallSites(rules[index - 1], rules[index])
+        .filter(({ state }) => [state, undefined].includes(slot.invokingStates?.[index]))
         .map(getArgumentRole)
         .find((candidate) => candidate?.kind === 'expression');
       if (role?.kind === 'expression') {
@@ -168,15 +226,28 @@ const getExpressionRole = ({
 };
 
 /**
- * Example strings for an expression argument the cursor starts, by its format, e.g. a prompt
- * snippet at `COMPLETION `.
+ * A literal of a type the expression engine has no example for, e.g. a vector. Read on use:
+ * the items module is still loading when this one is.
+ */
+const typeExample = (type: string): ISuggestionItem[] =>
+  type === 'dense_vector' ? [denseVectorLiteralCompleteItem] : [];
+
+/**
+ * Example values for an expression argument the cursor starts: by its format, e.g. a prompt
+ * snippet at `COMPLETION `, or a literal of its type, e.g. a vector at `MMR `.
  */
 export const getExpressionExamples = (ctx: SuggestContext): Promise<ISuggestionItem[]> => {
   const found = getExpressionRole(ctx.location);
-  const format = found?.role.constraints?.format;
-  return found && format && found.startsArgument
-    ? stringExamples(format)(ctx, found.slot)
-    : Promise.resolve([]);
+  if (!found?.startsArgument) {
+    return Promise.resolve([]);
+  }
+  const { role, slot } = found;
+  const format = role.constraints?.format;
+  if (format) {
+    return stringExamples(format)(ctx, slot);
+  }
+  const examples = (role.types ?? []).flatMap(typeExample);
+  return Promise.resolve(examples);
 };
 
 /**
@@ -252,7 +323,7 @@ const stringExamples = (format: string | undefined): SlotProvider => {
 
 /**
  * Example values for a constant, by its type: a row count, a probability between 0 and 1, or
- * a string by its format.
+ * a string by its format or from its default.
  */
 const exampleValues = (role: Extract<ArgumentRole, { kind: 'constant' }>): SlotProvider => {
   if (role.valueType === 'integer') {
@@ -261,8 +332,12 @@ const exampleValues = (role: Extract<ArgumentRole, { kind: 'constant' }>): SlotP
   if (role.valueType === 'double' && role.constraints?.lessThan === '1') {
     return constants(['.1', '.01', '.001']);
   }
-  if (role.valueType === 'string') {
-    return stringExamples(role.constraints?.format);
+  if (role.valueType === 'string' && role.constraints?.format) {
+    return stringExamples(role.constraints.format);
+  }
+  // A string with a default, e.g. HIGHLIGHT's prefix, starts from it.
+  if (role.valueType === 'string' && role.default !== undefined) {
+    return fixed([stringSnippet(role.default)]);
   }
   return none();
 };
@@ -280,13 +355,14 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
       }
       // The list reopens after a column, with what follows it; the cursor moves on when a
       // keyword or another argument has to follow.
-      return columns({
+      const typed = columns({
         types: role.types,
         options: {
           openSuggestions: true,
           ...(isFollowedByArgument(site) && { advanceCursor: true }),
         },
       });
+      return role.constraints?.wildcard === 'alone' ? merged(wildcard(), typed) : typed;
     case 'new_column':
       // A name Kibana suggests at the position, else `name = ` where an assignment follows;
       // otherwise the name is typed freely.
@@ -298,7 +374,9 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
         (site.followedBy.includes('ASSIGN') ? newName() : none())
       );
     case 'constant':
-      return exampleValues(role);
+      return role.valueType === 'identifier'
+        ? identifiers(`${site.rule}.${site.label}`, role.allowedValues ?? [])
+        : exampleValues(role);
     case 'option_name':
       return optionNames(role.allowedValues);
     case 'map':
@@ -461,4 +539,24 @@ export const filterKeywordsByRoles = (
   return keywords.filter(
     (_, index) => !found[index].includes(false) || found[index].includes(undefined)
   );
+};
+
+/**
+ * Leaves out the clauses the command already has where the grammar repeats a rule whose
+ * alternatives may each appear once, as a second `SCORE BY` in FUSE.
+ */
+export const withoutUsedClauses = (
+  keywords: KeywordItem[],
+  { location, command }: SuggestContext
+): KeywordItem[] => {
+  const used = new Set(
+    command.args.flatMap((arg) =>
+      !Array.isArray(arg) && isOptionNode(arg) ? [arg.name.toLowerCase()] : []
+    )
+  );
+  return keywords.filter(({ token, item }) => {
+    const rules = location.tokenStacks.get(getTokenType(token))?.rules ?? [];
+    const singleUse = rules.some((rule) => SINGLE_USE_RULES.includes(rule));
+    return !singleUse || !used.has(item.label.toLowerCase());
+  });
 };

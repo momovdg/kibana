@@ -18,13 +18,14 @@ import {
   Walker,
 } from '@elastic/esql';
 import type {
+  ESQLAstAllCommands,
   ESQLAstItem,
   ESQLAstNode,
   ESQLCommandOption,
   ESQLMap,
   ESQLSingleAstItem,
 } from '@elastic/esql/types';
-import type { MapParameter } from '../../../esql_js_prototype';
+import { getLabelledArgumentRole, type MapParameter } from '../../../esql_js_prototype';
 import { suggestForExpression } from '../../definitions/utils';
 import { getAssignmentExpressionRoot } from '../../definitions/utils/expressions';
 import {
@@ -68,14 +69,22 @@ type ColumnsOptions = Parameters<GetColumnsByTypeFn>[2];
 const argsAtCursor = (ctx: SuggestContext): ESQLAstItem[] =>
   optionAtCursor(ctx)?.args ?? ctx.command.args;
 
-/** The last option starting before the cursor, as LIMIT's `BY`; the cursor may be past its end. */
+/**
+ * The last option starting before the cursor, as LIMIT's `BY`; the cursor may be past its end.
+ * An option the parser made up for a missing keyword, as MMR's `ON`, starts nowhere (-1).
+ */
 const optionAtCursor = ({
   command,
   cursorPosition,
 }: SuggestContext): ESQLCommandOption | undefined => {
   for (let index = command.args.length - 1; index >= 0; index--) {
     const arg = command.args[index];
-    if (!Array.isArray(arg) && isOptionNode(arg) && arg.location.min < cursorPosition) {
+    if (
+      !Array.isArray(arg) &&
+      isOptionNode(arg) &&
+      arg.location.min >= 0 &&
+      arg.location.min < cursorPosition
+    ) {
       return arg;
     }
   }
@@ -150,11 +159,15 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   suffix: i18n.translate('esqlLanguage.commands.denseVector.autocomplete.suffixModifierDetail', {
     defaultMessage: 'Custom suffix for the generated columns (default: _dense_vector)',
   }),
+  prefix: i18n.translate('esqlLanguage.commands.highlight.autocomplete.prefixModifierDetail', {
+    defaultMessage: 'Custom column name prefix (default: highlight_)',
+  }),
 };
 
 /** How an option is inserted when more than `name = ` helps, e.g. DENSE_VECTOR's suffix clause. */
 const OPTION_SNIPPETS: Readonly<Record<string, { label: string; text: string }>> = {
   suffix: { label: 'suffix = "..." ON', text: 'suffix = "${1:_dense_vector}" ON $0' },
+  prefix: { label: 'prefix = "..."', text: 'prefix = "${0:highlight_}"' },
 };
 
 /** Option names with their `=`, e.g. `APPEND_SEPARATOR = `. */
@@ -170,10 +183,33 @@ export const optionNames =
             kind: 'Keyword',
             detail,
             asSnippet: true,
-            category: SuggestionCategory.LANGUAGE_KEYWORD,
+            category: SuggestionCategory.COMMAND_MODIFIER,
           }
         : withAutoSuggest({ label: name, text: `${name} = `, kind: 'Reference', detail });
     });
+
+const VALUE_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'fuseCommand.fuseType.linear': i18n.translate('esqlLanguage.esql.autocomplete.fuse.linear', {
+    defaultMessage: 'Linear combination of scores',
+  }),
+  'fuseCommand.fuseType.rrf': i18n.translate('esqlLanguage.esql.autocomplete.fuse.rrf', {
+    defaultMessage: 'Reciprocal rank fusion',
+  }),
+};
+
+/** Unquoted names from a fixed set, e.g. FUSE's methods, described by `argument.value`. */
+export const identifiers =
+  (argument: string, values: string[]): SlotProvider =>
+  async () =>
+    values.map((value) =>
+      withAutoSuggest({
+        label: value,
+        text: `${value} `,
+        kind: 'Value',
+        detail: VALUE_DESCRIPTIONS[`${argument}.${value}`] ?? '',
+        category: SuggestionCategory.VALUE,
+      })
+    );
 
 /** A new column name, e.g. `col0 = `. */
 export const newName =
@@ -216,6 +252,26 @@ export const stringSnippet = (text: string): ISuggestionItem => ({
   label: text,
   asSnippet: true,
 });
+
+const allColumnsDetail = () =>
+  i18n.translate('esqlLanguage.commands.highlight.autocomplete.allFieldsDetail', {
+    defaultMessage: 'All text and keyword fields',
+  });
+
+/** `*` for every column of the role, where it may stand alone: as the list's first entry. */
+export const wildcard = (): SlotProvider => async (_ctx, slot) =>
+  slot.previousTokenType === getTokenType('COMMA')
+    ? []
+    : [
+        withAutoSuggest({
+          label: '*',
+          text: '*',
+          kind: 'Value',
+          detail: allColumnsDetail(),
+          // Listed before the columns, which are sorted alphabetically in their own category.
+          category: SuggestionCategory.RECOMMENDED_FIELD,
+        }),
+      ];
 
 /** Nothing: the user types the value freely. */
 export const none = (): SlotProvider => async () => [];
@@ -361,7 +417,11 @@ export const suggestExpression = async (
     options = defaultExpressionOptions,
     getRoot = findExpressionRoot,
   }: ExpressionSpec = {},
-  { types, valuesControl = false }: { types?: string[]; valuesControl?: boolean } = {}
+  {
+    types,
+    valuesControl = false,
+    noColumns = false,
+  }: { types?: string[]; valuesControl?: boolean; noColumns?: boolean } = {}
 ): Promise<ISuggestionItem[]> => {
   const { query, command, cursorPosition, context, callbacks } = ctx;
   const resolvedOptions = typeof options === 'function' ? options(ctx) : options;
@@ -391,6 +451,7 @@ export const suggestExpression = async (
         preferredExpressionType: [...types, 'unknown'] as PreferredExpressionType[],
       }),
       ...(valuesControl && { controlType: ESQLVariableType.VALUES }),
+      ...(noColumns && { suggestFields: false }),
     },
   });
 
@@ -440,6 +501,62 @@ const MAP_PARAMETER_DESCRIPTIONS: Readonly<Record<string, string>> = {
     'esqlLanguage.commands.denseVector.autocomplete.timeoutDescription',
     { defaultMessage: 'Maximum time to wait for each inference request (default: 30s)' }
   ),
+  'highlightCommand.analyzer': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.analyzerDescription',
+    { defaultMessage: 'Analyzer used to re-analyze the ON fields before highlighting' }
+  ),
+  'highlightCommand.pre_tags': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.preTagsDescription',
+    {
+      defaultMessage: 'HTML tag to insert before highlighted text (default: <em>)',
+      ignoreTag: true,
+    }
+  ),
+  'highlightCommand.post_tags': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.postTagsDescription',
+    {
+      defaultMessage: 'HTML tag to insert after highlighted text (default: </em>)',
+      ignoreTag: true,
+    }
+  ),
+  'highlightCommand.number_of_fragments': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.numberOfFragmentsDescription',
+    { defaultMessage: 'Maximum number of fragments to return (default: 5)' }
+  ),
+  'highlightCommand.fragment_size': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.fragmentSizeDescription',
+    { defaultMessage: 'Size of each fragment in characters (default: 100)' }
+  ),
+  'highlightCommand.encoder': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.encoderDescription',
+    { defaultMessage: 'Encoding for highlighted text: default or html (default: default)' }
+  ),
+  'highlightCommand.boundary_scanner': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.boundaryScannerDescription',
+    { defaultMessage: 'How to split fragments: sentence or word (default: sentence)' }
+  ),
+  'highlightCommand.boundary_scanner_locale': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.boundaryScannerLocaleDescription',
+    { defaultMessage: 'Locale for boundary scanning (default: Locale.ROOT)' }
+  ),
+  'highlightCommand.order': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.orderDescription',
+    { defaultMessage: 'Order of fragments: none or score (default: none)' }
+  ),
+  'highlightCommand.no_match_size': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.noMatchSizeDescription',
+    {
+      defaultMessage:
+        'Minimum characters to return when there is no match, extended to the next boundary (default: 0)',
+    }
+  ),
+  'highlightCommand.max_analyzed_offset': i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.maxAnalyzedOffsetDescription',
+    { defaultMessage: 'Maximum character offset to analyze, or -1 to unset (default: -1)' }
+  ),
+  'mmrCommand.lambda': i18n.translate('esqlLanguage.commands.mmr.autocomplete.lambdaDescription', {
+    defaultMessage: 'MMR lambda value',
+  }),
 };
 
 /** The command's top-level `WITH { … }` map, which the cursor is in. */
@@ -483,6 +600,36 @@ const outputColumnNames = (
   return variant ? Object.keys(variant) : allNames();
 };
 
+const NUMERIC_MAP_TYPES = ['integer', 'long', 'double'];
+
+/**
+ * The value of a labelled argument, e.g. `fuseCommand.fuseType`: the name the command node
+ * holds under the label, else the role's default.
+ */
+const labelledArgumentValue = (command: ESQLAstAllCommands, name: string): string | undefined => {
+  const label = name.slice(name.indexOf('.') + 1);
+  const node: unknown = Object.entries(command).find(([key]) => key === label)?.[1];
+  if (node && typeof node === 'object' && 'name' in node && typeof node.name === 'string') {
+    return node.name.toLowerCase();
+  }
+  const role = getLabelledArgumentRole(name);
+  return role?.kind === 'constant' ? role.default : undefined;
+};
+
+/** The parameters that apply to the command as written, e.g. FUSE's `normalizer` for `linear`. */
+const applicableParameters = (
+  { command }: SuggestContext,
+  parameters: Record<string, MapParameter>
+): Record<string, MapParameter> =>
+  Object.fromEntries(
+    Object.entries(parameters).filter(([, { when = {} }]) =>
+      Object.entries(when).every(([name, values]) => {
+        const value = labelledArgumentValue(command, name);
+        return value !== undefined && values.includes(value);
+      })
+    )
+  );
+
 /** How the map helper shows a parameter: its kind of value, description and example values. */
 const toMapParameters = (
   rule: string,
@@ -497,6 +644,13 @@ const toMapParameters = (
           name,
           { type: 'array', description, suggestions: [buildMapValueCompleteItem('[ $0 ]', '[]')] },
         ];
+      }
+      if (NUMERIC_MAP_TYPES.includes(parameter.type)) {
+        const suggestions = parameter.default ? [buildMapValueCompleteItem(parameter.default)] : [];
+        return [name, { type: 'number', description, suggestions }];
+      }
+      if (parameter.type === 'map') {
+        return [name, { type: 'map', description }];
       }
       if (parameter.type === 'boolean') {
         const suggestions = ['true', 'false'].map((value) => buildMapValueCompleteItem(value));
@@ -548,6 +702,6 @@ export const mapEntries =
 
     return getCommandMapExpressionSuggestions(
       query.slice(0, cursorPosition),
-      toMapParameters(rule, parameters, ctx)
+      toMapParameters(rule, applicableParameters(ctx, parameters), ctx)
     );
   };

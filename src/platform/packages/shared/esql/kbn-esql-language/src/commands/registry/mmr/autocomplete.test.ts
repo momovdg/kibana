@@ -12,10 +12,16 @@ import {
   getFunctionSignaturesByReturnType,
   suggest,
 } from '../../../__tests__/commands/autocomplete';
-import { onCompleteItem, pipeCompleteItem, withCompleteItem } from '../complete_items';
+import {
+  denseVectorLiteralCompleteItem,
+  newLineCompleteItem,
+  onCompleteItem,
+  pipeCompleteItem,
+  withCompleteItem,
+} from '../complete_items';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import type { ESQLColumnData, ICommandCallbacks } from '../types';
 import { Location } from '../types';
-import { autocomplete } from './autocomplete';
 
 const buildContextWithDenseVector = () => {
   const columns = new Map<string, ESQLColumnData>(mockContext.columns);
@@ -45,17 +51,9 @@ const expectMmrSuggestions = (
   );
 };
 
-const expectMmrSuggestionsContains = async (
-  query: string,
-  expectedSuggestions: string[],
-  mockCallbacks?: ICommandCallbacks,
-  context = mockContext,
-  offset?: number
-) => {
-  const results = await suggest(query, context, 'mmr', mockCallbacks, autocomplete, offset);
-  const texts = results.map((result) => result.text);
-
-  expect(texts).toEqual(expect.arrayContaining(expectedSuggestions));
+const suggestMmr = async (query: string, context = buildContextWithDenseVector()) => {
+  const results = await suggest(query, context, 'mmr', getMockCallbacks(), autocomplete);
+  return results.map(({ text }) => text);
 };
 
 describe('MMR Autocomplete', () => {
@@ -63,96 +61,96 @@ describe('MMR Autocomplete', () => {
     jest.clearAllMocks();
   });
 
-  it('suggests query vector, dense-vector functions and ON after MMR keyword', async () => {
-    await expectMmrSuggestionsContains('FROM a | MMR ', [
-      '[${0:0.1}, ${1:0.2}]::dense_vector ',
-      onCompleteItem.text,
-      ...getFunctionSignaturesByReturnType(Location.MMR, 'dense_vector', { scalar: true }),
-    ]);
+  it('suggests a query vector, dense-vector functions and ON after the MMR keyword', async () => {
+    const texts = await suggestMmr('FROM a | MMR ');
+
+    expect(texts).toEqual(
+      expect.arrayContaining([
+        denseVectorLiteralCompleteItem.text,
+        onCompleteItem.text,
+        ...getFunctionSignaturesByReturnType(Location.MMR, 'dense_vector', { scalar: true }),
+      ])
+    );
   });
 
-  it('suggests ON after query vector', async () => {
+  // The query vector is a constant: a literal, a parameter or a function's result.
+  it('suggests no columns for the query vector', async () => {
+    const texts = await suggestMmr('FROM a | MMR ');
+
+    expect(texts).not.toContain('denseField');
+  });
+
+  it('suggests ON after the query vector', async () => {
     await expectMmrSuggestions('FROM a | MMR [0.1, 0.2]::dense_vector ', [onCompleteItem.text]);
   });
 
-  it('suggests only dense vector fields after ON', async () => {
+  it('suggests only dense vector columns after ON', async () => {
     const context = buildContextWithDenseVector();
     const mockCallbacks = getMockCallbacks();
-    (mockCallbacks.getByType as jest.Mock).mockResolvedValue([
-      { label: 'denseField', text: 'denseField ' },
-      { label: 'missingDense', text: 'missingDense ' },
-    ]);
-
-    await expectMmrSuggestions('FROM a | MMR ON ', ['denseField '], mockCallbacks, context);
-  });
-
-  it('does not suggest ON while cursor is inside query vector function arguments', async () => {
-    const context = buildContextWithDenseVector();
-    const mockCallbacks = getMockCallbacks();
-    (mockCallbacks.getByType as jest.Mock).mockResolvedValue([
-      { label: 'denseField', text: 'denseField ' },
-    ]);
-
-    const results = await suggest(
-      'FROM a | MMR TO_DENSE_VECTOR(',
-      context,
-      'mmr',
-      mockCallbacks,
-      autocomplete
+    (mockCallbacks.getByType as jest.Mock).mockImplementation(async (types: string[]) =>
+      types.includes('dense_vector') ? [{ label: 'denseField', text: 'denseField' }] : []
     );
 
-    const texts = results.map((result) => result.text);
-    expect(texts).not.toContain('ON ');
+    await expectMmrSuggestions('FROM a | MMR ON ', ['denseField'], mockCallbacks, context);
   });
 
-  it('suggests LIMIT after field', async () => {
-    const context = buildContextWithDenseVector();
-    await expectMmrSuggestions('FROM a | MMR ON denseField ', ['LIMIT '], undefined, context);
+  it('does not suggest ON while the cursor is inside the query vector function arguments', async () => {
+    const texts = await suggestMmr('FROM a | MMR TO_DENSE_VECTOR(');
+
+    expect(texts).not.toContain(onCompleteItem.text);
   });
 
-  it('suggests limit value after LIMIT keyword', async () => {
-    const context = buildContextWithDenseVector();
+  it('suggests LIMIT after the field', async () => {
+    await expectMmrSuggestions(
+      'FROM a | MMR ON denseField ',
+      ['LIMIT '],
+      undefined,
+      buildContextWithDenseVector()
+    );
+  });
+
+  it('suggests limit values after the LIMIT keyword', async () => {
     await expectMmrSuggestions(
       'FROM a | MMR ON denseField LIMIT ',
       ['10 ', '100 ', '1000 '],
       undefined,
-      context
+      buildContextWithDenseVector()
     );
   });
 
-  it('suggests WITH and pipe after limit value', async () => {
-    const context = buildContextWithDenseVector();
+  it('suggests WITH, pipe and new line after the limit value', async () => {
     await expectMmrSuggestions(
       'FROM a | MMR ON denseField LIMIT 10 ',
-      ['\n', withCompleteItem.text, pipeCompleteItem.text],
+      [newLineCompleteItem.text, withCompleteItem.text, pipeCompleteItem.text],
       undefined,
-      context
+      buildContextWithDenseVector()
     );
   });
 
-  it('suggests lambda map after WITH keyword', async () => {
-    const context = buildContextWithDenseVector();
+  // A trailing comment makes the parser add an `ON` option that starts nowhere; the vector is
+  // still the expression the cursor follows.
+  it('suggests ON after the query vector and a comment', async () => {
+    await expectMmrSuggestions('FROM a | MMR [0.1]::dense_vector /* c */ ', [onCompleteItem.text]);
+  });
+
+  it('suggests nothing after a WITH typed by hand; the WITH item opens the map', async () => {
     await expectMmrSuggestions(
       'FROM a | MMR ON denseField LIMIT 10 WITH ',
-      ['{ "lambda": ${0:0.5} }'],
+      [],
       undefined,
-      context
+      buildContextWithDenseVector()
     );
   });
 
-  it('suggests lambda key inside options map', async () => {
-    const context = buildContextWithDenseVector();
-    const mockCallbacks = getMockCallbacks();
+  it('suggests the lambda key inside the options map', async () => {
+    const texts = await suggestMmr('FROM a | MMR ON denseField LIMIT 10 WITH { ');
 
-    const results = await suggest(
-      'FROM a | MMR ON denseField LIMIT 10 WITH { ',
-      context,
-      'mmr',
-      mockCallbacks,
-      autocomplete
-    );
+    expect(texts).toEqual(['"lambda": '].map((text) => expect.stringContaining(text)));
+  });
 
-    const texts = results.map((result) => result.text);
-    expect(texts).toEqual(expect.arrayContaining(['"lambda": ']));
+  it('suggests a lambda value', async () => {
+    const texts = await suggestMmr('FROM a | MMR ON denseField LIMIT 10 WITH { "lambda": ');
+
+    expect(texts).toEqual(['0.5']);
   });
 });
