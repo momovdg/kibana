@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { getMockCallbacks, mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import type { ICommandCallbacks } from '../types';
 import { expectSuggestions } from '../../../__tests__/commands/autocomplete';
 import { settings } from '../../definitions/generated/settings';
@@ -74,6 +74,10 @@ describe('SET Autocomplete', () => {
 
     it('suggests settings for partial setting name', async () => {
       await setExpectSuggestions('SET project', serverlessSettings, mockCallbacks);
+    });
+
+    it('suggests the assignment operator after a lowercase command', async () => {
+      await setExpectSuggestions('set project_routing ', ['= '], mockCallbacks);
     });
 
     it('suggests assignment operator after setting name', async () => {
@@ -179,12 +183,21 @@ describe('SET Autocomplete', () => {
       await setExpectSuggestions('SET project_routing = "test"', [';\n']);
     });
 
+    // A whole literal gets what follows it, keeping the word.
     it('suggests semicolon with newline after boolean value', async () => {
-      await setExpectSuggestions('SET project_routing = true', [';\n']);
+      await setExpectSuggestions('SET project_routing = true', ['true;\n']);
+    });
+
+    it('suggests semicolon with newline after a value equal to one offered', async () => {
+      await setExpectSuggestions('SET approximation = true', ['true;\n']);
+    });
+
+    it('suggests nothing after a whole literal when the semicolon is already present', async () => {
+      await setExpectSuggestions('SET approximation = true^;', []);
     });
 
     it('suggests semicolon with newline after numeric value', async () => {
-      await setExpectSuggestions('SET project_routing = 123', [';\n']);
+      await setExpectSuggestions('SET project_routing = 123', ['123;\n']);
     });
 
     it('does not suggest semicolon if already present in the query', async () => {

@@ -10,7 +10,9 @@ import { i18n } from '@kbn/i18n';
 import { ESQLVariableType } from '@kbn/esql-types';
 import {
   isAssignment,
+  isBinaryExpression,
   isColumn,
+  isIdentifier,
   isMap,
   isOptionNode,
   isSource,
@@ -64,6 +66,9 @@ import { isExpressionSlot } from './slot_matching';
 import { getLocationInfo } from '../location';
 import { specialIndicesToSuggestions } from '../../definitions/utils/sources';
 import { createEnrichedContext, createEnrichedGetByType } from '../join/utils';
+import { getSettingsCompletionItems } from '../../definitions/utils/settings';
+import { getSettingMapParameters, getSettingValueItems } from '../set/utils';
+import { ReplacementRangeStrategyKind } from '../../../language/autocomplete/utils/prefix_range';
 import { Location, type ESQLPolicy, type GetColumnsByTypeFn, type ISuggestionItem } from '../types';
 import type { ExpressionSpec, SlotDefinition, SlotProvider, SuggestContext } from './types';
 
@@ -347,6 +352,54 @@ const withLookupColumns = async ({
     callbacks: { ...callbacks, getByType },
     context: await createEnrichedContext(context, join, getColumnsForQuery),
   };
+};
+
+/** The settings SET can assign, without the serverless-only ones outside serverless. */
+export const settingNames =
+  (): SlotProvider =>
+  async ({ callbacks }) =>
+    getSettingsCompletionItems(callbacks?.isServerless);
+
+/** The name of the setting SET assigns, once `=` is typed. */
+const getSettingName = ({ command }: SuggestContext): string => {
+  const [setting] = command.args;
+  const name = !Array.isArray(setting) && isBinaryExpression(setting) ? setting.args[0] : undefined;
+  return !Array.isArray(name) && isIdentifier(name) ? name.name : '';
+};
+
+/**
+ * The value of the setting SET assigns: inside its map, the setting's parameters; inside an open
+ * string, the values as its content; otherwise the values, strings quoted.
+ */
+export const settingValues = (): SlotProvider => async (ctx, slot) => {
+  const { query, cursorPosition, location } = ctx;
+  const name = getSettingName(ctx);
+  if (slot.stack.includes('mapExpression')) {
+    const parameters = getSettingMapParameters(name);
+    return parameters
+      ? getCommandMapExpressionSuggestions(query.slice(0, cursorPosition), parameters)
+      : [];
+  }
+
+  const items = getSettingValueItems(name);
+  const { partial } = location;
+  if (partial?.text.startsWith('"')) {
+    // The whole content replaces what is between the quotes, up to a closing one.
+    const start = partial.start + 1;
+    const closingQuote = query.indexOf('"', start);
+    const scopeText = query.slice(start, closingQuote === -1 ? query.length : closingQuote);
+    return items.map((item) => ({
+      ...item,
+      replacementRangeStrategy: {
+        kind: ReplacementRangeStrategyKind.WHOLE_SCOPE,
+        scopeText,
+        startOffset: start,
+      },
+    }));
+  }
+  return items.map((item) =>
+    item.category === SuggestionCategory.CONSTANT_VALUE ? { ...item, text: `"${item.text}"` } : item
+  );
 };
 
 /** The enrich policy the command names, looked up without its `_mode:` prefix as validation does. */

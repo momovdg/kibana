@@ -195,6 +195,10 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
     },
   },
   'rerankCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
+  // `SET <setting> = <value>;`: the value, a constant or a map, is the named setting's.
+  'setField>identifier': { kind: 'entity', entityType: 'setting' },
+  'setField>constant': { kind: 'setting_value', setting: 'setField>identifier' },
+  'setField>mapExpression': { kind: 'setting_value', setting: 'setField>identifier' },
   'mmrCommand>commandNamedParameters': {
     kind: 'map',
     parameters: { lambda: { type: 'double', default: '0.5' } },
