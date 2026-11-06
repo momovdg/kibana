@@ -121,7 +121,7 @@ const getSharedStack = (
   { commandRules }: GrammarInfo
 ): RuleWithStartToken[] => {
   const stacks = [
-    ...[...candidates.rules.values()].map(({ callStack }) => callStack),
+    ...[...candidates.rules.values()].flat().map(({ callStack }) => callStack),
     ...candidates.tokenCallStacks.values(),
   ];
   const inCommand = stacks.filter((stack) =>
@@ -259,8 +259,8 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
   }
 
   const { ruleNames } = grammar;
-  const expectedRules: ExpectedRule[] = [...candidates.rules].map(
-    ([ruleIndex, { callStack, startTokenIndex }]) => {
+  const expectedRules: ExpectedRule[] = [...candidates.rules].flatMap(([ruleIndex, entries]) =>
+    entries.map(({ callStack, startTokenIndex }) => {
       const continuation = startTokenIndex < caret.tokenIndex;
       const slotStart = allTokens[startTokenIndex].start;
       const enclosingStart = callStack.findLastIndex(
@@ -277,7 +277,7 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
             : '',
         previousTokenType: allTokens.slice(0, startTokenIndex).findLast(isVisible)?.type,
       };
-    }
+    })
   );
 
   const sharedStack = getSharedStack(candidates, grammar);

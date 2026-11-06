@@ -411,11 +411,31 @@ export const filterKeywordsByRoles = (
     const assigns = nameReading === 'new_column';
     return keywords.filter(({ token }) => (token === 'ASSIGN') === assigns);
   }
-  const slot = location.expectedRules.find(
+  // Every position the name typed may fill, as DENSE_VECTOR's `field ` (a target before `=`
+  // or the first column of the list).
+  const slots = location.expectedRules.filter(
     (candidate) => candidate.continuation && !isExpressionSlot(candidate)
   );
-  const sites = slot ? getSlotSites(slot) : [];
-  if (!slot || !sites.some((site) => getArgumentRole(site))) {
+  const [slot] = slots;
+  if (!slot) {
+    return keywords;
+  }
+  // A keyword may also read the name as a position the locator does not report, as `=` after
+  // DENSE_VECTOR's target: a call of the same rule, after the same token, that the keyword
+  // follows in its own rule.
+  const previous = previousTokenName(slot);
+  const keywordSites = keywords.flatMap(({ token }) => {
+    const parent = location.tokenStacks.get(getTokenType(token))?.rules.at(-1);
+    return parent
+      ? sitesAfter(parent, slot.rule, previous).filter(({ followedBy }) =>
+          followedBy.includes(token)
+        )
+      : [];
+  });
+  const sites = [...slots.flatMap(getSlotSites), ...keywordSites].filter(
+    (site, index, all) => all.findIndex(({ state }) => state === site.state) === index
+  );
+  if (!sites.some((site) => getArgumentRole(site))) {
     return keywords;
   }
 

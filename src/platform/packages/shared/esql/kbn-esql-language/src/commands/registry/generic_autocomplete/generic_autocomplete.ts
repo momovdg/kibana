@@ -74,6 +74,9 @@ const SEPARATOR_TOKENS = ['COMMA', 'ASSIGN', 'SEMICOLON'];
 
 const CLOSING_TOKENS = ['RP', 'CLOSING_BRACKET', 'RIGHT_BRACES'];
 
+/** Tokens a value always follows in the language, whatever the grammar allows after them. */
+const VALUE_INTRODUCING_TOKENS = ['ASSIGN', 'ON'];
+
 const needsLeadingSpace = ({ token, item }: KeywordItem): boolean =>
   !SEPARATOR_TOKENS.includes(token) && item !== newLineCompleteItem;
 
@@ -213,11 +216,17 @@ const suggestAt = async (
     inExpression && !isGluedToValue(location) && getNameReading(ctx) !== 'new_column'
       ? await suggestExpression(ctx, spec.expression, getExpressionOptions(location))
       : [];
-  const keywordItems = adjustKeywords(keywordsAt(location), ctx).map((keyword) =>
-    toItem(keyword, location)
-  );
-
   const exampleItems = inExpression ? await getExpressionExamples(ctx) : [];
+  const valueItems = [...slotItems.flat(), ...expressionItems, ...exampleItems];
 
-  return [...slotItems.flat(), ...expressionItems, ...exampleItems, ...keywordItems];
+  // Right after `=` or `ON` something has to follow, even where the grammar leaves it out, as
+  // after `DENSE_VECTOR vec = `: when something can fill the position, only that.
+  const needsValue =
+    valueItems.length > 0 &&
+    VALUE_INTRODUCING_TOKENS.some((name) => getTokenType(name) === location.previousTokenType);
+  const keywordItems = needsValue
+    ? []
+    : adjustKeywords(keywordsAt(location), ctx).map((keyword) => toItem(keyword, location));
+
+  return [...valueItems, ...keywordItems];
 };

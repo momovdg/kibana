@@ -206,10 +206,15 @@ export function attachReplacementRanges(
     // part of the typed sequence, such as "IS NOT NULL" after "IS NO|". Using
     // trimEnd() keeps trailing formatting whitespace from routing otherwise-normal
     // suggestions through the overlap path.
+    // The overlap counts only when it covers the whole word being typed: the `c` that ends
+    // `vec` and starts `col0 = ` is a coincidence, and replacing it would give `vecol0 = `.
     const overlapRange = containsWhitespace(suggestion.text.trimEnd())
       ? getOverlapRange(innerText, suggestion.text)
       : undefined;
-    const effectiveRange = overlapRange ?? { start: range.start, end: range.end };
+    const effectiveRange =
+      overlapRange && overlapRange.start <= range.start
+        ? overlapRange
+        : { start: range.start, end: range.end };
 
     return [
       {

@@ -82,6 +82,11 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'mmrCommand.limitValue': { kind: 'constant', valueType: 'integer' },
 
   'joinTarget.index': { kind: 'entity', entityType: 'lookup_index' },
+
+  'denseVectorNaming.targetField': { kind: 'new_column' },
+  'denseVectorNaming.suffixKeyword': { kind: 'option_name', allowedValues: ['suffix'] },
+  'denseVectorNaming.suffix': { kind: 'constant', valueType: 'string' },
+  'denseVectorNaming.literalInput': { kind: 'constant', valueType: 'string' },
 };
 
 /**
@@ -91,6 +96,8 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
   'limitByGroupKey>booleanExpression': { kind: 'expression' },
+  // `name = expression` in a field list (EVAL, STATS, RERANK's ON): the name is a new column.
+  'field>qualifiedName': { kind: 'new_column' },
 
   'dissectCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
   'dissectCommand>string': {
@@ -127,6 +134,15 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
     },
   },
   'completionCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
+  'qualifiedNames>qualifiedName': { kind: 'column', types: STRING_TYPES },
+  'denseVectorCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: {
+      ...INFERENCE_PARAMETERS,
+      type: { type: 'keyword', values: ['text', 'image'], default: 'text' },
+      timeout: { type: 'keyword', default: '30s' },
+    },
+  },
   'rerankCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
   'ipLocationCommand>qualifiedName': { kind: 'new_column' },
   'ipLocationCommand>primaryExpression': { kind: 'expression', types: ['ip', ...STRING_TYPES] },
@@ -157,8 +173,7 @@ export const UNCLASSIFIED_ARGUMENTS: Readonly<Record<string, string>> = {
   'highlightCommand.queryExpression': 'check with HIGHLIGHT',
   'highlightCommand.highlightFields': 'check with HIGHLIGHT',
   'mmrCommand.queryVector': 'a vector or expression; check with MMR',
-  'denseVectorNaming.targetField': 'check with DENSE_VECTOR',
-  'denseVectorNaming.suffixKeyword': 'check with DENSE_VECTOR',
+  'highlightCommand.prefix': 'check with HIGHLIGHT',
 };
 
 /** Labels inside expressions, names and PROMQL: not command arguments. */

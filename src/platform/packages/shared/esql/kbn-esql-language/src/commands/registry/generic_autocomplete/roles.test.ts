@@ -206,6 +206,12 @@ describe('grammar roles', () => {
       expect(await texts('from a | rerank "q" on newColumn ', 'rerank')).toEqual(['= ']);
     });
 
+    it('offers a new name where a field list item starts, as `col0 = ` in RERANK ON', async () => {
+      const items = await texts('from a | rerank "q" on ', 'rerank');
+      expect(items).toEqual(expect.arrayContaining([' = ', 'keywordField']));
+      expect(items).not.toContain('integerField');
+    });
+
     it('reads a parameter as the expression', async () => {
       expect(await texts('from a | completion ? ', 'completion')).not.toContain('= ');
     });

@@ -22,10 +22,14 @@ const tokenNames = (text: string) =>
     .map((type) => (type === Token.EOF ? 'EOF' : symbolicNames[type]))
     .sort();
 
-const ruleNames = (text: string) =>
-  locate(text)
-    .expectedRules.map(({ rule }) => rule)
-    .sort();
+/** The rules expected at the end of `text`; a rule reached by several call paths is listed once. */
+const ruleNames = (text: string) => [
+  ...new Set(
+    locate(text)
+      .expectedRules.map(({ rule }) => rule)
+      .sort()
+  ),
+];
 
 const EXPRESSION_RULES = ['constant', 'functionName', 'qualifiedName'];
 
