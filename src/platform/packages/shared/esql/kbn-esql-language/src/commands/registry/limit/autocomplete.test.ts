@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -63,7 +63,7 @@ describe('LIMIT Autocomplete', () => {
 
   describe('LIMIT <number>', () => {
     test('suggests numbers', async () => {
-      await limitExpectSuggestions('from a | limit /', limitValueTexts);
+      await limitExpectSuggestions('from a | limit ', limitValueTexts);
     });
 
     test('suggests numbers when value is still missing', async () => {
