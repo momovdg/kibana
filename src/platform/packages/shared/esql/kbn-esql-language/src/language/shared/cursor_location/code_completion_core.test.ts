@@ -62,10 +62,12 @@ const collect = (
     following: new Map(
       [...candidates.tokens].map(([type, following]) => [tokenName(type), following.map(tokenName)])
     ),
-    rules: [...candidates.rules].map(([ruleIndex, { ruleList }]) => ({
-      rule: ruleNames[ruleIndex],
-      stack: ruleList.map((index) => ruleNames[index]),
-    })),
+    rules: [...candidates.rules].flatMap(([ruleIndex, entries]) =>
+      entries.map(({ ruleList }) => ({
+        rule: ruleNames[ruleIndex],
+        stack: ruleList.map((index) => ruleNames[index]),
+      }))
+    ),
     startRuleCanEndAtCaret: candidates.startRuleCanEndAtCaret,
   };
 };
@@ -136,11 +138,19 @@ describe('CodeCompletionCore', () => {
       const { tokens, rules } = collect(' FROM a | WHERE x > 1 AND  ', { fromLastPipe: true });
 
       expect(tokens).toEqual(expect.arrayContaining(['NOT', 'LP']));
-      expect(rules.map(({ rule }) => rule).sort()).toEqual([
+      expect([...new Set(rules.map(({ rule }) => rule))].sort()).toEqual([
         'constant',
         'functionName',
         'qualifiedName',
       ]);
+    });
+
+    it('keeps every call path of a rule', () => {
+      const { rules } = collect(' FROM a | DENSE_VECTOR ', { fromLastPipe: true });
+
+      expect(
+        rules.filter(({ rule }) => rule === 'qualifiedName').map(({ stack }) => stack.at(-1))
+      ).toEqual(expect.arrayContaining(['denseVectorNaming', 'qualifiedNames']));
     });
   });
 

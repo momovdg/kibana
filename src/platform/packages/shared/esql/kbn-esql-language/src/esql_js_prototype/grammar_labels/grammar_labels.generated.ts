@@ -317,6 +317,14 @@ export const GRAMMAR_LABELS: readonly GrammarLabel[] = [
   },
   {
     rule: 'highlightCommand',
+    label: 'prefix',
+    invokes: 'string',
+    state: 796,
+    precededBy: ['ASSIGN'],
+    followedBy: ['<booleanExpression>', '<commandNamedParameters>', 'ON'],
+  },
+  {
+    rule: 'highlightCommand',
     label: 'queryExpression',
     invokes: 'booleanExpression',
     state: 800,
@@ -373,11 +381,27 @@ export const GRAMMAR_LABELS: readonly GrammarLabel[] = [
   },
   {
     rule: 'denseVectorNaming',
+    label: 'suffix',
+    invokes: 'string',
+    state: 899,
+    precededBy: ['ASSIGN'],
+    followedBy: ['ON'],
+  },
+  {
+    rule: 'denseVectorNaming',
     label: 'targetField',
     invokes: 'qualifiedName',
     state: 902,
     precededBy: ['<start>'],
     followedBy: ['ASSIGN'],
+  },
+  {
+    rule: 'denseVectorNaming',
+    label: 'literalInput',
+    invokes: 'string',
+    state: 907,
+    precededBy: ['<start>', 'ASSIGN'],
+    followedBy: ['<end>'],
   },
   {
     rule: 'booleanExpression',
@@ -442,6 +466,14 @@ export const GRAMMAR_LABELS: readonly GrammarLabel[] = [
     state: 1044,
     precededBy: ['MINUS', 'PLUS'],
     followedBy: ['<end>', 'ASTERISK', 'MINUS', 'PERCENT', 'PLUS', 'SLASH'],
+  },
+  {
+    rule: 'entryExpression',
+    label: 'key',
+    invokes: 'string',
+    state: 1131,
+    precededBy: ['<start>'],
+    followedBy: ['COLON'],
   },
   {
     rule: 'entryExpression',
