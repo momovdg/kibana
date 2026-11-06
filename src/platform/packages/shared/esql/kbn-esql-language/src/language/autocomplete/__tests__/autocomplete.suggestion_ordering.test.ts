@@ -85,7 +85,7 @@ describe('Suggestion Ordering', () => {
       const { suggest } = await setup();
       const texts = (await suggest('FROM a | HIGHLIGHT /')).map((s) => s.text);
       const relevant = [
-        '"${0:Your search query}"',
+        '"${0:The text to highlight}"',
         'prefix = "${0:highlight_}"',
         'MATCH($0)',
         'ON ',
