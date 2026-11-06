@@ -28,7 +28,11 @@ import type {
   ESQLMap,
   ESQLSingleAstItem,
 } from '@elastic/esql/types';
-import { getLabelledArgumentRole, type MapParameter } from '../../../esql_js_prototype';
+import {
+  getCallSites,
+  getLabelledArgumentRole,
+  type MapParameter,
+} from '../../../esql_js_prototype';
 import { suggestForExpression } from '../../definitions/utils';
 import { getAssignmentExpressionRoot } from '../../definitions/utils/expressions';
 import {
@@ -42,7 +46,10 @@ import {
   getCommandMapExpressionSuggestions,
   type MapParameters,
 } from '../../definitions/utils/autocomplete/map_expression';
-import type { PreferredExpressionType } from '../../definitions/utils/autocomplete/expressions/types';
+import type {
+  PreferredExpressionType,
+  SuggestForExpressionResult,
+} from '../../definitions/utils/autocomplete/expressions/types';
 import { getCommandOutput } from '../../definitions/utils/columns';
 import { buildFieldsDefinitions } from '../../definitions/utils/functions';
 import { buildConstantsDefinitions } from '../../definitions/utils/literals';
@@ -465,13 +472,35 @@ const startsCommandArgument = (slot: ExpectedRule): boolean =>
  * unterminated `SORT a, `b`), or at the start of an argument (`USER_AGENT ua = `, where `ua`
  * is not part of it).
  */
+/** Rules whose own lists are part of an expression: function arguments and `IN (…)`. */
+const EXPRESSION_LIST_RULES = ['functionExpression', 'booleanExpression'];
+
+/**
+ * The slot follows a comma of an expression's list, as a function's next argument or the next
+ * value of `a IN (b, `, rather than one of the command's lists. The calls the parser made tell
+ * them apart: `booleanExpression` calls a value after a comma only in `IN (…)`.
+ */
+const isInExpressionList = ({ rule, stack, invokingStates }: ExpectedRule): boolean => {
+  for (let index = stack.length; index > 0; index--) {
+    const state = invokingStates?.[index];
+    const child = index === stack.length ? rule : stack[index];
+    const site = getCallSites(stack[index - 1], child).find(
+      (candidate) => candidate.state === state
+    );
+    if (site?.precededBy.includes('COMMA')) {
+      return EXPRESSION_LIST_RULES.includes(stack[index - 1]);
+    }
+  }
+  return false;
+};
+
 const findExpressionRoot = (ctx: SuggestContext): ESQLSingleAstItem | undefined => {
   const { cursorPosition, location } = ctx;
-  // A comma between a function's arguments keeps the function as the root. A function name's
-  // own `functionExpression` is its direct parent, not a call around it.
+  // A comma between a function's arguments or in an `IN (…)` list keeps the expression as the
+  // root; one of the command's own lists starts a new item.
   const afterListComma =
     location.previousTokenType === getTokenType('COMMA') &&
-    !location.expectedRules.some(({ stack }) => stack.slice(0, -1).includes('functionExpression'));
+    !location.expectedRules.some(isInExpressionList);
   if (afterListComma || location.expectedRules.some(startsCommandArgument)) {
     return undefined;
   }
@@ -521,17 +550,19 @@ export const suggestExpression = async (
     valuesControl = false,
     noColumns = false,
     lookupColumns = false,
+    subqueries = false,
   }: {
     types?: string[];
     valuesControl?: boolean;
     noColumns?: boolean;
     lookupColumns?: boolean;
+    subqueries?: boolean;
   } = {}
-): Promise<ISuggestionItem[]> => {
+): Promise<SuggestForExpressionResult> => {
   const { query, command, cursorPosition } = ctx;
   const { context, callbacks } = lookupColumns ? await withLookupColumns(ctx) : ctx;
   const resolvedOptions = typeof options === 'function' ? options(ctx) : options;
-  const { suggestions } = await suggestForExpression({
+  const { suggestions, computed } = await suggestForExpression({
     query,
     expressionRoot: getRoot(ctx),
     command,
@@ -558,14 +589,18 @@ export const suggestExpression = async (
       }),
       ...(valuesControl && { controlType: ESQLVariableType.VALUES }),
       ...(noColumns && { suggestFields: false }),
+      ...(subqueries && { allowSubquery: true }),
     },
   });
 
   // `=` and `AS` are offered by location, as JOIN's; they fit only where the grammar expects them.
-  return suggestions.filter(({ label }) => {
-    const token = GRAMMAR_PLACED_OPERATORS[label.toLowerCase()];
-    return !token || ctx.location.expectedTokens.has(getTokenType(token));
-  });
+  return {
+    suggestions: suggestions.filter(({ label }) => {
+      const token = GRAMMAR_PLACED_OPERATORS[label.toLowerCase()];
+      return !token || ctx.location.expectedTokens.has(getTokenType(token));
+    }),
+    computed,
+  };
 };
 
 /** Operators the expression engine offers by location, with the token the grammar places. */

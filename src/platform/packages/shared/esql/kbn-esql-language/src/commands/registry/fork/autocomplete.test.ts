@@ -70,11 +70,13 @@ const allGroupingFunctions = getFunctionSignaturesByReturnType(
 
 const EMPTY_WHERE_SUGGESTIONS = [...getFieldNamesByType('any'), ...allEvalFnsForWhere];
 
+// After an operator, a function picked is followed by a space (columns get theirs from the
+// mocked `getByType`).
 const EXPECTED_COMPARISON_WITH_TEXT_FIELD_SUGGESTIONS = [
   ...getFieldNamesByType(['text', 'keyword', 'ip', 'version']),
   ...getFunctionSignaturesByReturnType(Location.WHERE, ['text', 'keyword', 'ip', 'version'], {
     scalar: true,
-  }),
+  }).map((text) => `${text} `),
 ];
 
 export const EXPECTED_FIELD_AND_FUNCTION_SUGGESTIONS = [

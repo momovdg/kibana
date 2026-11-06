@@ -37,6 +37,37 @@ const stringOperatorSuggestions = getOperatorSuggestions([
   ...nullCheckOperators,
 ]);
 
+// The operators a double column takes in SORT, as after `sort doubleField `.
+const doubleOperatorSuggestions = [
+  '!= $0',
+  '% $0',
+  '* $0',
+  '+ $0',
+  '- $0',
+  '/ $0',
+  '< $0',
+  '<= $0',
+  '== $0',
+  '> $0',
+  '>= $0',
+  'IN $0',
+  'IS NOT NULL',
+  'IS NULL',
+  'NOT IN $0',
+];
+
+/** What follows a complete column, keeping it: modifiers, separators and its operators. */
+const afterColumn = (column: string, operators: string[]) => [
+  `${column}\n`,
+  `${column}, `,
+  `${column} | `,
+  `${column} ASC`,
+  `${column} DESC`,
+  `${column} NULLS FIRST`,
+  `${column} NULLS LAST`,
+  ...operators.map((operator) => `${column} ${operator}`),
+];
+
 const sortExpectSuggestions = (
   query: string,
   expectedSuggestions: string[],
@@ -86,25 +117,16 @@ describe('SORT Autocomplete', () => {
       ]);
     });
 
-    it('suggests modifers after complete column name', async () => {
-      await sortExpectSuggestions('from a | sort keywordField', [
-        'keywordField\n',
-        'keywordField, ',
-        'keywordField | ',
-        'keywordField ASC',
-        'keywordField DESC',
-        'keywordField NULLS FIRST',
-        'keywordField NULLS LAST',
-      ]);
-      await sortExpectSuggestions('from a | sort keywordField, doubleField', [
-        'doubleField\n',
-        'doubleField, ',
-        'doubleField | ',
-        'doubleField ASC',
-        'doubleField DESC',
-        'doubleField NULLS FIRST',
-        'doubleField NULLS LAST',
-      ]);
+    // The same as after the column and a space, keeping the column.
+    it('suggests modifers and operators after complete column name', async () => {
+      await sortExpectSuggestions(
+        'from a | sort keywordField',
+        afterColumn('keywordField', stringOperatorSuggestions)
+      );
+      await sortExpectSuggestions(
+        'from a | sort keywordField, doubleField',
+        afterColumn('doubleField', doubleOperatorSuggestions)
+      );
     });
 
     it('suggests modifers and expression operators after column + whitespace', async () => {
@@ -281,20 +303,10 @@ describe('SORT Autocomplete', () => {
   });
 
   describe('positions the grammar resolves', () => {
-    const afterColumn = (column: string) => [
-      `${column}\n`,
-      `${column}, `,
-      `${column} | `,
-      `${column} ASC`,
-      `${column} DESC`,
-      `${column} NULLS FIRST`,
-      `${column} NULLS LAST`,
-    ];
-
     it('ignores comments between the parts of a sort clause', async () => {
       await sortExpectSuggestions(
         'from a | sort /* c */ keywordField',
-        afterColumn('keywordField')
+        afterColumn('keywordField', stringOperatorSuggestions)
       );
       await sortExpectSuggestions('from a | sort keywordField /* c */ ASC /* d */ ', [
         '\n',
@@ -318,7 +330,7 @@ describe('SORT Autocomplete', () => {
     it('suggests modifiers right after a column that follows a comma without a space', async () => {
       await sortExpectSuggestions(
         'from a | sort keywordField ASC,doubleField',
-        afterColumn('doubleField')
+        afterColumn('doubleField', doubleOperatorSuggestions)
       );
     });
 
