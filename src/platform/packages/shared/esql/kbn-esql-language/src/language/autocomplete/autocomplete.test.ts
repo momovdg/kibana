@@ -296,7 +296,8 @@ describe('autocomplete', () => {
     testSuggestions('FROM a | WHERE tags == """ /"""', [], ' ');
     testSuggestions('FROM a | WHERE tags == "a/"', []);
     testSuggestions('FROM a | EVAL tags == " /"', [], ' ');
-    testSuggestions('FROM a | EVAL tags == "a"/', []);
+    // Right after the closing quote the value is complete: what follows gets a leading space.
+    testSuggestions('FROM a | EVAL tags == "a"/', ['\n', ' | ', ', ']);
     testSuggestions('FROM a | STATS tags == " /"', [], ' ');
     testSuggestions('FROM a | STATS tags == "a/"', []);
     testSuggestions('FROM a | GROK "a/" "%{WORD:firstWord}"', []);
@@ -497,8 +498,9 @@ describe('autocomplete', () => {
     testSuggestions('FROM index1 METADATA _/', METADATA_FIELDS);
 
     // EVAL argument
+    // The name typed may be a new column: ` = ` follows it, keeping the name.
     testSuggestions('FROM index1 | EVAL b/', [
-      '= ',
+      'b = ',
       'col0 = ',
       ...getFieldNamesByType('any').map((name) => `${name} `),
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),

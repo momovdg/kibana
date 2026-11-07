@@ -190,6 +190,8 @@ export const getExpressionOptions = (
   lookupColumns: boolean;
   subqueries: boolean;
   completeAsBoolean: boolean;
+  fullTextOnlyIn?: string;
+  constantArgument: boolean;
 } => {
   const role = getExpressionRole(location)?.role ?? getTokenExpressionRole(location);
   // The whole argument may hold subqueries, also inside a function call, as `CASE(a IN (FROM`.
@@ -208,6 +210,10 @@ export const getExpressionOptions = (
     subqueries: argumentRole?.constraints?.subqueries === 'true',
     // What follows the argument comes once it is a whole boolean, as WHERE's pipe.
     completeAsBoolean: role?.constraints?.complete === 'boolean',
+    // Full-text functions only inside one function, as EVAL's `SCORE(MATCH(…))`.
+    fullTextOnlyIn: argumentRole?.constraints?.fullTextOnlyIn,
+    // A constant reads no column anywhere, also inside a function call, as ROW's values.
+    constantArgument: isConstantArgument(location),
   };
 };
 
@@ -299,6 +305,17 @@ export const getExpressionExamples = (ctx: SuggestContext): Promise<ISuggestionI
 };
 
 /**
+ * The argument at the cursor is a constant, as ROW's values, which have no input: a name there
+ * is never a column.
+ */
+const isConstantArgument = (location: CursorLocation): boolean => {
+  const role =
+    getExpressionRole(location, { throughFunctions: true })?.role ??
+    getTokenExpressionRole(location, { throughFunctions: true });
+  return role?.constraints?.constantOnly === 'true';
+};
+
+/**
  * A bare name that continues an expression where `=` may also follow, as `COMPLETION x ` or
  * `RERANK "q" ON x `: `=` reads it as a new column, anything else as the expression, where it
  * must be an existing column. An existing column is read as the expression, any other name as
@@ -322,7 +339,9 @@ export const getNameReading = ({
   if (slot.text.startsWith('?')) {
     return 'expression';
   }
-  return columnExists(slot.text, context) ? 'expression' : 'new_column';
+  return !isConstantArgument(location) && columnExists(slot.text, context)
+    ? 'expression'
+    : 'new_column';
 };
 
 /** Roles the expression engine fills. */
@@ -430,7 +449,11 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
           suggestedColumnName(`${site.rule}.${site.label}`, {
             comma: site.followedBy.includes('COMMA') && !site.followedBy.includes(RULE_END),
           })) ||
-        (site.followedBy.includes('ASSIGN') ? newName() : none())
+        // In a field list (EVAL, ROW), where an expression may come instead of the name, the
+        // name being typed also gets its `=`, as `b = `.
+        (site.followedBy.includes('ASSIGN')
+          ? newName({ whileTyped: site.rule === 'field' })
+          : none())
       );
     case 'constant':
       return role.valueType === 'identifier'
@@ -559,7 +582,11 @@ const NAME_RULES = ['qualifiedName', 'qualifiedNamePattern', 'enrichPolicyName',
  */
 export const isCompleteName = (name: string, ctx: SuggestContext): boolean =>
   ctx.location.expectedRules.some((slot) => {
-    if (!NAME_RULES.includes(slot.rule)) {
+    // A constant's names are new columns, never existing ones, as in ROW.
+    if (
+      !NAME_RULES.includes(slot.rule) ||
+      (isExpressionSlot(slot) && isConstantArgument(ctx.location))
+    ) {
       return false;
     }
     const roles = getSlotSites(slot).map(getArgumentRole);

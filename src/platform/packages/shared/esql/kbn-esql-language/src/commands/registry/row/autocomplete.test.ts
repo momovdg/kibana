@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFunctionSignaturesByReturnType,
@@ -37,8 +37,19 @@ describe('ROW Autocomplete', () => {
     await rowExpectSuggestions('ROW col0 = ', functions);
   });
 
-  it('suggests a comma and a pipe after a complete expression', async () => {
-    const expected = [', ', '| ', '\n'];
+  // Operators may continue a value, as `ROW a = 23 + 1`.
+  it('suggests a comma, a pipe and operators after a complete expression', async () => {
+    const expected = [
+      ', ',
+      '| ',
+      '\n',
+      ...getFunctionSignaturesByReturnType(
+        Location.ROW,
+        'any',
+        { operators: true, skipAssign: true },
+        ['integer']
+      ),
+    ];
 
     await rowExpectSuggestions('ROW col0 = 23 ', expected);
     await rowExpectSuggestions('ROW ABS(23) ', expected);

@@ -43,14 +43,17 @@ import type {
 import { FunctionDefinitionTypes } from '../../commands/definitions/types';
 import { mockContext, getMockCallbacks } from './context_fixtures';
 import { getSafeInsertText } from '../../commands/definitions/utils';
-import { timeUnitsToSuggest } from '../../commands/definitions/constants';
+import {
+  FULL_TEXT_SEARCH_DEFINITIONS,
+  timeUnitsToSuggest,
+} from '../../commands/definitions/constants';
 import { findAutocompleteAstPosition } from '../../language/shared/parse_for_autocomplete_query';
 import { locateCursor } from '../../language/shared/cursor_location/cursor_location';
-import { FUNCTIONS_TO_IGNORE } from '../../commands/registry/eval/autocomplete';
 import { attachReplacementRanges } from '../../language/autocomplete/utils/prefix_range';
 
+/** Functions a location leaves out at the top level: EVAL takes full-text ones only in SCORE. */
 export const IGNORED_FUNCTIONS_BY_LOCATION: { [K in Location]?: string[] } = {
-  eval: [...FUNCTIONS_TO_IGNORE.names],
+  eval: [...FULL_TEXT_SEARCH_DEFINITIONS],
 };
 
 export const DATE_DIFF_TIME_UNITS = (() => {

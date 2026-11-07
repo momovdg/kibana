@@ -37,6 +37,7 @@ import { suggestForExpression } from '../../definitions/utils';
 import { getAssignmentExpressionRoot } from '../../definitions/utils/expressions';
 import {
   buildUserDefinedColumnsDefinitions,
+  columnExists,
   createInferenceEndpointToCompletionItem,
   getLookupIndexCreateSuggestion,
   withAutoSuggest,
@@ -59,7 +60,11 @@ import {
 } from '../../definitions/utils/maps';
 import { matchesWildcardPattern } from '../../definitions/utils/regex';
 import type { Commands } from '../../definitions/keywords';
-import { buildMapValueCompleteItem, getNewUserDefinedColumnSuggestion } from '../complete_items';
+import {
+  assignCompletionItem,
+  buildMapValueCompleteItem,
+  getNewUserDefinedColumnSuggestion,
+} from '../complete_items';
 import {
   buildMatchingFieldsDefinition,
   buildPoliciesDefinitions,
@@ -71,6 +76,7 @@ import { getTokenType } from '../../../language/shared/cursor_location/cursor_lo
 import type { ExpectedRule } from '../../../language/shared/cursor_location/types';
 import { isExpressionSlot } from './slot_matching';
 import { getLocationInfo } from '../location';
+import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../definitions/constants';
 import { specialIndicesToSuggestions } from '../../definitions/utils/sources';
 import { createEnrichedContext, createEnrichedGetByType } from '../join/utils';
 import { getSettingsCompletionItems } from '../../definitions/utils/settings';
@@ -229,9 +235,26 @@ export const identifiers =
 
 /** A new column name, e.g. `col0 = `. */
 export const newName =
-  (): SlotProvider =>
-  async ({ callbacks }) =>
-    [getNewUserDefinedColumnSuggestion(callbacks?.getSuggestedUserDefinedColumnName?.() || '')];
+  ({ whileTyped = false }: { whileTyped?: boolean } = {}): SlotProvider =>
+  async ({ callbacks, context, location }) => {
+    const suggested = getNewUserDefinedColumnSuggestion(
+      callbacks?.getSuggestedUserDefinedColumnName?.() || ''
+    );
+    // A name being typed that is no column yet may start the assignment, keeping it: `b = `.
+    const typed = location.partial?.text;
+    const startsAssignment =
+      whileTyped && typed !== undefined && !typed.startsWith('?') && !columnExists(typed, context);
+    return startsAssignment
+      ? [
+          suggested,
+          {
+            ...assignCompletionItem,
+            text: ` ${assignCompletionItem.text}`,
+            preserveTypedPrefix: true,
+          },
+        ]
+      : [suggested];
+  };
 
 const SUGGESTED_COLUMN_NAMES: Readonly<Record<string, string>> = {
   'changePointCommand.targetType': 'changePointType',
@@ -551,16 +574,25 @@ export const suggestExpression = async (
     noColumns = false,
     lookupColumns = false,
     subqueries = false,
+    fullTextOnlyIn,
+    constantArgument = false,
   }: {
     types?: string[];
     valuesControl?: boolean;
     noColumns?: boolean;
     lookupColumns?: boolean;
     subqueries?: boolean;
+    fullTextOnlyIn?: string;
+    constantArgument?: boolean;
   } = {}
 ): Promise<SuggestForExpressionResult> => {
   const { query, command, cursorPosition } = ctx;
-  const { context, callbacks } = lookupColumns ? await withLookupColumns(ctx) : ctx;
+  const withLookup = lookupColumns ? await withLookupColumns(ctx) : ctx;
+  const { context } = withLookup;
+  // A constant reads no column, also as a function's argument.
+  const callbacks = constantArgument
+    ? { ...withLookup.callbacks, getByType: async () => [] }
+    : withLookup.callbacks;
   const resolvedOptions = typeof options === 'function' ? options(ctx) : options;
   const { suggestions, computed } = await suggestForExpression({
     query,
@@ -590,6 +622,14 @@ export const suggestExpression = async (
       ...(valuesControl && { controlType: ESQLVariableType.VALUES }),
       ...(noColumns && { suggestFields: false }),
       ...(subqueries && { allowSubquery: true }),
+      ...(fullTextOnlyIn && {
+        getFunctionsToIgnore: () => ({
+          names: [...FULL_TEXT_SEARCH_DEFINITIONS],
+          allowedInsideFunctions: Object.fromEntries(
+            FULL_TEXT_SEARCH_DEFINITIONS.map((name) => [name, [fullTextOnlyIn]])
+          ),
+        }),
+      }),
     },
   });
 

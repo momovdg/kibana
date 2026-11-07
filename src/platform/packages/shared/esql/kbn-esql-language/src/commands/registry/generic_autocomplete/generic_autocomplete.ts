@@ -337,14 +337,18 @@ const suggestAt = async (
     inExpression && getNameReading(ctx) !== 'new_column'
       ? await suggestExpression(ctx, spec.expression, options)
       : undefined;
-  // Right after a complete value, as `(a IN (…))`, only the operators that continue it, spaced.
+  // Right after a complete value, as `(a IN (…))`, only the operators that continue it, spaced,
+  // and a function's next-argument comma.
   const expressionItems = !expression
     ? []
     : !glued
     ? expression.suggestions
-    : expression.suggestions
-        .filter(({ kind }) => kind === 'Operator')
-        .map((item) => ({ ...item, text: ` ${item.text}` }));
+    : expression.suggestions.flatMap((item) => {
+        if (item.kind === 'Operator') {
+          return [{ ...item, text: ` ${item.text}` }];
+        }
+        return item.text.trim() === ',' ? [item] : [];
+      });
   const exampleItems = inExpression && !glued ? await getExpressionExamples(ctx) : [];
   const valueItems = [...slotItems.flat(), ...expressionItems, ...exampleItems];
 
@@ -357,8 +361,10 @@ const suggestAt = async (
   const argumentDone = !options.completeAsBoolean || isWholeBoolean(expression?.computed);
   // Inside an open string, as KQL's `"""…`, no keyword fits.
   const inString = location.partial?.text.startsWith('"') ?? false;
+  // Inside a function call the expression engine offers the comma between arguments.
+  const insideFunction = Boolean(expression?.computed.insideFunction);
   const keywordItems =
-    needsValue || !argumentDone || inString
+    needsValue || !argumentDone || inString || insideFunction
       ? []
       : adjustKeywords(keywordsAt(location), ctx).map((keyword) => toItem(keyword, location));
 

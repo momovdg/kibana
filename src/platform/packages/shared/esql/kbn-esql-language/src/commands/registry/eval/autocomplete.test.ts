@@ -8,8 +8,9 @@
  */
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
 import { Location } from '../types';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
+  suggest,
   expectSuggestions,
   getFieldNamesByType,
   getFunctionSignaturesByReturnType,
@@ -52,6 +53,12 @@ const evalExpectSuggestions = (
   );
 };
 
+/**
+ * A function picked after an operator is followed by a space, opening what comes next. Columns
+ * get it from `getByType`, which these tests mock.
+ */
+const afterOperator = (texts: string[]): string[] => texts.map((text) => `${text} `);
+
 describe('EVAL Autocomplete', () => {
   let mockCallbacks: ICommandCallbacks;
   beforeEach(() => {
@@ -67,7 +74,7 @@ describe('EVAL Autocomplete', () => {
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
 
-    await evalExpectSuggestions('from a | eval col0 = /', [
+    await evalExpectSuggestions('from a | eval col0 = ', [
       ...getFieldNamesByType('any'),
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
@@ -78,26 +85,26 @@ describe('EVAL Autocomplete', () => {
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
 
-    await evalExpectSuggestions('from a | eval col0 = 1, col1 = /', [
+    await evalExpectSuggestions('from a | eval col0 = 1, col1 = ', [
       ...getFieldNamesByType('any'),
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
 
     // Re-enable with https://github.com/elastic/kibana/issues/210639
-    // await evalExpectSuggestions('from a | eval a=doubleField, /', [
+    // await evalExpectSuggestions('from a | eval a=doubleField, ', [
     //   'col0 = ',
     //   ...getFieldNamesByType('any'),
     //   'a',
     //   ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     // ]);
 
-    await evalExpectSuggestions('from a | eval /', [
+    await evalExpectSuggestions('from a | eval ', [
       ' = ',
       ...getFieldNamesByType('any'),
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
 
-    await evalExpectSuggestions('from a | eval col0 = /', [
+    await evalExpectSuggestions('from a | eval col0 = ', [
       ...getFieldNamesByType('any'),
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
@@ -160,8 +167,12 @@ describe('EVAL Autocomplete', () => {
     );
   });
 
+  // `EVAL doubleField` is valid, a no-op, so the list may continue or the command end.
   it('after column', async () => {
     await evalExpectSuggestions('from a | eval doubleField ', [
+      '\n',
+      ', ',
+      '| ',
       ...getFunctionSignaturesByReturnType(
         Location.EVAL,
         'any',
@@ -241,7 +252,7 @@ describe('EVAL Autocomplete', () => {
       '(ROW $0)',
       '(TS $0)',
     ]);
-    await evalExpectSuggestions('from index | EVAL doubleField not in /', [
+    await evalExpectSuggestions('from index | EVAL doubleField not in ', [
       '($0)',
       '(FROM $0)',
       '(ROW $0)',
@@ -250,11 +261,11 @@ describe('EVAL Autocomplete', () => {
   });
 
   test('after assignment', async () => {
-    await evalExpectSuggestions('from a | eval a=/', [
+    await evalExpectSuggestions('from a | eval a=', [
       ...getFieldNamesByType('any'),
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
-    await evalExpectSuggestions('from a | eval a=abs(doubleField), b= /', [
+    await evalExpectSuggestions('from a | eval a=abs(doubleField), b= ', [
       ...getFieldNamesByType('any'),
       ...getFunctionSignaturesByReturnType(Location.EVAL, 'any', { scalar: true }),
     ]);
@@ -352,9 +363,11 @@ describe('EVAL Autocomplete', () => {
       'from a | eval a=round(doubleField) + ',
       [
         ...expectedNumeric,
-        ...getFunctionSignaturesByReturnType(Location.EVAL, [...numericAndDenseVector], {
-          scalar: true,
-        }),
+        ...afterOperator(
+          getFunctionSignaturesByReturnType(Location.EVAL, [...numericAndDenseVector], {
+            scalar: true,
+          })
+        ),
       ],
       mockCallbacks
     );
@@ -362,9 +375,11 @@ describe('EVAL Autocomplete', () => {
       'from a | eval a=round(doubleField)+ ',
       [
         ...getFieldNamesByType(ESQL_COMMON_NUMERIC_TYPES),
-        ...getFunctionSignaturesByReturnType(Location.EVAL, [...numericAndDenseVector], {
-          scalar: true,
-        }),
+        ...afterOperator(
+          getFunctionSignaturesByReturnType(Location.EVAL, [...numericAndDenseVector], {
+            scalar: true,
+          })
+        ),
       ],
       mockCallbacks
     );
@@ -372,9 +387,11 @@ describe('EVAL Autocomplete', () => {
       'from a | eval a=doubleField+ ',
       [
         ...getFieldNamesByType(ESQL_COMMON_NUMERIC_TYPES),
-        ...getFunctionSignaturesByReturnType(Location.EVAL, [...numericAndDenseVector], {
-          scalar: true,
-        }),
+        ...afterOperator(
+          getFunctionSignaturesByReturnType(Location.EVAL, [...numericAndDenseVector], {
+            scalar: true,
+          })
+        ),
       ],
       mockCallbacks
     );
@@ -485,6 +502,7 @@ describe('EVAL Autocomplete', () => {
 
   test('discards query after cursor', async () => {
     // Smoke testing for suggestions in previous position than the end of the statement
+    // Right after the `)`, what follows gets a leading space.
     await evalExpectSuggestions('from a | eval col0 = abs(doubleField) / | eval abs(col0)', [
       '\n',
       ...getFunctionSignaturesByReturnType(
@@ -492,9 +510,9 @@ describe('EVAL Autocomplete', () => {
         'any',
         { operators: true, skipAssign: true },
         ['double']
-      ),
+      ).map((text) => ` ${text}`),
       ', ',
-      '| ',
+      ' | ',
     ]);
 
     const expectedFields = getFieldNamesByType(['double', 'integer', 'long', 'unsigned_long']);
@@ -518,6 +536,24 @@ describe('EVAL Autocomplete', () => {
       mockContext,
       27
     );
+  });
+
+  test('suggests full-text functions only inside SCORE', async () => {
+    const texts = async (query: string) =>
+      (await suggest(query, mockContext, 'eval', mockCallbacks, autocomplete)).map(
+        ({ text }) => text
+      );
+
+    expect(await texts('from a | eval ')).not.toContain('MATCH($0)');
+    expect(await texts('from a | eval score(')).toContain('MATCH($0)');
+  });
+
+  test('suggests the assignment while a new name is typed, keeping it', async () => {
+    const texts = (
+      await suggest('from a | eval b', mockContext, 'eval', mockCallbacks, autocomplete)
+    ).map(({ text }) => text);
+
+    expect(texts).toContain('b = ');
   });
 
   test('date math', async () => {
@@ -601,12 +637,14 @@ describe('EVAL Autocomplete', () => {
         [
           // Notice no extra space after field name
           ...getFieldNamesByType(['keyword', 'text']),
-          ...getFunctionSignaturesByReturnType(
-            Location.EVAL,
-            ['keyword', 'text'],
-            { scalar: true },
-            undefined,
-            []
+          ...afterOperator(
+            getFunctionSignaturesByReturnType(
+              Location.EVAL,
+              ['keyword', 'text'],
+              { scalar: true },
+              undefined,
+              []
+            )
           ),
         ],
         mockCallbacks
@@ -620,12 +658,14 @@ describe('EVAL Autocomplete', () => {
       const expectedNumericSuggestions = [
         // Notice no extra space after field name
         ...expectedNumeric,
-        ...getFunctionSignaturesByReturnType(
-          Location.EVAL,
-          ESQL_COMMON_NUMERIC_TYPES,
-          { scalar: true },
-          undefined,
-          []
+        ...afterOperator(
+          getFunctionSignaturesByReturnType(
+            Location.EVAL,
+            ESQL_COMMON_NUMERIC_TYPES,
+            { scalar: true },
+            undefined,
+            []
+          )
         ),
       ];
       await evalExpectSuggestions(
