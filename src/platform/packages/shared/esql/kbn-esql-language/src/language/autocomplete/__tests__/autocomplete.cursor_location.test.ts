@@ -21,9 +21,9 @@ describe('autocomplete cursor location', () => {
 
   it.each([
     ['stats', 'FROM index | STATS ^', 'STATS '],
-    ['eval', 'FROM index, (FROM other | EVAL ^', 'EVAL '],
-    ['eval', 'FROM index | FORK (WHERE a > 1 | SORT b) (EVAL ^', 'EVAL '],
-    ['eval', 'FROM index\n| EVAL x = ^\n| WHERE b > 1', 'EVAL x = '],
+    ['inline stats', 'FROM index, (FROM other | INLINE STATS ^', 'INLINE STATS '],
+    ['inline stats', 'FROM index | FORK (WHERE a > 1 | SORT b) (INLINE STATS ^', 'INLINE STATS '],
+    ['stats', 'FROM index\n| STATS x = ^\n| WHERE b > 1', 'STATS x = '],
   ])('hands %s the location of %j', async (commandName, query, segmentText) => {
     const methods = esqlCommandRegistry.getCommandMethods(commandName);
     if (!methods) {
@@ -53,6 +53,8 @@ describe('autocomplete cursor location', () => {
     ['join', 'FROM index | LOOKUP JOIN ^'],
     ['set', 'SET ^'],
     ['where', 'FROM index | WHERE ^'],
+    ['eval', 'FROM index | EVAL ^'],
+    ['row', 'ROW ^'],
     ['rename', 'FROM index | FORK (RENAME a AS b) (RENAME ^'],
   ])(
     'computes the location once for %s on the generic autocomplete',
