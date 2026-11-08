@@ -9,7 +9,7 @@
 import type { ESQLFieldWithMetadata } from '@kbn/esql-types';
 import { Parser } from '@elastic/esql';
 import { mockContext, getMockCallbacks } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import { expectSuggestions } from '../../../__tests__/commands/autocomplete';
 import { UnmappedFieldsStrategy, type ESQLColumnData, type ICommandCallbacks } from '../types';
 import { columnsAfter } from './columns_after';

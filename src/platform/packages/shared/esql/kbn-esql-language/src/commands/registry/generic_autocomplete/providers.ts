@@ -10,6 +10,8 @@ import { i18n } from '@kbn/i18n';
 import { ESQLVariableType } from '@kbn/esql-types';
 import {
   isAssignment,
+  isUnknownNode,
+  isWhereExpression,
   isBinaryExpression,
   isColumn,
   isIdentifier,
@@ -79,6 +81,8 @@ import { getLocationInfo } from '../location';
 import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../definitions/constants';
 import { specialIndicesToSuggestions } from '../../definitions/utils/sources';
 import { createEnrichedContext, createEnrichedGetByType } from '../join/utils';
+import { getAggregationScope, getStatsFunctionsToIgnore } from '../stats/utils';
+import { isAggFunctionUsedAlready } from '../../definitions/utils/autocomplete/functions';
 import { getSettingsCompletionItems } from '../../definitions/utils/settings';
 import { getSettingMapParameters, getSettingValueItems } from '../set/utils';
 import { ReplacementRangeStrategyKind } from '../../../language/autocomplete/utils/prefix_range';
@@ -495,6 +499,25 @@ const startsCommandArgument = (slot: ExpectedRule): boolean =>
  * unterminated `SORT a, `b`), or at the start of an argument (`USER_AGENT ua = `, where `ua`
  * is not part of it).
  */
+/**
+ * The cursor is in an aggregation's filter, past the aggregation of STATS's `MIN(b) WHERE `,
+ * where the filter's functions apply even while it is empty.
+ */
+const isInAggregationFilter = ({ command, cursorPosition, location }: SuggestContext): boolean => {
+  const arg = command.args.findLast(
+    (candidate) => !Array.isArray(candidate) && candidate.location.min < cursorPosition
+  );
+  if (!arg || Array.isArray(arg) || !isWhereExpression(arg)) {
+    return false;
+  }
+  // A comma after the filter starts the next aggregation.
+  if (location.previousTokenType === getTokenType('COMMA') && cursorPosition > arg.location.max) {
+    return false;
+  }
+  const [aggregation] = arg.args;
+  return !Array.isArray(aggregation) && cursorPosition > aggregation.location.max + 1;
+};
+
 /** Rules whose own lists are part of an expression: function arguments and `IN (…)`. */
 const EXPRESSION_LIST_RULES = ['functionExpression', 'booleanExpression'];
 
@@ -503,7 +526,7 @@ const EXPRESSION_LIST_RULES = ['functionExpression', 'booleanExpression'];
  * value of `a IN (b, `, rather than one of the command's lists. The calls the parser made tell
  * them apart: `booleanExpression` calls a value after a comma only in `IN (…)`.
  */
-const isInExpressionList = ({ rule, stack, invokingStates }: ExpectedRule): boolean => {
+export const isInExpressionList = ({ rule, stack, invokingStates }: ExpectedRule): boolean => {
   for (let index = stack.length; index > 0; index--) {
     const state = invokingStates?.[index];
     const child = index === stack.length ? rule : stack[index];
@@ -533,6 +556,17 @@ const findExpressionRoot = (ctx: SuggestContext): ESQLSingleAstItem | undefined 
     const arg = args[index];
     if (Array.isArray(arg) || arg.type === 'option' || arg.location.min >= cursorPosition) {
       continue;
+    }
+    // An aggregation's filter, as STATS's `MIN(b) WHERE c`: after the aggregation the
+    // condition, none while it is empty; within it the aggregation.
+    if (isWhereExpression(arg)) {
+      const [aggregation, condition] = arg.args;
+      if (!Array.isArray(aggregation) && cursorPosition <= aggregation.location.max + 1) {
+        return isAssignment(aggregation) ? getAssignmentExpressionRoot(aggregation) : aggregation;
+      }
+      return !condition || Array.isArray(condition) || isUnknownNode(condition)
+        ? undefined
+        : condition;
     }
     // The expression of an assignment (`geo = ipField`) or of `ORDER`, not the whole.
     if (isAssignment(arg)) {
@@ -576,6 +610,11 @@ export const suggestExpression = async (
     subqueries = false,
     fullTextOnlyIn,
     constantArgument = false,
+    aggregation = false,
+    inAggregations = false,
+    inGroupings = false,
+    grouping = false,
+    inAggregationCall = false,
   }: {
     types?: string[];
     valuesControl?: boolean;
@@ -584,15 +623,27 @@ export const suggestExpression = async (
     subqueries?: boolean;
     fullTextOnlyIn?: string;
     constantArgument?: boolean;
+    aggregation?: boolean;
+    inAggregations?: boolean;
+    inGroupings?: boolean;
+    grouping?: boolean;
+    inAggregationCall?: boolean;
   } = {}
 ): Promise<SuggestForExpressionResult> => {
   const { query, command, cursorPosition } = ctx;
-  const withLookup = lookupColumns ? await withLookupColumns(ctx) : ctx;
-  const { context } = withLookup;
-  // A constant reads no column, also as a function's argument.
-  const callbacks = constantArgument
-    ? { ...withLookup.callbacks, getByType: async () => [] }
-    : withLookup.callbacks;
+  // The aggregations read the columns the groupings define, as `STATS AVG(b) BY b = a`.
+  const scoped = lookupColumns
+    ? await withLookupColumns(ctx)
+    : inAggregations
+    ? getAggregationScope(query, cursorPosition, command, ctx.context, ctx.callbacks)
+    : ctx;
+  const { context } = scoped;
+  // A constant reads no column, also as a function's argument; an aggregation reads none outside
+  // its function calls, as after `MIN(a) + `.
+  const callbacks =
+    constantArgument || aggregation
+      ? { ...scoped.callbacks, getByType: async () => [] }
+      : scoped.callbacks;
   const resolvedOptions = typeof options === 'function' ? options(ctx) : options;
   const { suggestions, computed } = await suggestForExpression({
     query,
@@ -604,11 +655,13 @@ export const suggestExpression = async (
     // takes the scalar functions, as EVAL does.
     location:
       location ??
+      (isInAggregationFilter(ctx) ? Location.STATS_WHERE : undefined) ??
       getLocationInfo(
         Math.min(cursorPosition, optionAtCursor(ctx)?.location.max ?? cursorPosition),
         command,
         Boolean(context?.isTimeseriesSource),
-        false
+        // Inside a call after an aggregation of a TS source, the time-series aggregations apply.
+        inAggregationCall && isAggFunctionUsedAlready(command, command.args.length - 1)
       ).id ??
       Location.EVAL,
     context,
@@ -620,8 +673,15 @@ export const suggestExpression = async (
         preferredExpressionType: [...types, 'unknown'] as PreferredExpressionType[],
       }),
       ...(valuesControl && { controlType: ESQLVariableType.VALUES }),
-      ...(noColumns && { suggestFields: false }),
+      ...((noColumns || aggregation) && { suggestFields: false }),
+      // An aggregation starts with a function, which a control may stand for.
+      ...(aggregation && !valuesControl && { controlType: ESQLVariableType.FUNCTIONS }),
+      // Grouping columns are offered without a space: `BY host` is often followed by a comma.
+      ...(inGroupings && { addSpaceAfterFirstField: false }),
       ...(subqueries && { allowSubquery: true }),
+      ...((inAggregations || inGroupings) && {
+        getFunctionsToIgnore: getStatsFunctionsToIgnore(command, cursorPosition),
+      }),
       ...(fullTextOnlyIn && {
         getFunctionsToIgnore: () => ({
           names: [...FULL_TEXT_SEARCH_DEFINITIONS],

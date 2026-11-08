@@ -313,6 +313,16 @@ export const withCompleteItem: ISuggestionItem = withAutoSuggest({
   category: SuggestionCategory.LANGUAGE_KEYWORD,
 });
 
+/** `STATS` after `INLINE `. */
+export const inlineStatsKeywordCompleteItem: ISuggestionItem = withAutoSuggest({
+  label: 'STATS',
+  text: 'STATS ',
+  kind: 'Keyword',
+  detail: i18n.translate('esqlLanguage.esql.autocomplete.inlineStats.statsKeyword', {
+    defaultMessage: 'STATS keyword',
+  }),
+});
+
 /** `JOIN` after the join type, e.g. `LOOKUP `. */
 export const joinKeywordCompleteItem: ISuggestionItem = withAutoSuggest({
   label: 'JOIN',
