@@ -10,10 +10,12 @@ import { Parser } from '@elastic/esql';
 import { locateCursor } from '../../language/shared/cursor_location/cursor_location';
 import { onSuggestion, withSuggestion } from './enrich/util';
 import {
-  byCompleteItem as statsByCompleteItem,
-  whereCompleteItem as statsWhereCompleteItem,
-} from './stats/utils';
-import { joinOnCompleteItem, onCompleteItem, withCompleteItem } from './complete_items';
+  byCompleteItem,
+  joinOnCompleteItem,
+  onCompleteItem,
+  whereCompleteItem,
+  withCompleteItem,
+} from './complete_items';
 import {
   EXPRESSION_ENGINE_TOKENS,
   IGNORED_TOKENS,
@@ -67,8 +69,8 @@ describe('keywordsAt', () => {
     expect(itemOf(' FROM a | LOOKUP JOIN b  ', 'ON')).toBe(joinOnCompleteItem);
     expect(itemOf(' FROM a | CHANGE_POINT x  ', 'ON')).toBe(onCompleteItem);
     expect(itemOf(' FROM a | FUSE  ', 'WITH')).toBe(withCompleteItem);
-    expect(itemOf(' FROM a | STATS c = COUNT(*)  ', 'BY')).toBe(statsByCompleteItem);
-    expect(itemOf(' FROM a | INLINE STATS c = COUNT(*)  ', 'WHERE')).toBe(statsWhereCompleteItem);
+    expect(itemOf(' FROM a | STATS c = COUNT(*)  ', 'BY')).toBe(byCompleteItem);
+    expect(itemOf(' FROM a | INLINE STATS c = COUNT(*)  ', 'WHERE')).toBe(whereCompleteItem);
   });
 
   it('scopes keywords to the command inside a FORK branch', () => {

@@ -13,10 +13,9 @@ import type {
   ESQLCommand,
   ESQLCommandOption,
   ESQLFunction,
-  ESQLProperNode,
-  ESQLSingleAstItem,
 } from '@elastic/esql/types';
 import {
+  within,
   isFunctionExpression,
   isFieldExpression,
   isWhereExpression,
@@ -28,84 +27,30 @@ import {
   Parser,
   Walker,
 } from '@elastic/esql';
-import { commaCompleteItem, newLineCompleteItem, pipeCompleteItem } from '../complete_items';
-import { withAutoSuggest } from '../../definitions/utils/autocomplete/helpers';
 import type {
   ESQLColumnData,
   ESQLUserDefinedColumn,
   GetColumnsByTypeFn,
   ICommandCallbacks,
   ICommandContext,
-  ISuggestionItem,
   UnmappedFieldsStrategy,
 } from '../types';
 import { getExpressionType } from '../../definitions/utils/expressions';
 import { buildColumnSuggestions, getFunctionDefinition } from '../../definitions/utils/functions';
 import { FunctionDefinitionTypes } from '../../definitions/types';
-import { ReplacementRangeStrategyKind } from '../../../language/autocomplete/utils/prefix_range';
-import { endsWithComma, endsWithWhitespace } from '../../definitions/utils/regex';
 import { getColumnName } from '../../definitions/utils/columns';
 import { getBracketsToClose, removeAutocompleteMarkers } from '../../definitions/utils/ast';
 import { EDITOR_MARKER } from '../../definitions/constants';
 import { NOT_SUGGESTED_TYPES } from '../../../query_columns_service';
-
-/**
- * Position of the caret in the sort command:
-*
-* ```
-* STATS [column1 =] expression1[, ..., [columnN =] expressionN] [BY [column1 =] grouping_expression1[, ..., grouping_expressionN]]
-        |           |          |                                    |           |                   |
-        |           |          expression_complete                  |           |                   grouping_expression_complete
-        |           expression_after_assignment                     |           grouping_expression_after_assignment
-        expression_without_assignment                               grouping_expression_without_assignment
-
-* ```
-*/
-export type CaretPosition =
-  | 'expression_without_assignment'
-  | 'expression_after_assignment'
-  | 'grouping_expression_without_assignment'
-  | 'grouping_expression_after_assignment'
-  | 'after_where';
-
-export const getPosition = (command: ESQLAstAllCommands, innerText: string): CaretPosition => {
-  const lastCommandArg = command.args[command.args.length - 1];
-
-  if (isOptionNode(lastCommandArg) && lastCommandArg.name === 'by') {
-    // in the BY clause
-
-    const lastOptionArg = lastCommandArg.args[lastCommandArg.args.length - 1];
-    if (isAssignment(lastOptionArg) && !endsWithComma(innerText)) {
-      return 'grouping_expression_after_assignment';
-    }
-
-    return 'grouping_expression_without_assignment';
-  }
-
-  if (isAssignment(lastCommandArg) && !endsWithComma(innerText)) {
-    return 'expression_after_assignment';
-  }
-
-  if (isWhereExpression(lastCommandArg) && !endsWithComma(innerText)) {
-    return 'after_where';
-  }
-
-  return 'expression_without_assignment';
-};
-
-export const byCompleteItem: ISuggestionItem = withAutoSuggest({
-  label: 'BY',
-  text: 'BY ',
-  kind: 'Reference',
-  detail: 'By',
-});
-
-export const whereCompleteItem: ISuggestionItem = withAutoSuggest({
-  label: 'WHERE',
-  text: 'WHERE ',
-  kind: 'Reference',
-  detail: 'Where',
-});
+import { findAstPosition } from '../../definitions/utils/ast';
+import { getAllFunctions } from '../../definitions/utils/functions';
+import {
+  getFunctionsToIgnoreForStats,
+  isAggFunctionUsedAlready,
+  isTimeseriesAggUsedAlready,
+} from '../../definitions/utils/autocomplete/functions';
+import { inOperators, nullCheckOperators } from '../../definitions/all_operators';
+import type { ExpressionContextOptions } from '../../definitions/utils/autocomplete/expressions/types';
 
 function isAggregation(arg: ESQLAstItem): arg is ESQLFunction {
   return (
@@ -176,52 +121,6 @@ export function checkFunctionContent(arg: ESQLFunction) {
     );
   });
 }
-
-export const rightAfterColumn = (
-  innerText: string,
-  expressionRoot: ESQLSingleAstItem | undefined,
-  columnExists: (name: string) => boolean
-): boolean => {
-  if (!expressionRoot) return false;
-
-  let col: ESQLProperNode | undefined;
-
-  Walker.walk(expressionRoot, {
-    visitColumn(node) {
-      if (node.location.max === innerText.length - 1) col = node;
-    },
-  });
-
-  return isColumn(col) && columnExists(col.parts.join('.'));
-};
-
-export const getCommaAndPipe = (
-  innerText: string,
-  expressionRoot: ESQLSingleAstItem | undefined,
-  columnExists: (name: string) => boolean
-): ISuggestionItem[] => {
-  const pipeSuggestion = { ...pipeCompleteItem };
-  const commaSuggestion = withAutoSuggest({
-    ...commaCompleteItem,
-    text: ', ',
-  });
-
-  // does the query end with whitespace?
-  if (endsWithWhitespace(innerText)) {
-    commaSuggestion.replacementRangeStrategy = {
-      kind: ReplacementRangeStrategyKind.TRAILING_WHITESPACE,
-    };
-  }
-  // special case: cursor right after a column name
-  else if (isColumn(expressionRoot) && rightAfterColumn(innerText, expressionRoot, columnExists)) {
-    pipeSuggestion.text = ` ${pipeSuggestion.text}`;
-    pipeSuggestion.preserveTypedPrefix = true;
-
-    commaSuggestion.preserveTypedPrefix = true;
-  }
-
-  return [newLineCompleteItem, pipeSuggestion, commaSuggestion];
-};
 
 type StatsCommand = ESQLCommand<'stats'> | ESQLCommand<'inline stats'>;
 
@@ -439,4 +338,88 @@ export const getAggregationScope = (
     : callbacks;
 
   return { context: scopedContext, callbacks: scopedCallbacks };
+};
+
+const getByOption = (command: ESQLAstAllCommands): ESQLCommandOption | undefined =>
+  command.args.find(isByOption);
+
+/** The function call the cursor is in, or the IN / IS NULL operator it is right at. */
+const findFunctionAtCursor = (
+  command: ESQLAstAllCommands,
+  cursorPosition: number
+): ESQLFunction | undefined => {
+  const { node, containingFunction } = findAstPosition(
+    { type: 'query' as const, commands: [command] } as unknown as ESQLAstQueryExpression,
+    cursorPosition
+  );
+
+  if (node && node.type === 'function') {
+    const fn = node as ESQLFunction;
+    const isSpecialOperator =
+      inOperators.some((op) => op.name === fn.name) ||
+      nullCheckOperators.some((op) => op.name === fn.name);
+
+    if (
+      fn.subtype === 'variadic-call' ||
+      (fn.subtype === 'binary-expression' && isSpecialOperator)
+    ) {
+      return fn;
+    }
+  }
+
+  return containingFunction ?? undefined;
+};
+
+/**
+ * The functions STATS leaves out inside a function call at the cursor: grouping functions
+ * inside a grouping function, and in the aggregations, the aggregations nested in one, unless
+ * the parameter takes an aggregation.
+ */
+export const getStatsFunctionsToIgnore = (
+  command: ESQLAstAllCommands,
+  cursorPosition: number
+): ExpressionContextOptions['getFunctionsToIgnore'] => {
+  const foundFunction = findFunctionAtCursor(command, cursorPosition);
+  if (!foundFunction) {
+    return undefined;
+  }
+  const byOption = getByOption(command);
+  const isInBy = byOption ? within(foundFunction, byOption) : false;
+
+  return (functionParameterContext) => {
+    if (!functionParameterContext) {
+      return undefined;
+    }
+
+    const names: string[] = [];
+
+    if (functionParameterContext.functionDefinition?.type === FunctionDefinitionTypes.GROUPING) {
+      names.push(
+        ...getAllFunctions({ type: FunctionDefinitionTypes.GROUPING }).map(({ name }) => name)
+      );
+    }
+
+    if (!isInBy) {
+      // The "no nested aggregations" rule does not apply when the current parameter
+      // explicitly expects an aggregation function (hint.kind === 'aggregation').
+      const expectsAggregation = functionParameterContext.paramDefinitions.some(
+        (p) => p.hint?.kind === 'aggregation'
+      );
+      const finalCommandArgIndex = command.args.length - 1;
+
+      names.push(
+        ...getFunctionsToIgnoreForStats(command, finalCommandArgIndex),
+        ...(isAggFunctionUsedAlready(command, finalCommandArgIndex) && !expectsAggregation
+          ? getAllFunctions({ type: FunctionDefinitionTypes.AGG }).map(({ name }) => name)
+          : []),
+        ...(isTimeseriesAggUsedAlready(command, finalCommandArgIndex) && !expectsAggregation
+          ? getAllFunctions({ type: FunctionDefinitionTypes.TIME_SERIES_AGG }).map(
+              ({ name }) => name
+            )
+          : [])
+      );
+    }
+
+    return { names };
+  };
 };

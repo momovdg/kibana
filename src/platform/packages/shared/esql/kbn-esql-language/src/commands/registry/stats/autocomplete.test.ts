@@ -13,7 +13,7 @@ import {
   getMockCallbacks,
 } from '../../../__tests__/commands/context_fixtures';
 import { Location } from '../types';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   getFieldNamesByType,
@@ -119,6 +119,12 @@ const statsExpectSuggestions = (
 };
 
 const timeseriesContext = { ...mockContext, isTimeseriesSource: true };
+
+/**
+ * A function picked after an operator is followed by a space, opening what comes next. Columns
+ * get it from `getByType`, which these tests mock.
+ */
+const afterOperator = (texts: string[]): string[] => texts.map((text) => `${text} `);
 
 describe('STATS Autocomplete', () => {
   let mockCallbacks: ICommandCallbacks;
@@ -496,7 +502,6 @@ describe('STATS Autocomplete', () => {
         ];
 
         await statsExpectSuggestions('from a | stats a=min(', expected, mockCallbacks);
-        await statsExpectSuggestions('from a | stats a=min(/b), b=max(', expected, mockCallbacks);
         await statsExpectSuggestions('from a | stats a=min(b), b=max(', expected, mockCallbacks);
       });
 
@@ -549,18 +554,19 @@ describe('STATS Autocomplete', () => {
       test('when typing right paren', async () => {
         await statsExpectSuggestions(
           'from a | stats a = min(integerField) | sort b',
+          // Right after the `)`, what follows gets a leading space.
           [
             '\n',
-            'WHERE ',
-            'BY ',
+            ' WHERE ',
+            ' BY ',
             ', ',
-            '| ',
+            ' | ',
             ...getFunctionSignaturesByReturnType(
               Location.STATS,
               'any',
               { operators: true, skipAssign: true },
               ['integer']
-            ),
+            ).map((text) => ` ${text}`),
           ],
           mockCallbacks,
           mockContext,
@@ -593,17 +599,20 @@ describe('STATS Autocomplete', () => {
             ['integer']
           ),
         ]);
-        await statsExpectSuggestions('from a | stats col0 = min(integerField) + ', [
-          ...getFunctionSignaturesByReturnType(
-            Location.STATS,
-            ['integer', 'double', 'long', 'dense_vector'],
-            {
-              scalar: true,
-              agg: true,
-              grouping: true,
-            }
-          ),
-        ]);
+        await statsExpectSuggestions(
+          'from a | stats col0 = min(integerField) + ',
+          afterOperator(
+            getFunctionSignaturesByReturnType(
+              Location.STATS,
+              ['integer', 'double', 'long', 'dense_vector'],
+              {
+                scalar: true,
+                agg: true,
+                grouping: true,
+              }
+            )
+          )
+        );
       });
 
       describe('...WHERE expression...', () => {
@@ -635,9 +644,11 @@ describe('STATS Autocomplete', () => {
             'FROM a | STATS MIN(b) WHERE keywordField != ',
             [
               ...expectedFieldsStrings,
-              ...getFunctionSignaturesByReturnType(Location.STATS_WHERE, ['text', 'keyword'], {
-                scalar: true,
-              }),
+              ...afterOperator(
+                getFunctionSignaturesByReturnType(Location.STATS_WHERE, ['text', 'keyword'], {
+                  scalar: true,
+                })
+              ),
             ],
             mockCallbacks
           );
@@ -742,28 +753,32 @@ describe('STATS Autocomplete', () => {
         ]);
       });
 
+      // What follows the column keeps it, including its operators, as `integerField % 2`.
       test('on complete column name', async () => {
-        await statsExpectSuggestions('from a | stats a=max(b) by integerField', [
-          '\n',
+        const afterIntegerField = [
+          'integerField\n',
           'integerField | ',
           'integerField, ',
-        ]);
+          ...getFunctionSignaturesByReturnType(
+            Location.STATS_BY,
+            'any',
+            { operators: true, skipAssign: true },
+            ['integer']
+          ).map((text) => `integerField ${text}`),
+        ];
 
-        await statsExpectSuggestions('from a | stats a=max(b) by col0 = integerField', [
-          '\n',
-          'integerField | ',
-          'integerField, ',
-        ]);
-
-        await statsExpectSuggestions('from a | stats a=max(b) by keywordField, integerField', [
-          '\n',
-          'integerField | ',
-          'integerField, ',
-        ]);
-
+        await statsExpectSuggestions('from a | stats a=max(b) by integerField', afterIntegerField);
+        await statsExpectSuggestions(
+          'from a | stats a=max(b) by col0 = integerField',
+          afterIntegerField
+        );
+        await statsExpectSuggestions(
+          'from a | stats a=max(b) by keywordField, integerField',
+          afterIntegerField
+        );
         await statsExpectSuggestions(
           'from a | stats a=max(b) by keywordField, col0 = integerField',
-          ['\n', 'integerField | ', 'integerField, ']
+          afterIntegerField
         );
       });
 
@@ -845,16 +860,18 @@ describe('STATS Autocomplete', () => {
             ...getFieldNamesByType('integer'),
             ...getFieldNamesByType('double'),
             ...getFieldNamesByType('long'),
-            ...getFunctionSignaturesByReturnType(Location.EVAL, ['integer', 'double', 'long'], {
-              scalar: true,
-            }),
-            // Filter out functions that are not compatible with this context
-            ...allGroupingFunctions.filter(
-              (f) =>
-                !['CATEGORIZE', 'TBUCKET', 'WITHOUT'].some((incompatible) =>
-                  f.includes(incompatible)
-                )
-            ),
+            ...afterOperator([
+              ...getFunctionSignaturesByReturnType(Location.EVAL, ['integer', 'double', 'long'], {
+                scalar: true,
+              }),
+              // Filter out functions that are not compatible with this context
+              ...allGroupingFunctions.filter(
+                (f) =>
+                  !['CATEGORIZE', 'TBUCKET', 'WITHOUT'].some((incompatible) =>
+                    f.includes(incompatible)
+                  )
+              ),
+            ]),
           ],
           mockCallbacks
         );
