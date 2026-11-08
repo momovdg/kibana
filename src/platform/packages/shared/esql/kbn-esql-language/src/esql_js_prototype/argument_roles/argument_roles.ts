@@ -155,6 +155,18 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
   },
   // `name = expression` in a field list (EVAL, STATS, RERANK's ON): the name is a new column.
   'field>qualifiedName': { kind: 'new_column' },
+  // EVAL's values, of any type, may hold subqueries; full-text functions only inside SCORE.
+  'evalCommand>fields': {
+    kind: 'expression',
+    types: ['any'],
+    constraints: { subqueries: 'true', fullTextOnlyIn: 'score' },
+  },
+  // ROW has no input, so its values are constants: literals, parameters and functions of them.
+  'rowCommand>fields': {
+    kind: 'expression',
+    types: ['any'],
+    constraints: { constantOnly: 'true' },
+  },
 
   'dissectCommand>primaryExpression': { kind: 'column', types: STRING_TYPES },
   'dissectCommand>string': {
