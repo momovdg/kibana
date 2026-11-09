@@ -103,8 +103,9 @@ describe('keyword table', () => {
   });
 
   it('does not map a token both as a keyword and as an expression token', () => {
+    // Except FORK's `(`, which opens a branch.
     expect(
       [...getMappedKeywordTokens()].filter((token) => EXPRESSION_ENGINE_TOKENS.has(token))
-    ).toEqual([]);
+    ).toEqual(['LP']);
   });
 });

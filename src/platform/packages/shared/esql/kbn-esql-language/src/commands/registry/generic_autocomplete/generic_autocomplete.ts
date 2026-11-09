@@ -263,18 +263,23 @@ export const createGenericAutocomplete =
  * An expression slot, or a token only expressions take, like an operator after `SORT (col) `
  * or `NULL` after `IS NOT `. A closing `)` is no sign of an expression: it may close a FORK
  * branch or a subquery. Where a role says what the argument is, as the column of `DISSECT `,
- * the role fills it.
+ * the role fills it, and a token the keyword table maps here, as FORK's `(`, is a keyword.
  */
-const isInExpression = (location: CursorLocation): boolean =>
-  location.expectedRules.some((slot) => isExpressionSlot(slot) && !getRoleSlot(slot)) ||
-  [...location.expectedTokens].some((type) => {
+const isInExpression = (location: CursorLocation): boolean => {
+  if (location.expectedRules.some((slot) => isExpressionSlot(slot) && !getRoleSlot(slot))) {
+    return true;
+  }
+  const keywordTokens = new Set(keywordsAt(location).map(({ token }) => token));
+  return [...location.expectedTokens].some((type) => {
     const name = getTokenName(type);
     return (
       EXPRESSION_ENGINE_TOKENS.has(name) &&
       !CLOSING_TOKENS.includes(name) &&
+      !keywordTokens.has(name) &&
       !isCoveredByRole(location.tokenStacks.get(type)?.rules ?? [])
     );
   });
+};
 
 /**
  * A command that needs an argument has none yet, though the grammar lets it end, as `STATS `:
