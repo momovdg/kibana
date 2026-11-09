@@ -19,6 +19,7 @@ import {
   fuseGroupByCompleteItem,
   fuseKeyByCompleteItem,
   fuseScoreByCompleteItem,
+  inlineStatsKeywordCompleteItem,
   joinKeywordCompleteItem,
   joinOnCompleteItem,
   mmrLimitKeywordSuggestion,
@@ -32,10 +33,6 @@ import {
 import { onSuggestion, withSuggestion } from './enrich/util';
 import { metadataSuggestion } from './options/metadata';
 import { sortModifierSuggestions } from './sort/utils';
-import {
-  byCompleteItem as statsByCompleteItem,
-  whereCompleteItem as statsWhereCompleteItem,
-} from './stats/utils';
 
 interface KeywordEntry {
   /** Grammar token name, e.g. `NULLS`. */
@@ -73,12 +70,9 @@ const buildKeywordEntries = (): readonly KeywordEntry[] => [
   // A JOIN qualifier (`idx AS q`) is not offered: Elasticsearch may not support it yet.
   { token: 'AS', command: 'joinCommand', items: [] },
   { token: 'JOIN', items: [joinKeywordCompleteItem] },
+  { token: 'INLINE_STATS', items: [inlineStatsKeywordCompleteItem] },
   { token: 'BY', items: [byCompleteItem] },
-  { token: 'BY', command: 'statsCommand', items: [statsByCompleteItem] },
-  { token: 'BY', command: 'inlineStatsCommand', items: [statsByCompleteItem] },
   { token: 'WHERE', items: [whereCompleteItem] },
-  { token: 'WHERE', command: 'statsCommand', items: [statsWhereCompleteItem] },
-  { token: 'WHERE', command: 'inlineStatsCommand', items: [statsWhereCompleteItem] },
   { token: 'ON', items: [onCompleteItem] },
   { token: 'ON', command: 'enrichCommand', items: [onSuggestion] },
   { token: 'ON', command: 'joinCommand', items: [joinOnCompleteItem] },

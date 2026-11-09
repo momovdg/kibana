@@ -74,9 +74,10 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'rerankCommand.rerankFields': { kind: 'expression', types: STRING_TYPES },
 
   'statsCommand.stats': { kind: 'aggregation' },
-  'statsCommand.grouping': { kind: 'expression' },
+  // Groupings: expressions, often a time bucket, that the aggregations can read by name.
+  'statsCommand.grouping': { kind: 'expression', constraints: { grouping: 'true' } },
   'inlineStatsCommand.stats': { kind: 'aggregation' },
-  'inlineStatsCommand.grouping': { kind: 'expression' },
+  'inlineStatsCommand.grouping': { kind: 'expression', constraints: { grouping: 'true' } },
 
   // A vector the query compares rows with: a literal, a parameter or a function's result, as
   // the `constantOnly` hint of a function parameter.
@@ -140,6 +141,12 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
   'limitByGroupKey>booleanExpression': { kind: 'expression' },
+  // An aggregation's own filter, `AVG(a) WHERE b > 1`: like WHERE's, complete only as a boolean.
+  'aggField>booleanExpression': {
+    kind: 'expression',
+    types: ['boolean'],
+    constraints: { subqueries: 'true', complete: 'boolean' },
+  },
   // A filter, complete only as a whole boolean; it may hold subqueries, as
   // `a IN (FROM b | KEEP a)`.
   'whereCommand>booleanExpression': {
@@ -250,6 +257,12 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
     },
   },
 };
+
+/**
+ * Commands whose arguments the grammar makes optional, though Elasticsearch needs one, as
+ * `STATS aggFields? (BY fields)?`: at least an aggregation or a grouping.
+ */
+export const ARGUMENT_REQUIRED_COMMANDS: readonly string[] = ['statsCommand'];
 
 /**
  * Rules a command repeats in the grammar whose alternatives may each appear only once, as FUSE's

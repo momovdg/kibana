@@ -27,6 +27,8 @@ import { getMappedKeywordTokens, type KeywordItem } from '../keyword_items';
 import {
   colonCompleteItem,
   defaultLimitValueSuggestions,
+  getDateHistogramCompletionItem,
+  getTimeseriesDateHistogramCompletionItem,
   denseVectorLiteralCompleteItem,
   semiColonCompleteItem,
 } from '../complete_items';
@@ -37,6 +39,7 @@ import {
   fixed,
   getEnrichPolicy,
   identifiers,
+  isInExpressionList,
   lookupIndices,
   mapEntries,
   matchingColumns,
@@ -192,6 +195,11 @@ export const getExpressionOptions = (
   completeAsBoolean: boolean;
   fullTextOnlyIn?: string;
   constantArgument: boolean;
+  aggregation: boolean;
+  inAggregations: boolean;
+  inGroupings: boolean;
+  grouping: boolean;
+  inAggregationCall: boolean;
 } => {
   const role = getExpressionRole(location)?.role ?? getTokenExpressionRole(location);
   // The whole argument may hold subqueries, also inside a function call, as `CASE(a IN (FROM`.
@@ -214,7 +222,51 @@ export const getExpressionOptions = (
     fullTextOnlyIn: argumentRole?.constraints?.fullTextOnlyIn,
     // A constant reads no column anywhere, also inside a function call, as ROW's values.
     constantArgument: isConstantArgument(location),
+    // An aggregation, as STATS's: functions, never a bare column.
+    aggregation: role?.constraints?.aggregation === 'true',
+    // Inside STATS's aggregations or groupings, their own rules on functions and columns apply.
+    inAggregations: hasRoleAbove(location, 'aggregation'),
+    inGroupings: hasRoleAbove(location, 'grouping'),
+    // A grouping, as STATS's `BY`: often a time bucket.
+    grouping: role?.constraints?.grouping === 'true',
+    // Inside a function call of an aggregation, where no role of its own applies.
+    inAggregationCall: !role && hasRoleAbove(location, 'aggregation'),
   };
+};
+
+type ExpressionRole = Extract<ArgumentRole, { kind: 'expression' }>;
+
+/** An aggregation reads as an expression with an `aggregation` constraint. */
+const AGGREGATION_ROLE: ExpressionRole = {
+  kind: 'expression',
+  constraints: { aggregation: 'true' },
+};
+
+const asExpressionRole = (role: ArgumentRole | undefined): ExpressionRole | undefined => {
+  if (role?.kind === 'expression') {
+    return role;
+  }
+  return role?.kind === 'aggregation' ? AGGREGATION_ROLE : undefined;
+};
+
+/**
+ * Whether a role above the cursor, also outside function calls, has the constraint, as the
+ * aggregation around a STATS aggregation's `WHERE`.
+ */
+const hasRoleAbove = (location: CursorLocation, constraint: string): boolean => {
+  const stacks = [
+    ...location.expectedRules.map(({ stack, rule }) => [...stack, rule]),
+    ...[...location.expectedTokens].map((type) => location.tokenStacks.get(type)?.rules ?? []),
+  ];
+  return stacks.some((rules) =>
+    rules.some(
+      (rule, index) =>
+        index > 0 &&
+        getCallSites(rules[index - 1], rule).some(
+          (site) => asExpressionRole(getArgumentRole(site))?.constraints?.[constraint] === 'true'
+        )
+    )
+  );
 };
 
 /**
@@ -243,9 +295,9 @@ const getExpressionRole = (
       }
       const role = getCallSites(rules[index - 1], rules[index])
         .filter(({ state }) => [state, undefined].includes(slot.invokingStates?.[index]))
-        .map(getArgumentRole)
-        .find((candidate) => candidate?.kind === 'expression');
-      if (role?.kind === 'expression') {
+        .map((site) => asExpressionRole(getArgumentRole(site)))
+        .find(Boolean);
+      if (role) {
         const startsArgument = !slot.continuation && rules.length - 1 - index <= slot.startsRules;
         return { role, slot, startsArgument };
       }
@@ -269,9 +321,9 @@ const getTokenExpressionRole = (
         break;
       }
       const role = getCallSites(rules[index - 1], rules[index])
-        .map(getArgumentRole)
-        .find((candidate) => candidate?.kind === 'expression');
-      if (role?.kind === 'expression') {
+        .map((site) => asExpressionRole(getArgumentRole(site)))
+        .find(Boolean);
+      if (role) {
         return role;
       }
     }
@@ -292,13 +344,31 @@ const typeExample = (type: string): ISuggestionItem[] =>
  */
 export const getExpressionExamples = (ctx: SuggestContext): Promise<ISuggestionItem[]> => {
   const found = getExpressionRole(ctx.location);
-  if (!found?.startsArgument) {
+  if (!found) {
     return Promise.resolve([]);
   }
   const { role, slot } = found;
+  // Each entry of a grouping list, and its value after `=`, is a grouping of its own, as after
+  // `BY a, ` or `BY b = `.
+  const startsListEntry =
+    role.constraints?.grouping === 'true' &&
+    !slot.continuation &&
+    ['COMMA', 'ASSIGN'].some((name) => getTokenType(name) === slot.previousTokenType) &&
+    !isInExpressionList(slot);
+  if (!found.startsArgument && !startsListEntry) {
+    return Promise.resolve([]);
+  }
   const format = role.constraints?.format;
   if (format) {
     return stringExamples(format)(ctx, slot);
+  }
+  // A grouping is often a time bucket, sized for the chart: `BUCKET(@timestamp, …)`.
+  if (role.constraints?.grouping === 'true') {
+    const { context } = ctx;
+    const bucket = context?.isTimeseriesSource
+      ? getTimeseriesDateHistogramCompletionItem
+      : getDateHistogramCompletionItem;
+    return Promise.resolve([bucket(context?.histogramBarTarget ?? 0)]);
   }
   const examples = (role.types ?? []).flatMap(typeExample);
   return Promise.resolve(examples);
@@ -450,9 +520,16 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
             comma: site.followedBy.includes('COMMA') && !site.followedBy.includes(RULE_END),
           })) ||
         // In a field list (EVAL, ROW), where an expression may come instead of the name, the
-        // name being typed also gets its `=`, as `b = `.
+        // name being typed also gets its `=`, as `b = `. In STATS the word is almost always an
+        // aggregation or a column being typed, so not there.
         (site.followedBy.includes('ASSIGN')
-          ? newName({ whileTyped: site.rule === 'field' })
+          ? (ctx, slot) =>
+              newName({
+                whileTyped:
+                  site.rule === 'field' &&
+                  !hasRoleAbove(ctx.location, 'aggregation') &&
+                  !hasRoleAbove(ctx.location, 'grouping'),
+              })(ctx, slot)
           : none())
       );
     case 'constant':

@@ -13,6 +13,7 @@ import {
   locateCursor,
 } from '../../../language/shared/cursor_location/cursor_location';
 import type { CursorLocation } from '../../../language/shared/cursor_location/types';
+import { ARGUMENT_REQUIRED_COMMANDS } from '../../../esql_js_prototype';
 import { newLineCompleteItem } from '../complete_items';
 import {
   EXPRESSION_ENGINE_TOKENS,
@@ -275,6 +276,23 @@ const isInExpression = (location: CursorLocation): boolean =>
     );
   });
 
+/**
+ * A command that needs an argument has none yet, though the grammar lets it end, as `STATS `:
+ * Elasticsearch needs an aggregation or a grouping.
+ */
+const needsArgument = ({ command, location, cursorPosition }: SuggestContext): boolean =>
+  // The word being typed is not an argument yet.
+  command.args.every(
+    (arg) => Array.isArray(arg) || arg.location.min >= (location.partial?.start ?? cursorPosition)
+  ) &&
+  [...location.expectedRules.flatMap(({ stack }) => stack)].some((rule) =>
+    ARGUMENT_REQUIRED_COMMANDS.includes(rule)
+  );
+
+/** The expression is complete, outside any function call. */
+const isComplete = (computed: ExpressionComputedMetadata | undefined): boolean =>
+  Boolean(computed?.isComplete) && !computed?.insideFunction;
+
 /** The expression is a whole boolean, outside any function call. */
 const isWholeBoolean = (computed: ExpressionComputedMetadata | undefined): boolean =>
   computed?.expressionType === 'boolean' && computed.isComplete && !computed.insideFunction;
@@ -357,8 +375,13 @@ const suggestAt = async (
   const needsValue =
     valueItems.length > 0 &&
     VALUE_INTRODUCING_TOKENS.some((name) => getTokenType(name) === location.previousTokenType);
-  // An argument complete only as a boolean, as WHERE's, is followed by nothing until it is one.
-  const argumentDone = !options.completeAsBoolean || isWholeBoolean(expression?.computed);
+  // An argument complete only as a boolean, as WHERE's, is followed by nothing until it is one;
+  // an aggregation, until it is a complete one, as not `AVG(counter)` outside TS.
+  const argumentDone =
+    (!options.completeAsBoolean || isWholeBoolean(expression?.computed)) &&
+    (!options.aggregation ||
+      expression?.computed.position === 'empty_expression' ||
+      isComplete(expression?.computed));
   // Inside an open string, as KQL's `"""…`, no keyword fits.
   const inString = location.partial?.text.startsWith('"') ?? false;
   // Inside a function call the expression engine offers the comma between arguments.
@@ -366,7 +389,10 @@ const suggestAt = async (
   const keywordItems =
     needsValue || !argumentDone || inString || insideFunction
       ? []
-      : adjustKeywords(keywordsAt(location), ctx).map((keyword) => toItem(keyword, location));
+      : adjustKeywords(keywordsAt(location), ctx)
+          // A command that needs an argument and has none cannot end yet, as `STATS `.
+          .filter(({ token }) => !(token === 'PIPE' && needsArgument(ctx)))
+          .map((keyword) => toItem(keyword, location));
 
   return [...valueItems, ...keywordItems];
 };
