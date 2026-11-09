@@ -8,7 +8,6 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import { columnsAfter } from './columns_after';
 import { validate } from './validate';
 import { summary } from './summary';
@@ -17,7 +16,6 @@ import { Commands } from '../../definitions/keywords';
 
 const forkCommandMethods: ICommandMethods<ICommandContext> = {
   validate,
-  autocomplete,
   columnsAfter,
   summary,
 };
@@ -26,6 +24,8 @@ export const forkCommand = {
   name: Commands.FORK,
   methods: forkCommandMethods,
   metadata: {
+    // Elasticsearch allows one FORK per query, so none inside a branch or after a FORK.
+    hiddenAfterCommands: [Commands.FORK],
     description: i18n.translate('esqlLanguage.esql.definitions.forkDoc', {
       defaultMessage: 'Forks the stream.',
     }),

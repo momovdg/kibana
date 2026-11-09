@@ -94,23 +94,6 @@ export const getCommandContext = async (
         variables: callbacks?.getVariables?.(),
       };
       break;
-    case 'fork': {
-      const [enrichPolicies, preferencesResult, forkJoinIndices, inferenceEndpointsResult] =
-        await Promise.all([
-          helpers.getPolicies(),
-          callbacks?.getPreferences?.(),
-          callbacks?.getJoinIndices?.(),
-          callbacks?.getInferenceEndpoints?.('completion'),
-        ]);
-      context = {
-        histogramBarTarget: preferencesResult?.histogramBarTarget || 50,
-        joinSources: forkJoinIndices?.indices || [],
-        supportsControls: callbacks?.canSuggestVariables?.() ?? false,
-        policies: new Map(enrichPolicies.map((policy) => [policy.name, policy])),
-        inferenceEndpoints: inferenceEndpointsResult?.inferenceEndpoints || [],
-      };
-      break;
-    }
     case 'ts': {
       const [timeseriesSources, sources, editorExtensionsResult] = await Promise.all([
         callbacks?.getTimeseriesIndices?.(),

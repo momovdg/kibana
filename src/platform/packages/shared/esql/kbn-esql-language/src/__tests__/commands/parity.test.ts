@@ -76,8 +76,8 @@ describe('parity harness', () => {
 
     // `KEEP`, ` `, `a`, ` ` and then the pipe of the next command.
     expect(await positions('FROM a | KEEP a | LIMIT 1', 'keep')).toBe(4);
-    expect(await positions('FROM a | FORK (KEEP a | LIMIT 1) | LIMIT 2', 'fork')).toBe(
-      ' (KEEP a | LIMIT 1) '.length + 1
+    expect(await positions('FROM a | WHERE b IN (FROM c | KEEP b) | LIMIT 2', 'where')).toBe(
+      ' b IN (FROM c | KEEP b) '.length + 1
     );
   });
 
