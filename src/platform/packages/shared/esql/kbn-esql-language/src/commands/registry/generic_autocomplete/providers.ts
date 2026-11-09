@@ -8,6 +8,7 @@
  */
 import { i18n } from '@kbn/i18n';
 import { ESQLVariableType } from '@kbn/esql-types';
+import type { ESQLFieldWithMetadata } from '@kbn/esql-types';
 import {
   isAssignment,
   isUnknownNode,
@@ -374,8 +375,11 @@ const withLookupColumns = async ({
   context,
 }: SuggestContext): Promise<Pick<SuggestContext, 'callbacks' | 'context'>> => {
   const join = command as ESQLAstJoinCommand;
-  const getColumnsForQuery = (query: string) =>
-    callbacks?.getColumnsForQuery?.(query) ?? Promise.resolve([]);
+  // `FROM <lookup index>` only returns index fields; this narrows the callback's column type.
+  const getColumnsForQuery = async (query: string): Promise<ESQLFieldWithMetadata[]> => {
+    const queryColumns = (await callbacks?.getColumnsForQuery?.(query)) ?? [];
+    return queryColumns.filter((column): column is ESQLFieldWithMetadata => !column.userDefined);
+  };
   const getByType = await createEnrichedGetByType(
     callbacks?.getByType ?? (() => Promise.resolve([])),
     join,

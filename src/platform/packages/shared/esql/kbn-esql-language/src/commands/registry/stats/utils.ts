@@ -340,8 +340,10 @@ export const getAggregationScope = (
   return { context: scopedContext, callbacks: scopedCallbacks };
 };
 
-const getByOption = (command: ESQLAstAllCommands): ESQLCommandOption | undefined =>
-  command.args.find(isByOption);
+const getByOption = (command: ESQLAstAllCommands): ESQLCommandOption | undefined => {
+  const option = command.args.find(isByOption);
+  return option && isByOption(option) ? option : undefined;
+};
 
 /** The function call the cursor is in, or the IN / IS NULL operator it is right at. */
 const findFunctionAtCursor = (
