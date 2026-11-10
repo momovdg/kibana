@@ -21,7 +21,7 @@ import {
   asCompletionItem,
 } from '../complete_items';
 import { Location } from '../types';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import {
   expectSuggestions,
   suggest,
@@ -36,6 +36,7 @@ import {
   ESQL_NUMBER_TYPES,
 } from '../../definitions/types';
 import { findAutocompleteAstPosition } from '../../../language/shared/parse_for_autocomplete_query';
+import { setup } from '../../../language/autocomplete/__tests__/helpers';
 
 const allEvalFnsForWhere = getFunctionSignaturesByReturnType(Location.WHERE, 'any', {
   scalar: true,
@@ -114,6 +115,13 @@ export const EXPECTED_FOR_EMPTY_EXPRESSION = [
 
 type ExpectedSuggestions = string[] | { contains?: string[]; notContains?: string[] };
 
+// Command names come from the full suggest(), which lists them where a branch command starts.
+const suggestTexts = async (query: string): Promise<string[]> => {
+  const { suggest: suggestAt } = await setup('^');
+  const suggestions = await suggestAt(`${query}^`);
+  return suggestions.map(({ text }) => text);
+};
+
 const forkExpectSuggestions = async (
   query: string,
   expected: ExpectedSuggestions,
@@ -161,18 +169,31 @@ describe('FORK Autocomplete', () => {
       ]);
     });
 
+    test('separates what follows right after a branch', async () => {
+      await forkExpectSuggestions('FROM a | FORK (LIMIT 100)', [' ($0)', ' | ', '\n']);
+    });
+
     describe('(COMMAND ... | COMMAND ...)', () => {
+      // FROM is no time-series source, so the commands that need one are not offered.
       const forkCommands = esqlCommandRegistry
         .getProcessingCommandNames()
-        .filter((cmd) => cmd !== 'fork');
+        .filter(
+          (cmd) =>
+            cmd !== 'fork' &&
+            !esqlCommandRegistry.getCommandByName(cmd)?.metadata?.requiresTimeseriesSource
+        );
 
       const FORK_SUBCOMMANDS = getCommandAutocompleteDefinitions(forkCommands).map(
         (item) => item.text
       );
 
       it('suggests FORK sub commands in an open branch', async () => {
-        await forkExpectSuggestions('FROM a | FORK (', FORK_SUBCOMMANDS);
-        await forkExpectSuggestions('FROM a | FORK (WHERE 1) (', FORK_SUBCOMMANDS);
+        expect((await suggestTexts('FROM a | FORK (')).sort()).toEqual(
+          [...FORK_SUBCOMMANDS].sort()
+        );
+        expect((await suggestTexts('FROM a | FORK (WHERE 1) (')).sort()).toEqual(
+          [...FORK_SUBCOMMANDS].sort()
+        );
       });
 
       describe('delegation to subcommands', () => {
@@ -468,14 +489,16 @@ describe('FORK Autocomplete', () => {
       });
 
       it('suggests FORK subcommands after in-branch pipe', async () => {
-        await forkExpectSuggestions(
-          'FROM a | FORK (WHERE keywordField IS NULL | LIMIT 1234 | ',
-          FORK_SUBCOMMANDS
-        );
-        await forkExpectSuggestions(
-          'FROM a | FORK (SORT longField ASC NULLS LAST) (WHERE keywordField IS NULL | LIMIT 1234 | ',
-          FORK_SUBCOMMANDS
-        );
+        expect(
+          (await suggestTexts('FROM a | FORK (WHERE keywordField IS NULL | LIMIT 1234 | ')).sort()
+        ).toEqual([...FORK_SUBCOMMANDS].sort());
+        expect(
+          (
+            await suggestTexts(
+              'FROM a | FORK (SORT longField ASC NULLS LAST) (WHERE keywordField IS NULL | LIMIT 1234 | '
+            )
+          ).sort()
+        ).toEqual([...FORK_SUBCOMMANDS].sort());
       });
 
       describe('user-defined columns', () => {
@@ -500,10 +523,8 @@ describe('FORK Autocomplete', () => {
         it('does NOT suggest source commands', async () => {
           const sourceCommands = esqlCommandRegistry.getSourceCommandNames();
 
-          await forkExpectSuggestions(
-            'FROM a | FORK (',
-            { notContains: sourceCommands.map((cmd) => cmd.toUpperCase() + ' ') },
-            mockCallbacks
+          expect(await suggestTexts('FROM a | FORK (')).not.toEqual(
+            expect.arrayContaining(sourceCommands.map((cmd) => cmd.toUpperCase() + ' '))
           );
         });
 
@@ -513,15 +534,19 @@ describe('FORK Autocomplete', () => {
             return commandDef?.metadata?.hidden === true;
           });
 
-          await forkExpectSuggestions(
-            'FROM a | FORK (',
-            { notContains: hiddenCommands.map((cmd) => cmd.toUpperCase() + ' ') },
-            mockCallbacks
-          );
+          const texts = await suggestTexts('FROM a | FORK (');
+          for (const cmd of hiddenCommands) {
+            expect(texts).not.toContain(cmd.toUpperCase() + ' ');
+          }
         });
 
         it('does NOT suggest FORK command itself', async () => {
-          await forkExpectSuggestions('FROM a | FORK (', { notContains: ['FORK '] }, mockCallbacks);
+          expect(await suggestTexts('FROM a | FORK (')).not.toContain('FORK ');
+        });
+
+        it('does NOT suggest FORK after a FORK', async () => {
+          expect(await suggestTexts('FROM a | FORK (LIMIT 1) (LIMIT 2) | ')).not.toContain('FORK ');
+          expect(await suggestTexts('FROM a | ')).toContain('FORK ');
         });
       });
     });

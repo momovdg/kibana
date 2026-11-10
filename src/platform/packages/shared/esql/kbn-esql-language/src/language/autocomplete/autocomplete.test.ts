@@ -138,7 +138,7 @@ describe('autocomplete', () => {
   const getCommandsWithHiddenAfterCommandsSuggestionTexts = (): string[] =>
     esqlCommandRegistry
       .getAllCommands()
-      .filter((c) => (c.metadata?.hiddenAfterCommands?.length ?? 0) > 0)
+      .filter((c) => c.metadata?.hiddenAfterCommands?.includes('stats'))
       .map((c) => c.name.toUpperCase() + ' ');
 
   describe('New command', () => {

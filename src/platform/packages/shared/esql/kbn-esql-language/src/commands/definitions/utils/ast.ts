@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { isList, isOptionNode, Walker } from '@elastic/esql';
+import { isList, isOptionNode, isSubQuery, Walker } from '@elastic/esql';
 import type { PromQLAstNode } from '@elastic/esql';
 import type {
   ESQLFunction,
@@ -143,10 +143,32 @@ function findCommandSubType<T extends ESQLCommandOption>(
   }
 }
 
+/** The query of the FORK branch the offset is in, after the branch's `(`. */
+const findForkBranch = (
+  command: NonNullable<ReturnType<typeof findCommand>>,
+  offset: number
+): ESQLAstQueryExpression | undefined => {
+  if (command.name !== 'fork') {
+    return undefined;
+  }
+  for (const arg of command.args) {
+    if (isSubQuery(arg) && arg.location.min < offset && offset <= arg.location.max) {
+      return arg.child;
+    }
+  }
+  return undefined;
+};
+
 export function findAstPosition(ast: ESQLAstQueryExpression, offset: number) {
   const command = findCommand(ast, offset);
   if (!command) {
     return { command: undefined, node: undefined };
+  }
+
+  // Inside a FORK branch, the position is the branch's: its command, or none at its start.
+  const branch = findForkBranch(command, offset);
+  if (branch) {
+    return findAstPosition(branch, offset);
   }
 
   let containingFunction: ESQLFunction | undefined;

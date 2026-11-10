@@ -233,6 +233,19 @@ export const commaCompleteItem = buildCharCompleteItem(
 );
 export const commaWithAutoSuggestCompleteItem = withAutoSuggest(commaCompleteItem);
 
+/** A FORK branch, `(…)`, with the cursor inside. */
+export const forkNewBranchCompleteItem: ISuggestionItem = withAutoSuggest({
+  kind: 'Issue',
+  label: i18n.translate('esqlLanguage.esql.suggestions.newBranchLabel', {
+    defaultMessage: 'New branch',
+  }),
+  detail: i18n.translate('esqlLanguage.esql.suggestions.newBranchDetail', {
+    defaultMessage: 'Add a new branch to the fork',
+  }),
+  text: '($0)',
+  asSnippet: true,
+});
+
 export const promqlByCompleteItem: ISuggestionItem = withAutoSuggest({
   label: 'by',
   text: 'by ($0) ',

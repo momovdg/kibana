@@ -16,6 +16,7 @@ import {
   assignCompletionItem,
   byCompleteItem,
   commaCompleteItem,
+  forkNewBranchCompleteItem,
   fuseGroupByCompleteItem,
   fuseKeyByCompleteItem,
   fuseScoreByCompleteItem,
@@ -79,6 +80,8 @@ const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'WITH', items: [withCompleteItem] },
   { token: 'WITH', command: 'enrichCommand', items: [withSuggestion] },
   { token: 'METADATA', items: [metadataSuggestion] },
+  // FORK's `(` opens a branch, not an expression.
+  { token: 'LP', command: 'forkCommand', items: [forkNewBranchCompleteItem] },
   { token: 'INFO', items: [showInfoCompleteItem] },
   { token: 'MMR_LIMIT', items: [mmrLimitKeywordSuggestion] },
   { token: 'SCORE', items: [fuseScoreByCompleteItem] },

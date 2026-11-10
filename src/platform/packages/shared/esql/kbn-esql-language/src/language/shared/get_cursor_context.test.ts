@@ -16,6 +16,7 @@ import {
 import type { ESQLAstItem } from '@elastic/esql/types';
 import { Parser, Walker } from '@elastic/esql';
 import { getCursorContext } from './get_cursor_context';
+import { getAutocompleteCursorContext } from './parse_for_autocomplete_query';
 
 const assertMarkerRemoved = (_query: string) => {
   const query = correctQuerySyntax(_query);
@@ -96,5 +97,25 @@ describe('it should remove marker nodes from the AST', () => {
   it('removes marker from right-side of assignment', () => {
     assertMarkerRemoved(`FROM employees | EVAL total = `);
     assertMarkerRemoved(`ROW total = `);
+  });
+});
+
+describe('FORK branches', () => {
+  // A branch's command is the position's command, as at the top level.
+  it.each([
+    ['FROM a | FORK (WHERE b > ', 'expression', 'where'],
+    ['FROM a | FORK (WHERE b > 1) (LIMIT ', 'expression', 'limit'],
+    ['FROM a | FORK (WHERE b > 1 | SORT ', 'expression', 'sort'],
+    ['FROM a | FORK (', 'newCommand', undefined],
+    ['FROM a | FORK (WHERE b > 1) (', 'newCommand', undefined],
+    ['FROM a | FORK (WHERE b > 1 | ', 'newCommand', undefined],
+    ['FROM a | FORK ', 'expression', 'fork'],
+    ['FROM a | FORK (WHERE b > 1)', 'expression', 'fork'],
+    ['FROM a | FORK (WHERE b > 1) ', 'expression', 'fork'],
+  ])('%j is a %s position in %s', (query, type, commandName) => {
+    const { astContext } = getAutocompleteCursorContext(query, query.length);
+
+    expect(astContext.type).toBe(type);
+    expect(astContext.command?.name).toBe(commandName);
   });
 });
