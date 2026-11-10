@@ -116,17 +116,6 @@ export function findPipeOutsideQuotes(text: string, start: number = 0): number {
   return -1;
 }
 
-export function getLastNonWhitespaceChar(text: string) {
-  return text[text.trimEnd().length - 1];
-}
-
-/**
- * Are we after a comma? i.e. STATS fieldA, <here>
- */
-export function isRestartingExpression(text: string) {
-  return getLastNonWhitespaceChar(text) === ',' || characterPrecedesCurrentWord(text, ',');
-}
-
 /**
  * Take a column name like "`my``column`"" and return "my`column"
  */

@@ -56,19 +56,9 @@ export const buildUserDefinedColumnsDefinitions = (
     category: SuggestionCategory.USER_DEFINED_COLUMN,
   }));
 
-export const findFinalWord = (text: string) => {
-  const words = text.split(/\s+/);
-  return words[words.length - 1];
-};
-
 export function findPreviousWord(text: string) {
   const words = text.split(/\s+/);
   return words[words.length - 2];
-}
-
-export function withinQuotes(text: string) {
-  const quoteCount = (text.match(/"/g) || []).length;
-  return quoteCount % 2 === 1;
 }
 
 interface FieldSuggestionsOptions {

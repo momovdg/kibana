@@ -542,7 +542,16 @@ describe('autocomplete', () => {
     // FROM source
     testSuggestions(
       'FROM k/',
-      ['k\n', 'index1', 'index2', ...views.map((v) => v.name), ...datasets.map((d) => d.name)],
+      // A new line follows only a complete name; a subquery may start the sources too.
+      [
+        'index1',
+        'index2',
+        ...views.map((v) => v.name),
+        ...datasets.map((d) => d.name),
+        '(FROM $0)',
+        '(ROW $0)',
+        '(TS $0)',
+      ],
       undefined,
       [
         ,
@@ -555,7 +564,8 @@ describe('autocomplete', () => {
 
     // FROM source METADATA
     recommendedQuerySuggestions = getRecommendedQueriesSuggestionsFromTemplates('', 'dateField');
-    testSuggestions('FROM index1 M/', ['METADATA ']);
+    // The editor keeps only the items matching the word typed.
+    testSuggestions('FROM index1 M/', ['METADATA ', '\n', ', ', '| ']);
 
     // FROM source METADATA field
     testSuggestions('FROM index1 METADATA _/', METADATA_FIELDS);
@@ -816,7 +826,7 @@ describe('autocomplete', () => {
     testSuggestions('FROM a /', [
       '\n',
       attachTriggerCommand('| '),
-      ',',
+      ', ',
       attachTriggerCommand('METADATA '),
       ...recommendedQuerySuggestions.map((q) => q.queryString),
     ]);
@@ -852,12 +862,15 @@ describe('autocomplete', () => {
 
       testSuggestions(
         'FROM index/',
+        // `index` is no source here, so no new line follows it.
         [
-          'index\n',
           withAutoSuggest({ text: 'index1' } as ISuggestionItem),
           withAutoSuggest({ text: 'index2' } as ISuggestionItem),
           ...views.map((v) => withAutoSuggest({ text: v.name } as ISuggestionItem)),
           ...datasets.map((d) => withAutoSuggest({ text: d.name } as ISuggestionItem)),
+          withAutoSuggest({ text: '(FROM $0)' } as ISuggestionItem),
+          withAutoSuggest({ text: '(ROW $0)' } as ISuggestionItem),
+          withAutoSuggest({ text: '(TS $0)' } as ISuggestionItem),
         ],
         undefined,
         [
@@ -911,9 +924,6 @@ describe('autocomplete', () => {
         'FROM index1, index2/',
         [
           'index2\n',
-          withAutoSuggest({ text: '(FROM $0)' } as ISuggestionItem),
-          withAutoSuggest({ text: '(ROW $0)' } as ISuggestionItem),
-          withAutoSuggest({ text: '(TS $0)' } as ISuggestionItem),
           withAutoSuggest({ text: 'index2 | ', filterText: 'index2' } as ISuggestionItem),
           withAutoSuggest({ text: 'index2, ', filterText: 'index2' } as ISuggestionItem),
           withAutoSuggest({ text: 'index2 METADATA ', filterText: 'index2' } as ISuggestionItem),
@@ -998,7 +1008,12 @@ describe('autocomplete', () => {
       'textField'
     );
     // FROM source METADATA
-    testSuggestions('FROM index1 M/', [attachTriggerCommand('METADATA ')]);
+    testSuggestions('FROM index1 M/', [
+      attachTriggerCommand('METADATA '),
+      '\n',
+      attachTriggerCommand(', '),
+      attachTriggerCommand('| '),
+    ]);
 
     describe('ENRICH', () => {
       testSuggestions(
@@ -1147,7 +1162,9 @@ describe('autocomplete', () => {
           [
             { filterText: '_id', text: '_id, ' },
             { filterText: '_id', text: '_id | ' },
-          ].map(attachTriggerCommand)
+          ]
+            .map(attachTriggerCommand)
+            .concat({ filterText: '_id', text: '_id\n' })
         );
         testSuggestions(
           'FROM a METADATA _id, /',
@@ -1158,7 +1175,9 @@ describe('autocomplete', () => {
           [
             { filterText: '_ignored', text: '_ignored, ' },
             { filterText: '_ignored', text: '_ignored | ' },
-          ].map(attachTriggerCommand)
+          ]
+            .map(attachTriggerCommand)
+            .concat({ filterText: '_ignored', text: '_ignored\n' })
         );
         // comma if there's even one more field
         testSuggestions('FROM a METADATA _id, _ignored, _index, _source/', [
@@ -1170,6 +1189,7 @@ describe('autocomplete', () => {
             filterText: '_source',
             text: '_source, ',
           } as ISuggestionItem),
+          { filterText: '_source', text: '_source\n' },
         ]);
         // no comma if there are no more fields
         testSuggestions(
@@ -1179,6 +1199,7 @@ describe('autocomplete', () => {
               filterText: '_version',
               text: '_version | ',
             } as ISuggestionItem),
+            { filterText: '_version', text: '_version\n' },
           ]
         );
       });

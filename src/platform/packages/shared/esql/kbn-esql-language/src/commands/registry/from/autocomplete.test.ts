@@ -14,7 +14,7 @@ import {
   getRecommendedQueriesTemplatesFromExtensions,
 } from '../options/recommended_queries';
 import type { ICommandCallbacks } from '../types';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import { findAutocompleteAstPosition } from '../../../language/shared/parse_for_autocomplete_query';
 
 const metadataFields = [...METADATA_FIELDS].sort();
@@ -86,11 +86,14 @@ describe('FROM Autocomplete', () => {
         return autocomplete(query, command!, mockCallbacks, mockContext, cursorPosition);
       };
 
-      const initialSlotLabels = (await suggest('FROM /')).map((s) => s.label);
-      expect(initialSlotLabels).toContain('Browse data sources');
+      const initialSlotLabels = (await suggest('FROM ')).map((s) => s.label);
+      expect(initialSlotLabels[0]).toBe('Browse data sources');
 
-      const afterCommaLabels = (await suggest('FROM index, /')).map((s) => s.label);
-      expect(afterCommaLabels).toContain('Browse data sources');
+      const afterCommaLabels = (await suggest('FROM index, ')).map((s) => s.label);
+      expect(afterCommaLabels[0]).toBe('Browse data sources');
+
+      // Not while a name is typed, nor in a subquery.
+      expect((await suggest('FROM ind')).map((s) => s.label)).not.toContain('Browse data sources');
     });
 
     test('suggests visible indices on space', async () => {
@@ -104,7 +107,11 @@ describe('FROM Autocomplete', () => {
         [...visibleIndices, ...subquerySuggestions],
         mockCallbacks
       );
-      await fromExpectSuggestions('from /index', [...visibleIndices, '/index\n'], mockCallbacks);
+      await fromExpectSuggestions(
+        'from /index',
+        [...visibleIndices, ...subquerySuggestions],
+        mockCallbacks
+      );
     });
 
     test("doesn't create suggestions after an open quote", async () => {
@@ -133,15 +140,16 @@ describe('FROM Autocomplete', () => {
         const { command } = findAutocompleteAstPosition(query, cursorPosition);
         return autocomplete(query, command!, mockCallbacks, mockContext, cursorPosition);
       };
-      const suggestions = (await suggest('from index')).map((s) => s.text);
+      // While the name is typed, the follow-ups keep it.
+      const suggestions = await suggest('from index');
+      const kept = suggestions.filter(({ preserveTypedPrefix }) => preserveTypedPrefix);
 
-      expect(suggestions).toContain('index, ');
-      expect(suggestions).toContain('index | ');
+      expect(kept.map(({ text }) => text)).toEqual(expect.arrayContaining([', ', ' | ']));
 
+      // After a closing quote, they follow it.
       const suggestions2 = (await suggest('from index, "my-index"')).map((s) => s.text);
 
-      expect(suggestions2).toContain('"my-index", ');
-      expect(suggestions2).toContain('"my-index" | ');
+      expect(suggestions2).toEqual(expect.arrayContaining([', ', ' | ']));
     });
 
     test('can suggest integration data sources', async () => {
@@ -160,7 +168,7 @@ describe('FROM Autocomplete', () => {
       );
       await fromExpectSuggestions(
         'FROM a,/',
-        expectedSuggestions.filter((i) => i !== 'a'),
+        [...expectedSuggestions.filter((i) => i !== 'a'), ...subquerySuggestions],
         mockCallbacks
       );
       await fromExpectSuggestions(
@@ -168,7 +176,89 @@ describe('FROM Autocomplete', () => {
         [...expectedSuggestions.filter((i) => i !== 'a'), ...subquerySuggestions],
         mockCallbacks
       );
-      await fromExpectSuggestions('from *,/', expectedSuggestions, mockCallbacks);
+      await fromExpectSuggestions(
+        'from *,/',
+        [...expectedSuggestions, ...subquerySuggestions],
+        mockCallbacks
+      );
+    });
+
+    describe('on the generic autocomplete', () => {
+      const suggestWith = async (query: string, context = mockContext) => {
+        const { command } = findAutocompleteAstPosition(query, query.length);
+        return autocomplete(query, command!, mockCallbacks, context, query.length);
+      };
+      const contextWithTimeSeries = {
+        ...mockContext,
+        sources: [
+          { name: 'logs', hidden: false, type: 'Index' },
+          { name: 'metrics-tsdb', hidden: false, type: 'Timeseries' },
+        ],
+      };
+
+      test('rewrites FROM to TS when a time-series source is picked as the only one', async () => {
+        // The item's command (serialized with the one reopening suggestions) replaces the
+        // command keyword and the source with `TS <source>`.
+        const rewrites = async (query: string) =>
+          JSON.stringify(
+            (await suggestWith(query, contextWithTimeSeries)).find(
+              ({ label }) => label === 'metrics-tsdb'
+            )?.command ?? {}
+          ).includes('TS metrics-tsdb');
+
+        expect(await rewrites('FROM ')).toBe(true);
+        expect(await rewrites('FROM met')).toBe(true);
+        expect(await rewrites('FROM logs, ')).toBe(false);
+      });
+
+      test('leaves time-series sources out of a subquery', async () => {
+        const labels = (
+          await suggestWith('FROM a, (FROM ', {
+            ...contextWithTimeSeries,
+            isCursorInSubquery: true,
+          })
+        ).map(({ label }) => label);
+
+        expect(labels).toContain('logs');
+        expect(labels).not.toContain('metrics-tsdb');
+      });
+
+      test("suggests an integration's data streams once it is typed in full", async () => {
+        const context = {
+          ...mockContext,
+          sources: [
+            {
+              name: 'nginx',
+              hidden: false,
+              type: 'Integration',
+              dataStreams: [{ name: 'logs-nginx.access-*' }, { name: 'logs-nginx.error-*' }],
+            },
+          ],
+        };
+
+        expect((await suggestWith('FROM nginx', context)).map(({ text }) => text)).toEqual([
+          'logs-nginx.access-*',
+          'logs-nginx.error-*',
+          ...subquerySuggestions,
+        ]);
+      });
+
+      test('suggests sources while a pattern with a dash is typed', async () => {
+        const labels = (await suggestWith('FROM my-')).map(({ label }) => label);
+
+        expect(labels).toContain('my-index');
+      });
+
+      test('suggests the recommended queries after a complete source, typed or followed by a space', async () => {
+        const isRecommendedQuery = ({ category }: { category?: string }) =>
+          category === 'recommended_query';
+
+        expect((await suggestWith('FROM index')).some(isRecommendedQuery)).toBe(true);
+        expect((await suggestWith('FROM index ')).some(isRecommendedQuery)).toBe(true);
+        expect((await suggestWith('FROM index METADATA _id ')).some(isRecommendedQuery)).toBe(
+          false
+        );
+      });
     });
 
     test('suggests views from context.views alongside sources', async () => {
@@ -244,7 +334,7 @@ describe('FROM Autocomplete', () => {
       const expected = [
         '\n',
         'METADATA ',
-        ',',
+        ', ',
         '| ',
         ...recommendedQueries.map((query) => query.queryString),
       ].sort();
@@ -253,14 +343,19 @@ describe('FROM Autocomplete', () => {
     });
 
     test('partially-typed METADATA keyword', async () => {
-      await fromExpectSuggestions('FROM index1 MET', ['METADATA '], mockCallbacks);
+      // The editor keeps only the items matching the word typed.
+      await fromExpectSuggestions(
+        'FROM index1 MET',
+        ['METADATA ', ', ', '| ', '\n'],
+        mockCallbacks
+      );
     });
 
     test('not before first index', async () => {
       mockContext.sources = visibleDataSources;
       await fromExpectSuggestions(
         'FROM MET',
-        [...visibleDataSources.map((source) => source.name), 'MET\n'],
+        [...visibleDataSources.map((source) => source.name), ...subquerySuggestions],
         mockCallbacks
       );
     });
@@ -284,10 +379,10 @@ describe('FROM Autocomplete', () => {
     });
 
     test('on <kbd>SPACE</kbd> after "METADATA" column suggests command and pipe operators', async () => {
-      await fromExpectSuggestions('from a, b metadata _index ', ['\n', ',', '| '], mockCallbacks);
+      await fromExpectSuggestions('from a, b metadata _index ', ['\n', ', ', '| '], mockCallbacks);
       await fromExpectSuggestions(
         'from a, b metadata _index, _source ',
-        ['\n', ',', '| '],
+        ['\n', ', ', '| '],
         mockCallbacks
       );
       await fromExpectSuggestions(
@@ -321,7 +416,7 @@ describe('FROM Autocomplete', () => {
     const nextActionsWithMetadata = [
       '\n',
       'METADATA ',
-      ',',
+      ', ',
       '| ',
       ...recommendedQueries.map((query) => query.queryString),
     ].sort();
@@ -342,10 +437,10 @@ describe('FROM Autocomplete', () => {
       );
     });
 
-    test('does not suggest nested subqueries', async () => {
+    test('suggests nested subqueries', async () => {
       await fromExpectSuggestions(
         'FROM a, (FROM /)',
-        visibleIndices,
+        [...visibleIndices, ...subquerySuggestions],
         mockCallbacks,
         contextWithSubquery
       );
@@ -368,16 +463,23 @@ describe('FROM Autocomplete', () => {
       const query = 'FROM a, (FROM index MET)';
       const offset = query.lastIndexOf(')');
 
-      await fromExpectSuggestions(query, ['METADATA '], mockCallbacks, contextWithSubquery, offset);
+      await fromExpectSuggestions(
+        query,
+        ['METADATA ', ', ', '| ', '\n'],
+        mockCallbacks,
+        contextWithSubquery,
+        offset
+      );
     });
 
     test('suggests pipe and comma after metadata field in subquery', async () => {
       const query = 'FROM a, (FROM index METADATA _id )';
       const offset = query.lastIndexOf(')');
 
+      // As in the main query: no second METADATA, and no recommended queries after the fields.
       await fromExpectSuggestions(
         query,
-        nextActionsWithMetadata,
+        ['\n', ', ', '| '],
         mockCallbacks,
         contextWithSubquery,
         offset
@@ -420,7 +522,7 @@ describe('FROM Autocomplete', () => {
       const expected = [
         '\n',
         'METADATA ',
-        ',',
+        ', ',
         '| ',
         ...recommendedQueries.map((query) => query.queryString),
         ...extensionSuggestions.map((s) => s.text),

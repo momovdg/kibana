@@ -226,6 +226,19 @@ describe('locateCursor', () => {
     });
   });
 
+  describe('a source name', () => {
+    it.each([
+      ['FROM logs-', 'logs-'],
+      ['FROM logs-*', 'logs-*'],
+      ['FROM a, -', '-'],
+    ])('is the word being typed in %j however it ends', (text, partialText) => {
+      const { partial, expectedRules } = locate(text);
+
+      expect(partial).toEqual({ text: partialText, start: text.length - partialText.length });
+      expect(expectedRules.map(({ rule }) => rule)).toContain('indexPattern');
+    });
+  });
+
   describe('inComment', () => {
     it.each([
       ['FROM a // note', true],

@@ -26,6 +26,8 @@ interface GrammarInfo {
   lp: number;
   dot: number;
   rp: number;
+  /** A source name or pattern, e.g. `logs-*`, which may end in `-` or `*` while typed. */
+  unquotedSource: number;
   anchorRule: number;
   preferredRules: Set<number>;
   commandRules: Set<number>;
@@ -62,6 +64,7 @@ const getGrammarInfo = (): GrammarInfo => {
     lp: symbolicNames.indexOf('LP'),
     dot: symbolicNames.indexOf('DOT'),
     rp: symbolicNames.indexOf('RP'),
+    unquotedSource: symbolicNames.indexOf('UNQUOTED_SOURCE'),
     anchorRule: ruleNames.indexOf(PIPE_ANCHOR_RULE),
     preferredRules: ruleIndexes(PREFERRED_RULES),
     commandRules: ruleIndexes(COMMAND_RULES),
@@ -209,12 +212,13 @@ export const locateCursor = (text: string, offset: number): CursorLocation => {
   // The caret is the word being typed when the cursor touches one, otherwise the next token.
   // Untokenized characters directly after a word (e.g. the `:` of `_any:`) belong to that word.
   // A dot after whitespace starts a decimal (`SAMPLE .`), as a dotted name has no space before it.
+  // A source name is a word however it ends, as `logs-` or `logs-*`.
   const startsDecimal =
     lastToken?.type === grammar.dot && /\s/.test(textBeforeCursor.charAt(lastToken.start - 1));
   const isTypingWord =
     lastToken !== undefined &&
     isVisible(lastToken) &&
-    (/\w$/.test(lastToken.text) || startsDecimal) &&
+    (/\w$/.test(lastToken.text) || startsDecimal || lastToken.type === grammar.unquotedSource) &&
     tail === untokenized;
   const caret = isTypingWord ? lastToken : eof;
 

@@ -421,7 +421,10 @@ const suggestAt = async (
         .map((keyword) => toItem(keyword, location))
     : [];
   // What the role of the argument just completed adds, as the recommended queries after a source.
-  const argumentFollowUps = offersKeywords ? await getArgumentFollowUps(ctx) : [];
+  // While a word is typed, as `METADATA`, nothing has been completed yet: a complete name gets
+  // them as follow-ups instead.
+  const argumentFollowUps =
+    offersKeywords && !location.partial ? await getArgumentFollowUps(ctx) : [];
 
   return [...valueItems, ...keywordItems, ...argumentFollowUps];
 };
