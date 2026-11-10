@@ -11,9 +11,9 @@ import { esqlCommandRegistry } from '.';
 /**
  * The commands that still have their own autocomplete code. Every other command is completed
  * by the generic autocomplete, from the grammar and the prototype's roles. PROMQL has its own
- * language.
+ * language. LET arrived with its own autocomplete and moves to the generic one next.
  */
-const CUSTOM_AUTOCOMPLETE_COMMANDS: readonly string[] = ['promql'];
+const CUSTOM_AUTOCOMPLETE_COMMANDS: readonly string[] = ['let', 'promql'];
 
 describe('custom autocomplete', () => {
   it('is defined only by the allowlisted commands', () => {
