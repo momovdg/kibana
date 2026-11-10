@@ -7,18 +7,10 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { i18n } from '@kbn/i18n';
-import type { ESQLCommandOption, ESQLAstAllCommands } from '@elastic/esql/types';
-import { isColumn, isOptionNode } from '@elastic/esql';
 import { withAutoSuggest } from '../../../definitions/utils/autocomplete/helpers';
 import type { ISuggestionItem } from '../../types';
-import { buildFieldsDefinitions } from '../../../definitions/utils/functions';
-import {
-  commaCompleteItem,
-  newLineAndPipeCompleteItems,
-  pipeCompleteItem,
-} from '../../complete_items';
 import { SuggestionCategory } from '../../../../language/autocomplete/utils/sorting/types';
-import { endsWithNonWhitespace, matchesWildcardPattern } from '../../../definitions/utils/regex';
+import { matchesWildcardPattern } from '../../../definitions/utils/regex';
 
 export const METADATA_FIELDS = [
   '_version',
@@ -68,76 +60,3 @@ export const metadataSuggestion: ISuggestionItem = withAutoSuggest({
   }),
   category: SuggestionCategory.VALUE,
 });
-
-const METADATA_TRAILING_FRAGMENT_REGEX = /(?:METADATA|,)\s+(\S*)$/i;
-
-const getMetadataFragment = (innerText: string) => {
-  const match = innerText.match(METADATA_TRAILING_FRAGMENT_REGEX);
-  return match?.[1] ?? '';
-};
-
-export const getMetadataSuggestions = (
-  command: ESQLAstAllCommands,
-  queryText: string,
-  isServerless?: boolean
-) => {
-  const metadataNode = command.args.find((arg) => isOptionNode(arg) && arg.name === 'metadata') as
-    | ESQLCommandOption
-    | undefined;
-
-  // FROM index METADATA ... /
-  if (metadataNode) {
-    return suggestForMetadata(metadataNode, queryText, isServerless);
-  }
-};
-
-async function suggestForMetadata(
-  metadata: ESQLCommandOption,
-  innerText: string,
-  isServerless?: boolean
-) {
-  const availableFields = getAvailableMetadataFields(isServerless);
-  const existingFields = new Set(metadata.args.filter(isColumn).map(({ name }) => name));
-  const filteredMetaFields = availableFields.filter((name) => !existingFields.has(name));
-  const suggestions: ISuggestionItem[] = [];
-
-  // FROM something METADATA /
-  // FROM something METADATA field/
-  // FROM something METADATA field, /
-  if (/(?:,|METADATA)\s+$/i.test(innerText) || endsWithNonWhitespace(innerText)) {
-    const prefix = getMetadataFragment(innerText);
-
-    if (prefix && availableFields.includes(prefix)) {
-      const completionSuggestions: ISuggestionItem[] = [
-        {
-          ...pipeCompleteItem,
-          text: ' | ',
-          preserveTypedPrefix: true,
-        },
-      ];
-      if (filteredMetaFields.length > 1) {
-        completionSuggestions.push(
-          withAutoSuggest({
-            ...commaCompleteItem,
-            text: ', ',
-            preserveTypedPrefix: true,
-          })
-        );
-      }
-      suggestions.push(...completionSuggestions);
-      return suggestions;
-    }
-
-    suggestions.push(...buildFieldsDefinitions(filteredMetaFields));
-  } else {
-    // METADATA field /
-    if (existingFields.size > 0) {
-      if (filteredMetaFields.length > 0) {
-        suggestions.push(commaCompleteItem);
-      }
-      suggestions.push(...newLineAndPipeCompleteItems);
-    }
-  }
-
-  return suggestions;
-}

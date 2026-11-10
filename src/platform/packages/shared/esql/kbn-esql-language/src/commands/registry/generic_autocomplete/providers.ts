@@ -7,8 +7,8 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { i18n } from '@kbn/i18n';
-import { ESQLVariableType } from '@kbn/esql-types';
-import type { ESQLFieldWithMetadata } from '@kbn/esql-types';
+import { ESQLVariableType, SOURCES_TYPES } from '@kbn/esql-types';
+import type { ESQLFieldWithMetadata, ESQLSourceResult } from '@kbn/esql-types';
 import {
   isAssignment,
   isUnknownNode,
@@ -20,6 +20,7 @@ import {
   isOptionNode,
   isSource,
   isStringLiteral,
+  isSubQuery,
   Walker,
 } from '@elastic/esql';
 import type {
@@ -80,7 +81,13 @@ import type { ExpectedRule } from '../../../language/shared/cursor_location/type
 import { isExpressionSlot } from './slot_matching';
 import { getLocationInfo } from '../location';
 import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../definitions/constants';
-import { specialIndicesToSuggestions } from '../../definitions/utils/sources';
+import {
+  buildDatasetsDefinitions,
+  buildSourcesDefinitions,
+  buildViewsDefinitions,
+  getSourceSuggestions,
+  specialIndicesToSuggestions,
+} from '../../definitions/utils/sources';
 import { getIndicesBrowserSuggestion } from '../../definitions/utils/autocomplete/resource_browser_suggestions';
 import { getAvailableMetadataFields } from '../options/metadata';
 import { getRecommendedQueriesSuggestions } from '../options/recommended_queries';
@@ -379,24 +386,76 @@ const usedSourceNames = ({ command, location, cursorPosition }: SuggestContext):
 };
 
 /**
- * The sources a command reads, for the index mode its argument list requires: for TS's
- * `time_series`, time-series indices and their aliases. Names already used are left out. At an
- * empty position, "Browse data sources" comes first (only in the main query, which the item
- * itself checks). Inside a quoted name nothing fits.
+ * The sources FROM can read: indices, aliases and data streams that aren't hidden, without the
+ * time-series ones inside a subquery (`FROM a, (FROM ` reads standard sources).
+ */
+const readableSources = ({ context }: SuggestContext): ESQLSourceResult[] =>
+  (context?.sources ?? []).filter(
+    ({ type }) => !context?.isCursorInSubquery || type !== SOURCES_TYPES.TIMESERIES
+  );
+
+/** An integration typed in full, whose data streams are the sources to read. */
+const typedIntegration = (ctx: SuggestContext): ESQLSourceResult | undefined => {
+  const name = ctx.location.partial?.text;
+  return readableSources(ctx).find(
+    (source) => source.name === name && Boolean(source.dataStreams?.length)
+  );
+};
+
+/** Whether the slot is the command's only source, as `FROM ` or `FROM in`. */
+const isOnlySource = (ctx: SuggestContext): boolean => {
+  const end = ctx.location.partial?.start ?? ctx.cursorPosition;
+  return ctx.command.args.every(
+    (arg) => Array.isArray(arg) || !(isSource(arg) || isSubQuery(arg)) || arg.location.min >= end
+  );
+};
+
+/**
+ * FROM's sources: its sources, views and datasets, without the names used. A time-series
+ * source picked as the only one rewrites `FROM` to `TS`. An integration typed in full offers
+ * its data streams instead.
+ */
+const fromSources = (ctx: SuggestContext): ISuggestionItem[] => {
+  const { command, context, query, cursorPosition } = ctx;
+  const integration = typedIntegration(ctx);
+  if (integration?.dataStreams) {
+    return buildSourcesDefinitions(
+      integration.dataStreams.map(({ name }) => ({ name, isIntegration: false }))
+    );
+  }
+  const used = [...usedSourceNames(ctx)];
+  const rewriteToTs = isOnlySource(ctx)
+    ? { textBeforeCursor: query.slice(0, cursorPosition), commandStart: command.location.min }
+    : undefined;
+  return [
+    ...getSourceSuggestions(readableSources(ctx), used, rewriteToTs),
+    ...buildViewsDefinitions(context?.views ?? [], used),
+    ...buildDatasetsDefinitions(context?.datasets ?? [], used),
+  ];
+};
+
+/** TS's sources: time-series indices and their aliases, without the names used. */
+const timeSeriesSources = (ctx: SuggestContext): ISuggestionItem[] => {
+  const used = usedSourceNames(ctx);
+  const indices = (ctx.context?.timeSeriesSources ?? [])
+    .filter(({ name }) => !used.has(name))
+    .map((index) => ({ ...index, aliases: index.aliases?.filter((alias) => !used.has(alias)) }));
+  return specialIndicesToSuggestions(indices);
+};
+
+/**
+ * The sources a command reads, for the index mode its argument list requires: TS's
+ * `time_series`, or any for FROM. At an empty position, "Browse data sources" comes first
+ * (only in the main query, which the item itself checks). Inside a quoted name nothing fits.
  */
 export const sources =
   ({ indexMode }: { indexMode?: string }): SlotProvider =>
   async (ctx, slot) => {
     const { location, context, callbacks } = ctx;
-    // FROM's catalogs come with its migration (wave 5c).
-    if (location.partial?.text.startsWith('"') || indexMode !== 'time_series') {
+    if (location.partial?.text.startsWith('"')) {
       return [];
     }
-    const used = usedSourceNames(ctx);
-    const indices = (context?.timeSeriesSources ?? [])
-      .filter(({ name }) => !used.has(name))
-      .map((index) => ({ ...index, aliases: index.aliases?.filter((alias) => !used.has(alias)) }));
-    const items = specialIndicesToSuggestions(indices);
+    const items = indexMode === 'time_series' ? timeSeriesSources(ctx) : fromSources(ctx);
     const browser =
       location.partial || slot.continuation
         ? undefined
@@ -404,30 +463,38 @@ export const sources =
     return browser ? [browser, ...items] : items;
   };
 
-/** The names of the sources of an index mode, with their aliases, to tell a complete name. */
-export const getSourceNames = (
-  { context }: SuggestContext,
-  indexMode: string | undefined
-): Set<string> | undefined =>
-  indexMode === 'time_series'
-    ? new Set(
-        (context?.timeSeriesSources ?? []).flatMap(({ name, aliases = [] }) => [name, ...aliases])
-      )
-    : undefined;
+/**
+ * The names of the sources of an index mode, with aliases, views and datasets, to tell a
+ * complete name. An integration is no source itself: its data streams are.
+ */
+export const getSourceNames = (ctx: SuggestContext, indexMode: string | undefined): Set<string> => {
+  const { context } = ctx;
+  if (indexMode === 'time_series') {
+    return new Set(
+      (context?.timeSeriesSources ?? []).flatMap(({ name, aliases = [] }) => [name, ...aliases])
+    );
+  }
+  return new Set([
+    ...readableSources(ctx)
+      .filter(({ dataStreams }) => !dataStreams?.length)
+      .map(({ name }) => name),
+    ...(context?.views ?? []).map(({ name }) => name),
+    ...(context?.datasets ?? []).map(({ name }) => name),
+  ]);
+};
 
 /**
- * The queries recommended after a source: for TS, the editor extensions' (Kibana's own
- * templates count rows, which TS does not aggregate that way).
+ * The queries recommended after a source: the editor extensions', and for FROM also Kibana's
+ * templates (they count rows, which TS doesn't aggregate that way).
  */
 export const recommendedQueries = async (
-  { context }: SuggestContext,
+  { context, callbacks }: SuggestContext,
   indexMode: string | undefined
 ): Promise<ISuggestionItem[]> =>
-  indexMode === 'time_series'
-    ? getRecommendedQueriesSuggestions(
-        context?.editorExtensions ?? { recommendedFields: [], recommendedQueries: [] }
-      )
-    : [];
+  getRecommendedQueriesSuggestions(
+    context?.editorExtensions ?? { recommendedFields: [], recommendedQueries: [] },
+    indexMode === 'time_series' ? undefined : callbacks?.getByType
+  );
 
 /** The METADATA fields the command does not list yet; serverless adds the project fields. */
 export const remainingMetadataFields = ({ command, callbacks }: SuggestContext): string[] => {

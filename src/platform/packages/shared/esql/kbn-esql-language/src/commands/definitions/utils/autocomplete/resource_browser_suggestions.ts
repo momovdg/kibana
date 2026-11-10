@@ -10,7 +10,6 @@
 import { createIndicesBrowserSuggestion } from '../../../registry/complete_items';
 import type { ICommandCallbacks, ICommandContext, ISuggestionItem } from '../../../registry/types';
 import { buildResourceBrowserCommandArgs } from '../../../../language/autocomplete/autocomplete_utils';
-import { isRestartingExpression } from '../shared';
 
 export async function getIndicesBrowserSuggestion({
   callbacks,
@@ -31,9 +30,4 @@ export async function getIndicesBrowserSuggestion({
   });
 
   return createIndicesBrowserSuggestion(commandArgs);
-}
-
-export function shouldSuggestIndicesBrowserAfterComma(commandText: string): boolean {
-  const normalizedCommandText = commandText.trimEnd();
-  return Boolean(isRestartingExpression(commandText)) && /,\s*\/?$/i.test(normalizedCommandText);
 }

@@ -20,9 +20,8 @@ describe('autocomplete cursor location', () => {
   });
 
   it.each([
-    ['from', 'FROM ^', 'FROM '],
-    ['from', 'FROM index, (FROM ^', 'FROM '],
-    ['from', 'FROM ^\n| WHERE b > 1', 'FROM '],
+    ['promql', 'PROMQL ^', 'PROMQL '],
+    ['promql', 'PROMQL ^\n| WHERE b > 1', 'PROMQL '],
   ])('hands %s the location of %j', async (commandName, query, segmentText) => {
     const methods = esqlCommandRegistry.getCommandMethods(commandName);
     if (!methods) {
@@ -59,6 +58,8 @@ describe('autocomplete cursor location', () => {
     ['fork', 'FROM index | FORK ^'],
     ['ts', 'TS ^'],
     ['ts', 'FROM index, (TS ^'],
+    ['from', 'FROM ^'],
+    ['from', 'FROM index, (FROM ^'],
     ['rename', 'FROM index | FORK (RENAME a AS b) (RENAME ^'],
   ])(
     'computes the location once for %s on the generic autocomplete',

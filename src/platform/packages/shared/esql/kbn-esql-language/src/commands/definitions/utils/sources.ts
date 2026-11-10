@@ -19,10 +19,8 @@ import { i18n } from '@kbn/i18n';
 import type { ESQLAstAllCommands, ESQLAstJoinCommand, ESQLSource } from '@elastic/esql/types';
 import { isAsExpression, isSource, Walker, LeafPrinter, Parser } from '@elastic/esql';
 import type { ISuggestionItem } from '../../registry/types';
-import { pipeCompleteItem, commaCompleteItem } from '../../registry/complete_items';
 import { ESQL_APPLY_TEXT_REPLACEMENT_COMMAND } from '../../registry/constants';
-import { findFinalWord, withAutoSuggest } from './autocomplete/helpers';
-import { metadataSuggestion } from '../../registry/options/metadata';
+import { withAutoSuggest } from './autocomplete/helpers';
 import { fuzzySearch } from './shared';
 import { computePrefixRange } from '../../../language/autocomplete/utils/prefix_range';
 import { COORDINATOR_LOOKUP_JOIN_PREFIX } from '../constants';
@@ -293,70 +291,6 @@ export function getSourceSuggestions(
       }),
     sourceReplacementContext
   );
-}
-
-export async function additionalSourcesSuggestions(
-  queryText: string,
-  sources: ESQLSourceResult[],
-  ignored: string[],
-  recommendedQuerySuggestions: ISuggestionItem[],
-  views: EsqlView[] = [],
-  datasets: EsqlDataset[] = [],
-  sourceReplacementContext?: {
-    textBeforeCursor: string;
-    commandStart: number;
-  }
-) {
-  const sourceNames = new Set([
-    ...sources.map(({ name }) => name),
-    ...views.map(({ name }) => name),
-    ...datasets.map(({ name }) => name),
-  ]);
-  const prefix = findFinalWord(queryText);
-  const isComplete = prefix ? sourceExists(prefix, sourceNames) : false;
-
-  if (isComplete) {
-    const exactMatch = sources.find(({ name }) => name === prefix);
-
-    if (exactMatch?.dataStreams) {
-      return buildSourcesDefinitions(
-        exactMatch.dataStreams.map(({ name }) => ({ name, isIntegration: false }))
-      );
-    }
-
-    return [
-      withAutoSuggest({
-        ...pipeCompleteItem,
-        filterText: prefix,
-        text: prefix + ' | ',
-      }),
-      withAutoSuggest({
-        ...commaCompleteItem,
-        filterText: prefix,
-        text: prefix + ', ',
-      }),
-      {
-        ...metadataSuggestion,
-        filterText: prefix,
-        text: prefix + ' METADATA ',
-      },
-      ...recommendedQuerySuggestions.map((suggestion) =>
-        suggestion.text
-          ? {
-              ...suggestion,
-              filterText: prefix,
-              text: prefix + suggestion.text,
-            }
-          : suggestion
-      ),
-    ];
-  }
-
-  const sourceSuggestions = getSourceSuggestions(sources, ignored, sourceReplacementContext);
-  const viewSuggestions = buildViewsDefinitions(views, ignored);
-  const datasetSuggestions = buildDatasetsDefinitions(datasets, ignored);
-
-  return [...sourceSuggestions, ...viewSuggestions, ...datasetSuggestions];
 }
 
 // Treating lookup and time_series mode indices

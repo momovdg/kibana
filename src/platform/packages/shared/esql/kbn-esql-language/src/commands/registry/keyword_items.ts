@@ -14,6 +14,7 @@ import type { ISuggestionItem } from './types';
 import {
   asCompletionItem,
   assignCompletionItem,
+  buildSubqueryCompleteItems,
   byCompleteItem,
   commaCompleteItem,
   forkNewBranchCompleteItem,
@@ -82,6 +83,13 @@ const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'METADATA', items: [metadataSuggestion] },
   // FORK's `(` opens a branch, not an expression.
   { token: 'LP', command: 'forkCommand', items: [forkNewBranchCompleteItem] },
+  // FROM's `(` opens a subquery as one of its sources (`subqueries` on its argument list); TS
+  // takes none, so it has no entry.
+  {
+    token: 'LP',
+    command: 'fromCommand',
+    items: buildSubqueryCompleteItems({ previewCommands: ['row', 'ts'] }),
+  },
   { token: 'INFO', items: [showInfoCompleteItem] },
   { token: 'MMR_LIMIT', items: [mmrLimitKeywordSuggestion] },
   { token: 'SCORE', items: [fuseScoreByCompleteItem] },

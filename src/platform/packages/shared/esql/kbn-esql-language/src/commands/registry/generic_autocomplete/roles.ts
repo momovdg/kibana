@@ -737,8 +737,7 @@ const isExistingAs = (
   indexMode?: string
 ): boolean | undefined => {
   if (role?.kind === 'entity' && role.entityType === 'source') {
-    const names = getSourceNames(ctx, indexMode);
-    return names && sourceExists(name, names);
+    return sourceExists(name, getSourceNames(ctx, indexMode));
   }
   if (role?.kind === 'entity' && role.entityType === 'metadata_field') {
     return getAvailableMetadataFields(ctx.callbacks?.isServerless).includes(name);
