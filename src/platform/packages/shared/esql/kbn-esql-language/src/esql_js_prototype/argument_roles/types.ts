@@ -36,7 +36,10 @@ export type ArgumentRole =
   | { kind: 'column'; types?: string[]; constraints?: Record<string, string> }
   /** The name of a column the command creates. Any name is valid, including an existing one. */
   | { kind: 'new_column' }
-  /** A named thing outside the query, e.g. an enrich policy or an inference endpoint. */
+  /**
+   * A named thing outside the query, e.g. an enrich policy or an inference endpoint. A `source`
+   * is an index, alias, data stream, view or dataset name, or a pattern of them.
+   */
   | {
       kind: 'entity';
       entityType:
@@ -44,7 +47,9 @@ export type ArgumentRole =
         | 'enrich_field'
         | 'lookup_index'
         | 'inference_endpoint'
-        | 'setting';
+        | 'setting'
+        | 'source'
+        | 'metadata_field';
       constraints?: Record<string, string>;
     }
   /**

@@ -11,6 +11,8 @@ import {
   followedBy,
   precededBy,
   RULE_TRANSITION,
+  TOKEN_TRANSITIONS,
+  tokenNames,
   type Atn,
   type GrammarInfo,
 } from './extract_grammar_labels';
@@ -31,6 +33,21 @@ const getGrammar = (): GrammarInfo => {
     };
   }
   return grammar;
+};
+
+/** Whether `rule` matches the token itself, as `metadata` matches `UNQUOTED_SOURCE`. */
+export const ruleMatchesToken = (rule: string, token: string): boolean => {
+  const info = getGrammar();
+  const ruleIndex = info.ruleNames.indexOf(rule);
+  return info.atn.states.some(
+    (state) =>
+      state?.ruleIndex === ruleIndex &&
+      state.transitions.some(
+        (transition) =>
+          TOKEN_TRANSITIONS.includes(transition.serializationType) &&
+          tokenNames(transition, info).includes(token)
+      )
+  );
 };
 
 /**

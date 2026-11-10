@@ -14,6 +14,7 @@ import {
   ARGUMENT_REQUIRED_COMMANDS,
   ARGUMENT_ROLES,
   SINGLE_USE_RULES,
+  TOKEN_ROLES,
   UNLABELLED_ARGUMENT_ROLES,
 } from './argument_roles/argument_roles';
 import type { ArgumentRole, MapParameter } from './argument_roles/types';
@@ -35,3 +36,10 @@ export const getArgumentRole = ({ rule, label, invokes }: CallSite): ArgumentRol
 /** The role of a labelled argument by its `rule.label` name, e.g. `fuseCommand.fuseType`. */
 export const getLabelledArgumentRole = (name: string): ArgumentRole | undefined =>
   ARGUMENT_ROLES[name];
+
+/**
+ * The role of an argument that is a bare token, by the rule matching it, e.g. a METADATA field
+ * (`UNQUOTED_SOURCE` in `metadata`).
+ */
+export const getTokenRole = (rule: string, token: string): ArgumentRole | undefined =>
+  TOKEN_ROLES[`${rule}>${token}`];

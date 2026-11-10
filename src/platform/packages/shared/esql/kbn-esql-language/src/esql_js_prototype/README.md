@@ -8,7 +8,7 @@ upstream means replacing that import.
 | Here | Upstream | What |
 | --- | --- | --- |
 | `grammar_labels/` | `@elastic/esql-grammar` | Generated: every labelled rule call of the grammar (`oldName=qualifiedNamePattern`), with the tokens that can come right before and after it. Mechanical, produced when the grammar is generated. `getCallSites` gives the same for any rule call, labelled or not, read from the parser's ATN at runtime. |
-| `argument_roles/` | `@elastic/esql-definitions` | Hand-maintained: what each command argument is in the language (an existing column, a new column, an enrich policy, an integer, …), in the shape of a function parameter's `ParamHint`. Keyed by label, or by `rule>calledRule` where the grammar has no label. |
+| `argument_roles/` | `@elastic/esql-definitions` | Hand-maintained: what each command argument is in the language (an existing column, a new column, an enrich policy, an integer, …), in the shape of a function parameter's `ParamHint`. Keyed by label, or by `rule>calledRule` where the grammar has no label. Arguments that are bare tokens, with no rule, are keyed by `rule>TOKEN`, as the METADATA fields (`metadata>UNQUOTED_SOURCE`). |
 
 Roles describe the language only. The test for a role: validation could check it. How an
 editor presents it (which values to propose, snippets, spacing) stays in Kibana.
