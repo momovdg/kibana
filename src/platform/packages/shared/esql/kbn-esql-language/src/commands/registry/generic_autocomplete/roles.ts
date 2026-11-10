@@ -11,11 +11,15 @@ import { isOptionNode } from '@elastic/esql';
 import {
   getArgumentRole,
   getCallSites,
+  getTokenRole,
+  getTokenRoles,
   RULE_END,
   SINGLE_USE_RULES,
   type ArgumentRole,
   type CallSite,
 } from '../../../esql_js_prototype';
+import { sourceExists } from '../../definitions/utils/sources';
+import { getAvailableMetadataFields } from '../options/metadata';
 import {
   getTokenName,
   getTokenType,
@@ -38,18 +42,23 @@ import {
   enrichFields,
   fixed,
   getEnrichPolicy,
+  getSourceNames,
   identifiers,
   isInExpressionList,
   lookupIndices,
   mapEntries,
   matchingColumns,
   merged,
+  metadataFields,
   newName,
   none,
   optionNames,
   policies,
+  recommendedQueries,
+  remainingMetadataFields,
   settingNames,
   settingValues,
+  sources,
   stringSnippet,
   suggestedColumnName,
   wildcard,
@@ -491,6 +500,94 @@ const exampleValues = (role: Extract<ArgumentRole, { kind: 'constant' }>): SlotP
 };
 
 /**
+ * A constraint of a role on the calls above a slot, up to its command, as TS's `indexMode` on
+ * its argument list. A subquery's command has its own constraints.
+ */
+const getConstraintAbove = (rules: string[], constraint: string): string | undefined => {
+  for (let index = rules.length - 1; index > 0; index--) {
+    const caller = rules[index - 1];
+    for (const site of getCallSites(caller, rules[index])) {
+      const role = getArgumentRole(site);
+      const value = role && 'constraints' in role ? role.constraints?.[constraint] : undefined;
+      if (value !== undefined) {
+        return value;
+      }
+    }
+    if (caller.endsWith('Command')) {
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
+const indexModeAt = ({ stack, rule }: ExpectedRule): string | undefined =>
+  getConstraintAbove([...stack, rule], 'indexMode');
+
+/** The provider for a role of a bare-token argument, as a METADATA field. */
+const tokenProviderFor = (
+  role: ArgumentRole
+): ((ctx: SuggestContext) => Promise<ISuggestionItem[]>) | undefined =>
+  role.kind === 'entity' && role.entityType === 'metadata_field' ? metadataFields : undefined;
+
+/** The roles of the bare-token arguments expected at the cursor, as METADATA's fields. */
+const tokenRolesAt = ({ expectedTokens, tokenStacks }: CursorLocation): ArgumentRole[] =>
+  [...expectedTokens].flatMap((type) => {
+    const rule = tokenStacks.get(type)?.rules.at(-1);
+    const role = rule && getTokenRole(rule, getTokenName(type));
+    return role ? [role] : [];
+  });
+
+/** The items for the bare-token arguments expected at the cursor, as METADATA's fields. */
+export const getTokenRoleItems = async (ctx: SuggestContext): Promise<ISuggestionItem[]> => {
+  const items = await Promise.all(
+    tokenRolesAt(ctx.location).map((role) => tokenProviderFor(role)?.(ctx) ?? [])
+  );
+  return items.flat();
+};
+
+/**
+ * What a role adds after a complete argument, as the recommended queries after a source. A
+ * list's comma is expected right after one of its entries, so the list the comma continues
+ * says what was completed.
+ */
+export const getArgumentFollowUps = async (ctx: SuggestContext): Promise<ISuggestionItem[]> => {
+  const { expectedTokens, tokenStacks } = ctx.location;
+  const comma = getTokenType('COMMA');
+  const rules = expectedTokens.has(comma) ? tokenStacks.get(comma)?.rules ?? [] : [];
+  if (rules.length < 2) {
+    return [];
+  }
+  const roles = getCallSites(rules[rules.length - 2], rules[rules.length - 1]).map(getArgumentRole);
+  const listsSources = roles.some(
+    (role) => role?.kind === 'entity' && role.entityType === 'source'
+  );
+  return listsSources ? recommendedQueries(ctx, getConstraintAbove(rules, 'indexMode')) : [];
+};
+
+/**
+ * Leaves out the comma of a list whose entries may each appear once when none is left, as after
+ * every METADATA field.
+ */
+export const withoutExhaustedLists = (
+  keywords: KeywordItem[],
+  ctx: SuggestContext
+): KeywordItem[] =>
+  keywords.filter(({ token }) => {
+    if (token !== 'COMMA') {
+      return true;
+    }
+    const rule = ctx.location.tokenStacks.get(getTokenType(token))?.rules.at(-1) ?? '';
+    const exhausted = getTokenRoles(rule).some(
+      (role) =>
+        role.kind === 'entity' &&
+        role.entityType === 'metadata_field' &&
+        role.constraints?.unique === 'true' &&
+        remainingMetadataFields(ctx).length === 0
+    );
+    return !exhausted;
+  });
+
+/**
  * The editor's provider for a role at a call site. Roles describe the language; this decides
  * what to show.
  */
@@ -551,6 +648,9 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
       }
       if (role.entityType === 'setting') {
         return settingNames();
+      }
+      if (role.entityType === 'source') {
+        return (ctx, slot) => sources({ indexMode: indexModeAt(slot) })(ctx, slot);
       }
       return role.entityType === 'enrich_field' ? enrichFields() : none();
     default:
@@ -627,13 +727,22 @@ export const isCoveredByRole = (stack: string[]): boolean =>
 
 /**
  * Whether `name` is an existing thing of the role's kind, or undefined for roles that take any
- * name (a new column) or are not looked up.
+ * name (a new column) or are not looked up. A source is looked up among those of the index mode
+ * its command requires; patterns, exclusions and selectors count as existing.
  */
 const isExistingAs = (
   role: ArgumentRole | undefined,
   name: string,
-  ctx: SuggestContext
+  ctx: SuggestContext,
+  indexMode?: string
 ): boolean | undefined => {
+  if (role?.kind === 'entity' && role.entityType === 'source') {
+    const names = getSourceNames(ctx, indexMode);
+    return names && sourceExists(name, names);
+  }
+  if (role?.kind === 'entity' && role.entityType === 'metadata_field') {
+    return getAvailableMetadataFields(ctx.callbacks?.isServerless).includes(name);
+  }
   if (role?.kind === 'column') {
     return columnExists(name, ctx.context);
   }
@@ -654,8 +763,16 @@ const isExistingAs = (
 const NAME_RULES = ['qualifiedName', 'qualifiedNamePattern', 'enrichPolicyName', 'indexPattern'];
 
 /**
- * Whether `name` fills one of the slots expected at the cursor with something that exists: a
- * column, or what the slot's role looks up (an enrich field, a policy).
+ * The whole source name typed: the cluster prefix or the name before a selector, which the
+ * slot continues, with the word, as `cl:idx` or `idx::data`.
+ */
+const sourceNameTyped = (slot: ExpectedRule, name: string, location: CursorLocation): string =>
+  slot.continuation && !location.whitespaceBefore ? `${slot.text}${name}` : name;
+
+/**
+ * Whether `name` fills one of the slots or bare-token arguments expected at the cursor with
+ * something that exists: a column, or what the role looks up (an enrich field, a policy, a
+ * source, a METADATA field).
  */
 export const isCompleteName = (name: string, ctx: SuggestContext): boolean =>
   ctx.location.expectedRules.some((slot) => {
@@ -668,9 +785,13 @@ export const isCompleteName = (name: string, ctx: SuggestContext): boolean =>
     }
     const roles = getSlotSites(slot).map(getArgumentRole);
     return roles.some(Boolean)
-      ? roles.some((role) => isExistingAs(role, name, ctx))
+      ? roles.some((role) =>
+          role?.kind === 'entity' && role.entityType === 'source'
+            ? isExistingAs(role, sourceNameTyped(slot, name, ctx.location), ctx, indexModeAt(slot))
+            : isExistingAs(role, name, ctx)
+        )
       : columnExists(name, ctx.context);
-  });
+  }) || tokenRolesAt(ctx.location).some((role) => isExistingAs(role, name, ctx));
 
 /**
  * Chooses between readings of the name just typed when the keywords after it imply different

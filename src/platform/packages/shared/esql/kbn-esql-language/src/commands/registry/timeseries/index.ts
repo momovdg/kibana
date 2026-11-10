@@ -8,14 +8,12 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import { validate } from './validate';
 import { columnsAfter } from './columns_after';
 import { summary } from './summary';
 import type { ICommandContext } from '../types';
 
 const timeseriesCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
   validate,
   columnsAfter,
   summary,

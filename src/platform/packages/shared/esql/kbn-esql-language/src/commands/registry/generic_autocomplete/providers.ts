@@ -81,6 +81,9 @@ import { isExpressionSlot } from './slot_matching';
 import { getLocationInfo } from '../location';
 import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../definitions/constants';
 import { specialIndicesToSuggestions } from '../../definitions/utils/sources';
+import { getIndicesBrowserSuggestion } from '../../definitions/utils/autocomplete/resource_browser_suggestions';
+import { getAvailableMetadataFields } from '../options/metadata';
+import { getRecommendedQueriesSuggestions } from '../options/recommended_queries';
 import { createEnrichedContext, createEnrichedGetByType } from '../join/utils';
 import { getAggregationScope, getStatsFunctionsToIgnore } from '../stats/utils';
 import { isAggFunctionUsedAlready } from '../../definitions/utils/autocomplete/functions';
@@ -364,6 +367,85 @@ export const lookupIndices =
       ...specialIndicesToSuggestions(sources),
     ];
   };
+
+/** The sources the command already names, before the one being typed. */
+const usedSourceNames = ({ command, location, cursorPosition }: SuggestContext): Set<string> => {
+  const end = location.partial?.start ?? cursorPosition;
+  return new Set(
+    command.args.flatMap((arg) =>
+      !Array.isArray(arg) && isSource(arg) && arg.name && arg.location.max < end ? [arg.name] : []
+    )
+  );
+};
+
+/**
+ * The sources a command reads, for the index mode its argument list requires: for TS's
+ * `time_series`, time-series indices and their aliases. Names already used are left out. At an
+ * empty position, "Browse data sources" comes first (only in the main query, which the item
+ * itself checks). Inside a quoted name nothing fits.
+ */
+export const sources =
+  ({ indexMode }: { indexMode?: string }): SlotProvider =>
+  async (ctx, slot) => {
+    const { location, context, callbacks } = ctx;
+    // FROM's catalogs come with its migration (wave 5c).
+    if (location.partial?.text.startsWith('"') || indexMode !== 'time_series') {
+      return [];
+    }
+    const used = usedSourceNames(ctx);
+    const indices = (context?.timeSeriesSources ?? [])
+      .filter(({ name }) => !used.has(name))
+      .map((index) => ({ ...index, aliases: index.aliases?.filter((alias) => !used.has(alias)) }));
+    const items = specialIndicesToSuggestions(indices);
+    const browser =
+      location.partial || slot.continuation
+        ? undefined
+        : await getIndicesBrowserSuggestion({ callbacks, context });
+    return browser ? [browser, ...items] : items;
+  };
+
+/** The names of the sources of an index mode, with their aliases, to tell a complete name. */
+export const getSourceNames = (
+  { context }: SuggestContext,
+  indexMode: string | undefined
+): Set<string> | undefined =>
+  indexMode === 'time_series'
+    ? new Set(
+        (context?.timeSeriesSources ?? []).flatMap(({ name, aliases = [] }) => [name, ...aliases])
+      )
+    : undefined;
+
+/**
+ * The queries recommended after a source: for TS, the editor extensions' (Kibana's own
+ * templates count rows, which TS does not aggregate that way).
+ */
+export const recommendedQueries = async (
+  { context }: SuggestContext,
+  indexMode: string | undefined
+): Promise<ISuggestionItem[]> =>
+  indexMode === 'time_series'
+    ? getRecommendedQueriesSuggestions(
+        context?.editorExtensions ?? { recommendedFields: [], recommendedQueries: [] }
+      )
+    : [];
+
+/** The METADATA fields the command does not list yet; serverless adds the project fields. */
+export const remainingMetadataFields = ({ command, callbacks }: SuggestContext): string[] => {
+  const used = new Set(
+    command.args.flatMap((arg) =>
+      !Array.isArray(arg) && isOptionNode(arg) && arg.name === 'metadata'
+        ? arg.args.flatMap((field) =>
+            !Array.isArray(field) && isColumn(field) ? [field.name] : []
+          )
+        : []
+    )
+  );
+  return getAvailableMetadataFields(callbacks?.isServerless).filter((name) => !used.has(name));
+};
+
+/** METADATA fields, each offered once. */
+export const metadataFields = async (ctx: SuggestContext): Promise<ISuggestionItem[]> =>
+  buildFieldsDefinitions(remainingMetadataFields(ctx));
 
 /**
  * The callbacks and context of an expression that also reads the columns of the command's
