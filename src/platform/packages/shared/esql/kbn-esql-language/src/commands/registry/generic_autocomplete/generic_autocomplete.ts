@@ -28,12 +28,15 @@ import { isExpressionSlot, matchSlots } from './slot_matching';
 import {
   endsStatement,
   filterKeywordsByRoles,
+  getArgumentFollowUps,
   getExpressionExamples,
   getExpressionOptions,
   getNameReading,
   getRoleSlot,
+  getTokenRoleItems,
   isCompleteName,
   isCoveredByRole,
+  withoutExhaustedLists,
   withoutUsedClauses,
 } from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
@@ -129,6 +132,13 @@ const toFollowUp = (keyword: KeywordItem): ISuggestionItem => ({
   preserveTypedPrefix: true,
 });
 
+/**
+ * An item that continues after a complete word, keeping it. An item with no text, as a
+ * standalone recommended query that its command writes, stays as it is.
+ */
+const keepingWord = (item: ISuggestionItem): ISuggestionItem =>
+  item.text ? { ...item, preserveTypedPrefix: true } : item;
+
 /** A `;` right after the cursor already ends the statement, as in `SET a = ^;`. */
 const isStatementEndAhead = ({ query, cursorPosition }: SuggestContext): boolean =>
   /^\s*;/.test(query.slice(cursorPosition));
@@ -197,7 +207,10 @@ export const createGenericAutocomplete =
       const notAhead = statementEndAhead
         ? keywords.filter(({ token }) => token !== 'SEMICOLON')
         : keywords;
-      const allowed = filterKeywordsByRoles(withoutUsedClauses(notAhead, at), at);
+      const allowed = filterKeywordsByRoles(
+        withoutExhaustedLists(withoutUsedClauses(notAhead, at), at),
+        at
+      );
       return spec.keywords ? spec.keywords(allowed, at) : allowed;
     };
 
@@ -235,9 +248,16 @@ export const createGenericAutocomplete =
           completesSlot && !completesLiteral && !isNested
             ? await getExpressionFollowUps(ctx, spec, after)
             : undefined;
+        const argumentDone = expressionFollowUps?.argumentDone !== false;
+        // What the argument's role adds after it, as the recommended queries after a source.
+        const argumentFollowUps =
+          completesSlot && !isNested && argumentDone
+            ? await getArgumentFollowUps({ ...ctx, location: after })
+            : [];
         const followUps = [
           ...(expressionFollowUps?.items ?? []),
-          ...(expressionFollowUps?.argumentDone === false ? [] : keywordFollowUps).map(toFollowUp),
+          ...(argumentDone ? keywordFollowUps : []).map(toFollowUp),
+          ...argumentFollowUps.map(keepingWord),
         ];
         if (followUps.length) {
           return withoutDuplicates(followUps);
@@ -373,7 +393,9 @@ const suggestAt = async (
         return item.text.trim() === ',' ? [item] : [];
       });
   const exampleItems = inExpression && !glued ? await getExpressionExamples(ctx) : [];
-  const valueItems = [...slotItems.flat(), ...expressionItems, ...exampleItems];
+  // Arguments that are bare tokens, as METADATA's fields.
+  const tokenItems = await getTokenRoleItems(ctx);
+  const valueItems = [...slotItems.flat(), ...tokenItems, ...expressionItems, ...exampleItems];
 
   // Right after `=` or `ON` something has to follow, even where the grammar leaves it out, as
   // after `DENSE_VECTOR vec = `: when something can fill the position, only that.
@@ -391,13 +413,15 @@ const suggestAt = async (
   const inString = location.partial?.text.startsWith('"') ?? false;
   // Inside a function call the expression engine offers the comma between arguments.
   const insideFunction = Boolean(expression?.computed.insideFunction);
-  const keywordItems =
-    needsValue || !argumentDone || inString || insideFunction
-      ? []
-      : adjustKeywords(keywordsAt(location), ctx)
-          // A command that needs an argument and has none cannot end yet, as `STATS `.
-          .filter(({ token }) => !(token === 'PIPE' && needsArgument(ctx)))
-          .map((keyword) => toItem(keyword, location));
+  const offersKeywords = !needsValue && argumentDone && !inString && !insideFunction;
+  const keywordItems = offersKeywords
+    ? adjustKeywords(keywordsAt(location), ctx)
+        // A command that needs an argument and has none cannot end yet, as `STATS `.
+        .filter(({ token }) => !(token === 'PIPE' && needsArgument(ctx)))
+        .map((keyword) => toItem(keyword, location))
+    : [];
+  // What the role of the argument just completed adds, as the recommended queries after a source.
+  const argumentFollowUps = offersKeywords ? await getArgumentFollowUps(ctx) : [];
 
-  return [...valueItems, ...keywordItems];
+  return [...valueItems, ...keywordItems, ...argumentFollowUps];
 };

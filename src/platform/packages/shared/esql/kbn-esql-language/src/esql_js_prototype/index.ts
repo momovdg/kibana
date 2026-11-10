@@ -43,3 +43,7 @@ export const getLabelledArgumentRole = (name: string): ArgumentRole | undefined 
  */
 export const getTokenRole = (rule: string, token: string): ArgumentRole | undefined =>
   TOKEN_ROLES[`${rule}>${token}`];
+
+/** The roles of the bare-token arguments of a rule, e.g. `metadata`'s fields. */
+export const getTokenRoles = (rule: string): ArgumentRole[] =>
+  Object.entries(TOKEN_ROLES).flatMap(([key, role]) => (key.startsWith(`${rule}>`) ? [role] : []));

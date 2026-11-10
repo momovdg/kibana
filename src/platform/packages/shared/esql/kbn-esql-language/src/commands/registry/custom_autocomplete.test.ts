@@ -11,9 +11,9 @@ import { esqlCommandRegistry } from '.';
 /**
  * The commands that still have their own autocomplete code. Every other command is completed
  * by the generic autocomplete, from the grammar and the prototype's roles. PROMQL has its own
- * language; FROM and TS move to the generic autocomplete in wave 5.
+ * language; FROM moves to the generic autocomplete in wave 5c.
  */
-const CUSTOM_AUTOCOMPLETE_COMMANDS: readonly string[] = ['from', 'promql', 'ts'];
+const CUSTOM_AUTOCOMPLETE_COMMANDS: readonly string[] = ['from', 'promql'];
 
 describe('custom autocomplete', () => {
   it('is defined only by the allowlisted commands', () => {
