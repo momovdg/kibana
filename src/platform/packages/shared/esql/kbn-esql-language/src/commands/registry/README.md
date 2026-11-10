@@ -27,7 +27,7 @@ This interface defines the essential methods that each ES|QL command should impl
 | Method | Description |
 | :----- | :---------- |
 | `validate?` | (Optional) Validates a given query string or Abstract Syntax Tree (AST) snippet specific to the command, returning an array of messages (errors/warnings). |
-| `autocomplete` | Provides suggestions for autocompletion based on the current query context and the command's syntax. |
+| `autocomplete?` | (Optional) Command-specific suggestions. Commands without it use the generic autocomplete, driven by the grammar; only the commands allowlisted in `custom_autocomplete.test.ts` define it. |
 | `columnsAfter?` | (Optional) Determines the columns available or expected after this command, vital for chaining commands and ensuring type compatibility. |
 
 ### `ICommandMetadata`
@@ -78,11 +78,8 @@ import { CommandRegistry, ICommand, ICommandMethods, ICommandMetadata } from './
 const registry = new CommandRegistry();
 
 // Define a simple command
+// No `autocomplete`: the generic autocomplete completes the command from the grammar.
 const myCommandMethods: ICommandMethods = {
-  autocomplete: async (query, command, callbacks, context) => {
-    // Implement autocompletion logic
-    return [{ text: 'my_suggestion', type: 'field' }];
-  },
   validate: (command, ast, context) => {
     // Implement validation logic
     return [];
@@ -111,7 +108,7 @@ registry.registerCommand(myCommand);
 // Get command methods
 const methods = registry.getCommandMethods('MY_COMMAND');
 if (methods) {
-  console.log('Autocomplete method:', methods.autocomplete);
+  console.log('Validate method:', methods.validate);
 }
 
 // Get all command names
