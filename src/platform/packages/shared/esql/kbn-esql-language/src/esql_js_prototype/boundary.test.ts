@@ -21,7 +21,7 @@ const ALLOWED = [/^@elastic\/esql/, /^antlr4$/, /^fs$/, /^path$/];
 
 /** A relative import that stays inside this folder, or an allowed package. */
 const isAllowed = (file: string, source: string): boolean =>
-  /^\.\.?\//.test(source)
+  /^\.\.?(\/|$)/.test(source)
     ? resolve(dirname(file), source).startsWith(__dirname)
     : ALLOWED.some((pattern) => pattern.test(source));
 

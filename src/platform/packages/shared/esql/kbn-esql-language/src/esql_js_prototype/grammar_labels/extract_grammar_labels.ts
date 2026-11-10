@@ -36,9 +36,9 @@ export interface GrammarInfo {
 }
 
 export const RULE_TRANSITION = 3;
-const TOKEN_TRANSITIONS = [5, 7, 8]; // atom, set, not-set
+export const TOKEN_TRANSITIONS = [5, 7, 8]; // atom, set, not-set
 
-const tokenNames = (transition: AtnTransition, { symbolicNames }: GrammarInfo): string[] => {
+export const tokenNames = (transition: AtnTransition, { symbolicNames }: GrammarInfo): string[] => {
   const names: string[] = [];
   for (const { start, stop } of transition.label?.intervals ?? []) {
     for (let type = start; type < stop; type++) {

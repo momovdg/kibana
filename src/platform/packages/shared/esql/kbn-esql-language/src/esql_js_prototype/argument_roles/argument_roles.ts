@@ -139,6 +139,20 @@ export const ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
  * LIMIT's row count in `limitCommand: LIMIT constant (BY fields)?`.
  */
 export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> = {
+  // A source name or pattern, with an optional cluster prefix or selector, as `cl:logs-*`.
+  'indexPatternOrSubquery>indexPattern': { kind: 'entity', entityType: 'source' },
+  // FROM's sources may be subqueries, also nested, as `FROM a, (FROM b, (TS c))`.
+  'fromCommand>indexPatternAndMetadataFields': {
+    kind: 'entity',
+    entityType: 'source',
+    constraints: { subqueries: 'true' },
+  },
+  // TS reads time-series sources only; Elasticsearch rejects subqueries in TS.
+  'timeSeriesCommand>indexPatternAndMetadataFields': {
+    kind: 'entity',
+    entityType: 'source',
+    constraints: { indexMode: 'time_series' },
+  },
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', constraints: { min: '0' } },
   'limitByGroupKey>booleanExpression': { kind: 'expression' },
   // An aggregation's own filter, `AVG(a) WHERE b > 1`: like WHERE's, complete only as a boolean.
@@ -255,6 +269,20 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
       // The output columns of the database, which the command's output definition lists.
       properties: { type: 'keyword', list: true },
     },
+  },
+};
+
+/**
+ * The role of command arguments that are bare tokens, with no rule to key them by, keyed by
+ * `rule>TOKEN`, e.g. the field names in `metadata: METADATA UNQUOTED_SOURCE (COMMA
+ * UNQUOTED_SOURCE)*`.
+ */
+export const TOKEN_ROLES: Readonly<Record<string, ArgumentRole>> = {
+  // Elasticsearch rejects a field declared twice.
+  'metadata>UNQUOTED_SOURCE': {
+    kind: 'entity',
+    entityType: 'metadata_field',
+    constraints: { unique: 'true' },
   },
 };
 
