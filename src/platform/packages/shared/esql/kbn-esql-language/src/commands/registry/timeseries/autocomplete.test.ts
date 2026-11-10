@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 import { getMockCallbacks, mockContext } from '../../../__tests__/commands/context_fixtures';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 import { expectSuggestions } from '../../../__tests__/commands/autocomplete';
 import type { ICommandCallbacks } from '../types';
 import { findAutocompleteAstPosition } from '../../../language/shared/parse_for_autocomplete_query';
@@ -92,7 +92,13 @@ describe('TS Autocomplete', () => {
       const suggestions = await suggest('TS timeseries_index,  ');
       const labels = suggestions.map((s) => s.label);
 
-      expect(labels).toEqual(['timeseries_index_with_alias', 'time_series_index']);
+      // The same items as for the first source, aliases included.
+      expect(labels).toEqual([
+        'timeseries_index_with_alias',
+        'time_series_index',
+        'timeseries_index_alias_1',
+        'timeseries_index_alias_2',
+      ]);
     });
 
     test('discriminates between indices and aliases', async () => {
@@ -113,6 +119,45 @@ describe('TS Autocomplete', () => {
       ]);
       expect(aliases).toEqual(['timeseries_index_alias_1', 'timeseries_index_alias_2']);
     });
+
+    test('suggests Browse data sources after a comma, not while a name is typed', async () => {
+      mockCallbacks.canSuggestResourceBrowser = jest.fn().mockResolvedValue(true);
+
+      expect((await suggest('TS timeseries_index, ')).map(({ label }) => label)[0]).toEqual(
+        'Browse data sources'
+      );
+      expect((await suggest('TS tim')).map(({ label }) => label)).not.toContain(
+        'Browse data sources'
+      );
+    });
+
+    test('suggests what follows a complete source while it is typed, keeping it', async () => {
+      const extensionsSuggestions = getRecommendedQueriesTemplatesFromExtensions(
+        editorExtensions.recommendedQueries
+      ).map(({ text }) => text);
+
+      for (const name of ['time_series_index', 'timeseries_index_alias_1']) {
+        await tsExpectSuggestions(
+          `ts ${name}`,
+          [' METADATA ', ', ', ' | ', '\n', ...extensionsSuggestions]
+            .map((text) => `${name}${text}`)
+            .sort()
+        );
+      }
+    });
+
+    test('suggests nothing inside a quoted name', async () => {
+      expect(await suggest('TS "time')).toEqual([]);
+    });
+
+    test('suggests time-series sources in a FROM subquery', async () => {
+      const query = 'FROM index, (TS ';
+      const { command } = findAutocompleteAstPosition(query, query.length);
+      const suggestions = await autocomplete(query, command!, mockCallbacks, mockContext);
+
+      expect(suggestions.map(({ label }) => label)).toContain('time_series_index');
+      expect(suggestions.map(({ label }) => label)).not.toContain('index');
+    });
   });
 
   describe('... METADATA <fields>', () => {
@@ -122,7 +167,7 @@ describe('TS Autocomplete', () => {
       const extensionsSuggestions = getRecommendedQueriesTemplatesFromExtensions(
         editorExtensions.recommendedQueries
       ).map((s) => s.text);
-      const expected = ['\n', 'METADATA ', ',', '| ', ...extensionsSuggestions].sort();
+      const expected = ['\n', 'METADATA ', ', ', '| ', ...extensionsSuggestions].sort();
 
       await tsExpectSuggestions('ts time_series_index ', expected);
     });
@@ -137,10 +182,10 @@ describe('TS Autocomplete', () => {
     });
 
     test('on <kbd>SPACE</kbd> after "METADATA" column suggests command and pipe operators', async () => {
-      await tsExpectSuggestions('ts time_series_index metadata _index ', ['\n', ',', '| ']);
+      await tsExpectSuggestions('ts time_series_index metadata _index ', ['\n', ', ', '| ']);
       await tsExpectSuggestions('ts time_series_index metadata _index, _source ', [
         '\n',
-        ',',
+        ', ',
         '| ',
       ]);
       await tsExpectSuggestions(`ts time_series_index metadata ${METADATA_FIELDS.join(', ')} `, [
@@ -184,7 +229,7 @@ describe('TS Autocomplete', () => {
       const expected = [
         '\n',
         'METADATA ',
-        ',',
+        ', ',
         '| ',
         ...extensionSuggestions.map((s) => s.text),
       ].sort();
