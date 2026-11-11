@@ -19,6 +19,8 @@ export interface MapParameter {
   default?: string;
   /** The value names a thing outside the query, e.g. an inference endpoint. */
   entityType?: 'inference_endpoint';
+  /** The task an inference endpoint must serve, e.g. `completion`. */
+  taskType?: string;
   /**
    * The parameter applies only while the arguments named `rule.label` take one of the values,
    * e.g. FUSE's `rank_constant` with `{ 'fuseCommand.fuseType': ['rrf'] }`.

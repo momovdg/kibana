@@ -41,6 +41,7 @@ import {
   withoutUsedClauses,
 } from './roles';
 import type { CommandAutocompleteSpec, SuggestContext } from './types';
+import { lazyContextFromEager } from '../../../language/autocomplete/lazy_context';
 import type { ExpressionComputedMetadata } from '../../definitions/utils/autocomplete/expressions/types';
 
 export type CommandAutocomplete = (
@@ -202,13 +203,21 @@ export const createGenericAutocomplete =
     }
 
     const spec = getSpec(command);
-    const ctx: SuggestContext = { query, command, cursorPosition, location, callbacks, context };
+    const ctx: SuggestContext = {
+      query,
+      command,
+      cursorPosition,
+      location,
+      callbacks,
+      context,
+      resources: context?.resources ?? lazyContextFromEager(context),
+    };
     const statementEndAhead = isStatementEndAhead(ctx);
-    const adjustKeywords = (keywords: KeywordItem[], at: SuggestContext) => {
+    const adjustKeywords = async (keywords: KeywordItem[], at: SuggestContext) => {
       const notAhead = statementEndAhead
         ? keywords.filter(({ token }) => token !== 'SEMICOLON')
         : keywords;
-      const allowed = filterKeywordsByRoles(
+      const allowed = await filterKeywordsByRoles(
         withoutExhaustedLists(withoutUsedClauses(notAhead, at), at),
         at
       );
@@ -229,7 +238,7 @@ export const createGenericAutocomplete =
         keywords.has(getTokenName(type))
       );
       const completesLiteral = await isCompleteLiteral(ctx, slotMatches);
-      const completesSlot = isCompleteName(typedName(location), ctx) || completesLiteral;
+      const completesSlot = (await isCompleteName(typedName(location), ctx)) || completesLiteral;
       // The word's token depends on the lexer mode, so it is read from the position after it.
       if (expectsKeyword || completesSlot) {
         const after = locateCursor(`${query.slice(0, cursorPosition)} `, cursorPosition + 1);
@@ -242,7 +251,7 @@ export const createGenericAutocomplete =
           keywords.has(getTokenName(word));
         const keywordFollowUps =
           (isCompleteKeyword || completesSlot) && !isNested
-            ? adjustKeywords(keywordsAt(after), { ...ctx, location: after })
+            ? await adjustKeywords(keywordsAt(after), { ...ctx, location: after })
             : [];
         // A complete name inside an expression continues with operators, as `bytes > $0`.
         const expressionFollowUps =
@@ -271,7 +280,9 @@ export const createGenericAutocomplete =
         // keywords fit the word, so the editor can complete it.
         if (isCompleteKeyword && !completesSlot && !isNested) {
           return withoutDuplicates(
-            adjustKeywords(keywordsAt(location), ctx).map((keyword) => toItem(keyword, location))
+            (await adjustKeywords(keywordsAt(location), ctx)).map((keyword) =>
+              toItem(keyword, location)
+            )
           );
         }
       }
@@ -359,7 +370,7 @@ const suggestAt = async (
   ctx: SuggestContext,
   spec: CommandAutocompleteSpec,
   slotMatches: ReturnType<typeof matchSlots>,
-  adjustKeywords: (keywords: KeywordItem[], at: SuggestContext) => KeywordItem[]
+  adjustKeywords: (keywords: KeywordItem[], at: SuggestContext) => Promise<KeywordItem[]>
 ): Promise<ISuggestionItem[]> => {
   const { location } = ctx;
   // A value only the statement's `;` may follow ends it, as SET's `"_alias:*";`, unless the `;`
@@ -416,7 +427,7 @@ const suggestAt = async (
   const insideFunction = Boolean(expression?.computed.insideFunction);
   const offersKeywords = !needsValue && argumentDone && !inString && !insideFunction;
   const keywordItems = offersKeywords
-    ? adjustKeywords(keywordsAt(location), ctx)
+    ? (await adjustKeywords(keywordsAt(location), ctx))
         // A command that needs an argument and has none cannot end yet, as `STATS `.
         .filter(({ token }) => !(token === 'PIPE' && needsArgument(ctx)))
         .map((keyword) => {

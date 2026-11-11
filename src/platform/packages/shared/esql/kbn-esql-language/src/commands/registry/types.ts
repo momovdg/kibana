@@ -27,6 +27,7 @@ import type { EditorExtensions } from './options/recommended_queries';
 import type { SuggestionCategory } from '../../language/autocomplete/utils/sorting/types';
 import type { ReplacementRangeStrategy } from '../../language/autocomplete/utils/prefix_range';
 import type { CursorLocation } from '../../language/shared/cursor_location/types';
+import type { LazyCommandContext } from '../../language/autocomplete/lazy_context';
 
 // This is a subset of the Monaco's editor CompletitionItemKind type
 export type ItemKind =
@@ -234,6 +235,8 @@ export interface ICommandContext {
   namedSubqueries?: readonly NamedSubquery[];
   /** What the grammar allows at the cursor, computed once per suggestion request. */
   cursorLocation?: CursorLocation;
+  /** The request's data, fetched when read; the generic autocomplete reads it. */
+  resources?: LazyCommandContext;
 }
 /**
  * This is a list of locations within an ES|QL query.

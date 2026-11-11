@@ -374,11 +374,11 @@ export const getExpressionExamples = (ctx: SuggestContext): Promise<ISuggestionI
   }
   // A grouping is often a time bucket, sized for the chart: `BUCKET(@timestamp, …)`.
   if (role.constraints?.grouping === 'true') {
-    const { context } = ctx;
+    const { context, resources } = ctx;
     const bucket = context?.isTimeseriesSource
       ? getTimeseriesDateHistogramCompletionItem
       : getDateHistogramCompletionItem;
-    return Promise.resolve([bucket(context?.histogramBarTarget ?? 0)]);
+    return resources.histogramBarTarget().then((target) => [bucket(target)]);
   }
   const examples = (role.types ?? []).flatMap(typeExample);
   return Promise.resolve(examples);
@@ -760,14 +760,14 @@ export const isCoveredByRole = (stack: string[]): boolean =>
  * name (a new column) or are not looked up. A source is looked up among those of the index mode
  * its command requires; patterns, exclusions and selectors count as existing.
  */
-const isExistingAs = (
+const isExistingAs = async (
   role: ArgumentRole | undefined,
   name: string,
   ctx: SuggestContext,
   indexMode?: string
-): boolean | undefined => {
+): Promise<boolean | undefined> => {
   if (role?.kind === 'entity' && role.entityType === 'source') {
-    return sourceExists(name, getSourceNames(ctx, indexMode));
+    return sourceExists(name, await getSourceNames(ctx, indexMode));
   }
   if (role?.kind === 'entity' && role.entityType === 'metadata_field') {
     return getAvailableMetadataFields(ctx.callbacks?.isServerless).includes(name);
@@ -776,13 +776,13 @@ const isExistingAs = (
     return columnExists(name, ctx.context);
   }
   if (role?.kind === 'entity' && role.entityType === 'enrich_field') {
-    return getEnrichPolicy(ctx)?.enrichFields.includes(unescapeColumnName(name));
+    return (await getEnrichPolicy(ctx))?.enrichFields.includes(unescapeColumnName(name));
   }
   if (role?.kind === 'entity' && role.entityType === 'enrich_policy') {
-    return ctx.context?.policies?.has(unescapeColumnName(name));
+    return (await ctx.resources.policies()).has(unescapeColumnName(name));
   }
   if (role?.kind === 'entity' && role.entityType === 'lookup_index') {
-    return ctx.context?.joinSources?.some(
+    return (await ctx.resources.joinIndices()).some(
       (source) => source.name === name || source.aliases.includes(name)
     );
   }
@@ -803,24 +803,44 @@ const sourceNameTyped = (slot: ExpectedRule, name: string, location: CursorLocat
  * something that exists: a column, or what the role looks up (an enrich field, a policy, a
  * source, a METADATA field).
  */
-export const isCompleteName = (name: string, ctx: SuggestContext): boolean =>
-  ctx.location.expectedRules.some((slot) => {
+export const isCompleteName = async (name: string, ctx: SuggestContext): Promise<boolean> => {
+  for (const slot of ctx.location.expectedRules) {
     // A constant's names are new columns, never existing ones, as in ROW.
     if (
       !NAME_RULES.includes(slot.rule) ||
       (isExpressionSlot(slot) && isConstantArgument(ctx.location))
     ) {
-      return false;
+      continue;
     }
     const roles = getSlotSites(slot).map(getArgumentRole);
-    return roles.some(Boolean)
-      ? roles.some((role) =>
-          role?.kind === 'entity' && role.entityType === 'source'
-            ? isExistingAs(role, sourceNameTyped(slot, name, ctx.location), ctx, indexModeAt(slot))
-            : isExistingAs(role, name, ctx)
-        )
-      : columnExists(name, ctx.context);
-  }) || tokenRolesAt(ctx.location).some((role) => isExistingAs(role, name, ctx));
+    if (!roles.some(Boolean)) {
+      if (columnExists(name, ctx.context)) {
+        return true;
+      }
+      continue;
+    }
+    for (const role of roles) {
+      const exists =
+        role?.kind === 'entity' && role.entityType === 'source'
+          ? await isExistingAs(
+              role,
+              sourceNameTyped(slot, name, ctx.location),
+              ctx,
+              indexModeAt(slot)
+            )
+          : await isExistingAs(role, name, ctx);
+      if (exists) {
+        return true;
+      }
+    }
+  }
+  for (const role of tokenRolesAt(ctx.location)) {
+    if (await isExistingAs(role, name, ctx)) {
+      return true;
+    }
+  }
+  return false;
+};
 
 /**
  * Chooses between readings of the name just typed when the keywords after it imply different
@@ -828,10 +848,10 @@ export const isCompleteName = (name: string, ctx: SuggestContext): boolean =>
  * existing column keeps only `AS`, any other name only `=`. With a single reading, as in
  * `RENAME a = b `, every keyword stays.
  */
-export const filterKeywordsByRoles = (
+export const filterKeywordsByRoles = async (
   keywords: KeywordItem[],
   ctx: SuggestContext
-): KeywordItem[] => {
+): Promise<KeywordItem[]> => {
   const { location } = ctx;
   if (location.partial) {
     return keywords;
@@ -881,8 +901,10 @@ export const filterKeywordsByRoles = (
     return keywords;
   }
 
-  const found = readings.map((reading) =>
-    reading.map((site) => isExistingAs(getArgumentRole(site), slot.text, ctx))
+  const found = await Promise.all(
+    readings.map((reading) =>
+      Promise.all(reading.map((site) => isExistingAs(getArgumentRole(site), slot.text, ctx)))
+    )
   );
   // Prefer a reading that finds the name; otherwise drop those that need an existing one.
   if (found.some((results) => results.includes(true))) {
