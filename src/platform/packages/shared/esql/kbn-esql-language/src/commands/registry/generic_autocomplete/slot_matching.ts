@@ -11,7 +11,7 @@ import type { CursorLocation, ExpectedRule } from '../../../language/shared/curs
 import type { SlotDefinition } from './types';
 
 /** Rules whose subtree is an expression, filled by the expression engine as a whole. */
-const EXPRESSION_RULES = ['booleanExpression', 'primaryExpression'];
+export const EXPRESSION_RULES: readonly string[] = ['booleanExpression', 'primaryExpression'];
 
 export const isExpressionSlot = ({ stack }: ExpectedRule): boolean =>
   stack.some((rule) => EXPRESSION_RULES.includes(rule));

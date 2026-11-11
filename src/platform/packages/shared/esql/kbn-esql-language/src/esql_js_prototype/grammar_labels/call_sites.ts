@@ -50,6 +50,24 @@ export const ruleMatchesToken = (rule: string, token: string): boolean => {
   );
 };
 
+/** The rules `rule` calls, as `string` and `primaryExpression` in `grokCommand`. */
+export const getCalledRules = (rule: string): string[] => {
+  const info = getGrammar();
+  const ruleIndex = info.ruleNames.indexOf(rule);
+  const called = new Set<string>();
+  for (const state of info.atn.states) {
+    if (state?.ruleIndex !== ruleIndex) {
+      continue;
+    }
+    for (const { serializationType, target } of state.transitions) {
+      if (serializationType === RULE_TRANSITION) {
+        called.add(info.ruleNames[target.ruleIndex]);
+      }
+    }
+  }
+  return [...called];
+};
+
 /**
  * The calls of `invokes` inside `rule`, labelled or not, e.g. the two `string` calls in
  * `grokCommand: GROK primaryExpression string (COMMA string)*`. The tokens around each call

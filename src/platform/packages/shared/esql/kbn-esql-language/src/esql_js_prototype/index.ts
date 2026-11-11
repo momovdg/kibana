@@ -20,7 +20,7 @@ import {
 import type { ArgumentRole, MapParameter } from './argument_roles/types';
 
 export { ARGUMENT_REQUIRED_COMMANDS, GRAMMAR_LABELS, SINGLE_USE_RULES };
-export { getCallSites } from './grammar_labels/call_sites';
+export { getCalledRules, getCallSites } from './grammar_labels/call_sites';
 export { RULE_END, RULE_START } from './grammar_labels/types';
 export type { CallSite, GrammarLabel, ArgumentRole, MapParameter };
 
