@@ -37,6 +37,7 @@ import {
   isCompleteName,
   isCoveredByRole,
   opensStatementEnd,
+  slotReadsColumns,
   withoutExhaustedLists,
   withoutUsedClauses,
 } from './roles';
@@ -312,6 +313,14 @@ const isInExpression = (location: CursorLocation): boolean => {
     );
   });
 };
+
+/**
+ * Whether suggesting at the location may read the columns: in an expression, or at a slot a
+ * column or a new name fills. At `LIMIT `, `ENRICH ` or `FROM ` nothing reads them, so they
+ * need not be fetched.
+ */
+export const readsColumns = (location: CursorLocation): boolean =>
+  isInExpression(location) || location.expectedRules.some(slotReadsColumns);
 
 /**
  * A command that needs an argument has none yet, though the grammar lets it end, as `STATS `:
