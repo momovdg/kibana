@@ -11,10 +11,10 @@ import type { ArgumentRole } from './types';
 /** The string column types, which DISSECT, GROK and the URI and domain commands read. */
 const STRING_TYPES = ['keyword', 'text'];
 
-/** The `WITH` parameters of the commands that call an inference endpoint. */
-const INFERENCE_PARAMETERS = {
-  inference_id: { type: 'keyword', entityType: 'inference_endpoint' as const },
-};
+/** The `WITH` parameters of the commands that call an inference endpoint for a task. */
+const inferenceParameters = (taskType: string) => ({
+  inference_id: { type: 'keyword', entityType: 'inference_endpoint' as const, taskType },
+});
 
 /** The numeric column types, which CHANGE_POINT's value takes. */
 const NUMBER_TYPES = [
@@ -223,18 +223,25 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
       properties: { type: 'keyword', list: true, values: ['name', 'version', 'os', 'device'] },
     },
   },
-  'completionCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
+  'completionCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: inferenceParameters('completion'),
+  },
   'qualifiedNames>qualifiedName': { kind: 'column', types: STRING_TYPES },
   'fuseKeyByFields>qualifiedName': { kind: 'column', types: STRING_TYPES },
   'denseVectorCommand>commandNamedParameters': {
     kind: 'map',
     parameters: {
-      ...INFERENCE_PARAMETERS,
+      // The multimodal step will make the task depend on `type`.
+      ...inferenceParameters('text_embedding'),
       type: { type: 'keyword', values: ['text', 'image'], default: 'text' },
       timeout: { type: 'keyword', default: '30s' },
     },
   },
-  'rerankCommand>commandNamedParameters': { kind: 'map', parameters: INFERENCE_PARAMETERS },
+  'rerankCommand>commandNamedParameters': {
+    kind: 'map',
+    parameters: inferenceParameters('rerank'),
+  },
   // `SET <setting> = <value>;`: the value, a constant or a map, is the named setting's.
   'setField>identifier': { kind: 'entity', entityType: 'setting' },
   'setField>constant': { kind: 'setting_value', setting: 'setField>identifier' },

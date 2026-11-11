@@ -11,6 +11,7 @@ import type { CursorLocation, ExpectedRule } from '../../../language/shared/curs
 import type { ExpressionContextOptions } from '../../definitions/utils/autocomplete/expressions/types';
 import type { KeywordItem } from '../keyword_items';
 import type { ICommandCallbacks, ICommandContext, ISuggestionItem, Location } from '../types';
+import type { LazyCommandContext } from '../../../language/autocomplete/lazy_context';
 
 /** What a provider can read to build its suggestions. */
 export interface SuggestContext {
@@ -20,6 +21,11 @@ export interface SuggestContext {
   location: CursorLocation;
   callbacks?: ICommandCallbacks;
   context?: ICommandContext;
+  /**
+   * The request's data, fetched when read: the context's `resources`, or getters over its eager
+   * values when it has none, as in tests.
+   */
+  resources: LazyCommandContext;
 }
 
 export type SlotProvider = (ctx: SuggestContext, slot: ExpectedRule) => Promise<ISuggestionItem[]>;

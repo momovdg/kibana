@@ -345,13 +345,13 @@ export const merged =
  */
 export const policies =
   (): SlotProvider =>
-  async ({ context, location }) => {
+  async ({ resources, location }) => {
     const { partial } = location;
     if (partial?.text.startsWith('_') && !partial.text.includes(':')) {
       return modeSuggestions;
     }
 
-    const items = buildPoliciesDefinitions([...(context?.policies?.values() ?? [])]);
+    const items = buildPoliciesDefinitions([...(await resources.policies()).values()]);
     if (!items.length) {
       return [noPoliciesAvailableSuggestion];
     }
@@ -367,9 +367,9 @@ export const policies =
  */
 export const lookupIndices =
   (): SlotProvider =>
-  async ({ context, callbacks, location }) => {
+  async ({ resources, callbacks, location }) => {
     const name = location.partial?.text ?? '';
-    const sources = context?.joinSources ?? [];
+    const sources = await resources.joinIndices();
     const exists = sources.some((source) => source.name === name || source.aliases.includes(name));
     const canCreate = !exists && ((await callbacks?.canCreateLookupIndex?.(name)) ?? false);
     return [
@@ -401,9 +401,9 @@ const isShadowed = (ctx: SuggestContext, { name }: { name: string }): boolean =>
  * time-series ones inside a subquery (`FROM a, (FROM ` reads standard sources), nor those a LET
  * binding of the same name hides.
  */
-const readableSources = (ctx: SuggestContext): ESQLSourceResult[] => {
-  const { context } = ctx;
-  return (context?.sources ?? []).filter(
+const readableSources = async (ctx: SuggestContext): Promise<ESQLSourceResult[]> => {
+  const { context, resources } = ctx;
+  return (await resources.sources()).filter(
     (source) =>
       !isShadowed(ctx, source) &&
       (!context?.isCursorInSubquery || source.type !== SOURCES_TYPES.TIMESERIES)
@@ -411,15 +411,15 @@ const readableSources = (ctx: SuggestContext): ESQLSourceResult[] => {
 };
 
 /** The views and datasets FROM can read, without those a LET binding hides. */
-const readableViews = (ctx: SuggestContext) =>
-  (ctx.context?.views ?? []).filter((view) => !isShadowed(ctx, view));
-const readableDatasets = (ctx: SuggestContext) =>
-  (ctx.context?.datasets ?? []).filter((dataset) => !isShadowed(ctx, dataset));
+const readableViews = async (ctx: SuggestContext) =>
+  (await ctx.resources.views()).filter((view) => !isShadowed(ctx, view));
+const readableDatasets = async (ctx: SuggestContext) =>
+  (await ctx.resources.datasets()).filter((dataset) => !isShadowed(ctx, dataset));
 
 /** An integration typed in full, whose data streams are the sources to read. */
-const typedIntegration = (ctx: SuggestContext): ESQLSourceResult | undefined => {
+const typedIntegration = async (ctx: SuggestContext): Promise<ESQLSourceResult | undefined> => {
   const name = ctx.location.partial?.text;
-  return readableSources(ctx).find(
+  return (await readableSources(ctx)).find(
     (source) => source.name === name && Boolean(source.dataStreams?.length)
   );
 };
@@ -437,9 +437,9 @@ const isOnlySource = (ctx: SuggestContext): boolean => {
  * the names used. A time-series source picked as the only one rewrites `FROM` to `TS`. An
  * integration typed in full offers its data streams instead.
  */
-const fromSources = (ctx: SuggestContext): ISuggestionItem[] => {
+const fromSources = async (ctx: SuggestContext): Promise<ISuggestionItem[]> => {
   const { command, query, cursorPosition } = ctx;
-  const integration = typedIntegration(ctx);
+  const integration = await typedIntegration(ctx);
   if (integration?.dataStreams) {
     return buildSourcesDefinitions(
       integration.dataStreams.map(({ name }) => ({ name, isIntegration: false }))
@@ -449,18 +449,23 @@ const fromSources = (ctx: SuggestContext): ISuggestionItem[] => {
   const rewriteToTs = isOnlySource(ctx)
     ? { textBeforeCursor: query.slice(0, cursorPosition), commandStart: command.location.min }
     : undefined;
+  const [readable, views, datasets] = await Promise.all([
+    readableSources(ctx),
+    readableViews(ctx),
+    readableDatasets(ctx),
+  ]);
   return [
     ...buildNamedSubqueriesDefinitions(namedSubqueryNames(ctx), used),
-    ...getSourceSuggestions(readableSources(ctx), used, rewriteToTs),
-    ...buildViewsDefinitions(readableViews(ctx), used),
-    ...buildDatasetsDefinitions(readableDatasets(ctx), used),
+    ...getSourceSuggestions(readable, used, rewriteToTs),
+    ...buildViewsDefinitions(views, used),
+    ...buildDatasetsDefinitions(datasets, used),
   ];
 };
 
 /** TS's sources: time-series indices and their aliases, without the names used. */
-const timeSeriesSources = (ctx: SuggestContext): ISuggestionItem[] => {
+const timeSeriesSources = async (ctx: SuggestContext): Promise<ISuggestionItem[]> => {
   const used = usedSourceNames(ctx);
-  const indices = (ctx.context?.timeSeriesSources ?? [])
+  const indices = (await ctx.resources.timeSeriesSources())
     .filter(({ name }) => !used.has(name))
     .map((index) => ({ ...index, aliases: index.aliases?.filter((alias) => !used.has(alias)) }));
   return specialIndicesToSuggestions(indices);
@@ -474,15 +479,22 @@ const timeSeriesSources = (ctx: SuggestContext): ISuggestionItem[] => {
 export const sources =
   ({ indexMode }: { indexMode?: string }): SlotProvider =>
   async (ctx, slot) => {
-    const { location, context, callbacks } = ctx;
+    const { location, context, callbacks, resources } = ctx;
     if (location.partial?.text.startsWith('"')) {
       return [];
     }
-    const items = indexMode === 'time_series' ? timeSeriesSources(ctx) : fromSources(ctx);
+    const isTimeSeries = indexMode === 'time_series';
+    const items = await (isTimeSeries ? timeSeriesSources(ctx) : fromSources(ctx));
+    // The browser lists the command's catalogs: TS's time-series sources too.
     const browser =
       location.partial || slot.continuation
         ? undefined
-        : await getIndicesBrowserSuggestion({ callbacks, context });
+        : await getIndicesBrowserSuggestion({
+            callbacks,
+            isCursorInSubquery: context?.isCursorInSubquery,
+            sources: resources.sources,
+            timeSeriesSources: isTimeSeries ? resources.timeSeriesSources : undefined,
+          });
     return browser ? [browser, ...items] : items;
   };
 
@@ -490,19 +502,27 @@ export const sources =
  * The names of the sources of an index mode, with aliases, views, datasets and LET bindings, to
  * tell a complete name. An integration is no source itself: its data streams are.
  */
-export const getSourceNames = (ctx: SuggestContext, indexMode: string | undefined): Set<string> => {
-  const { context } = ctx;
+export const getSourceNames = async (
+  ctx: SuggestContext,
+  indexMode: string | undefined
+): Promise<Set<string>> => {
   if (indexMode === 'time_series') {
     return new Set(
-      (context?.timeSeriesSources ?? []).flatMap(({ name, aliases = [] }) => [name, ...aliases])
+      (await ctx.resources.timeSeriesSources()).flatMap(({ name, aliases = [] }) => [
+        name,
+        ...aliases,
+      ])
     );
   }
+  const [readable, views, datasets] = await Promise.all([
+    readableSources(ctx),
+    readableViews(ctx),
+    readableDatasets(ctx),
+  ]);
   return new Set([
-    ...readableSources(ctx)
-      .filter(({ dataStreams }) => !dataStreams?.length)
-      .map(({ name }) => name),
-    ...readableViews(ctx).map(({ name }) => name),
-    ...readableDatasets(ctx).map(({ name }) => name),
+    ...readable.filter(({ dataStreams }) => !dataStreams?.length).map(({ name }) => name),
+    ...views.map(({ name }) => name),
+    ...datasets.map(({ name }) => name),
     ...namedSubqueryNames(ctx),
   ]);
 };
@@ -512,11 +532,11 @@ export const getSourceNames = (ctx: SuggestContext, indexMode: string | undefine
  * templates (they count rows, which TS doesn't aggregate that way).
  */
 export const recommendedQueries = async (
-  { context, callbacks }: SuggestContext,
+  { resources, callbacks }: SuggestContext,
   indexMode: string | undefined
 ): Promise<ISuggestionItem[]> =>
   getRecommendedQueriesSuggestions(
-    context?.editorExtensions ?? { recommendedFields: [], recommendedQueries: [] },
+    await resources.editorExtensions(),
     indexMode === 'time_series' ? undefined : callbacks?.getByType
   );
 
@@ -623,23 +643,26 @@ export const settingValues = (): SlotProvider => async (ctx, slot) => {
 };
 
 /** The enrich policy the command names, looked up without its `_mode:` prefix as validation does. */
-export const getEnrichPolicy = ({ command, context }: SuggestContext): ESQLPolicy | undefined => {
+export const getEnrichPolicy = async ({
+  command,
+  resources,
+}: SuggestContext): Promise<ESQLPolicy | undefined> => {
   const source = command.args.find((arg) => isSource(arg));
   if (!isSource(source)) {
     return undefined;
   }
-  return context?.policies?.get(source.index?.valueUnquoted ?? source.name);
+  return (await resources.policies()).get(source.index?.valueUnquoted ?? source.name);
 };
 
 /** The enrich fields of the command's policy. */
 export const enrichFields = (): SlotProvider => async (ctx) => {
-  const policy = getEnrichPolicy(ctx);
+  const policy = await getEnrichPolicy(ctx);
   return policy ? buildFieldsDefinitions(policy.enrichFields, false) : [];
 };
 
 /** The columns to match on the command's policy's match field. */
 export const matchingColumns = (): SlotProvider => async (ctx) => {
-  const policy = getEnrichPolicy(ctx);
+  const policy = await getEnrichPolicy(ctx);
   if (!policy) {
     return [];
   }
@@ -1064,13 +1087,25 @@ const applicableParameters = (
     )
   );
 
-/** How the map helper shows a parameter: its kind of value, description and example values. */
-const toMapParameters = (
+/**
+ * How the map helper shows a parameter: its kind of value, description and example values. An
+ * inference endpoint lists those serving the parameter's task.
+ */
+const toMapParameters = async (
   rule: string,
   parameters: Record<string, MapParameter>,
-  { context }: SuggestContext
-): MapParameters =>
-  Object.fromEntries(
+  { resources }: SuggestContext
+): Promise<MapParameters> => {
+  const endpointsByTask = new Map(
+    await Promise.all(
+      Object.values(parameters).flatMap(({ entityType, taskType }) =>
+        entityType === 'inference_endpoint' && taskType
+          ? [resources.inferenceEndpoints(taskType).then((found) => [taskType, found] as const)]
+          : []
+      )
+    )
+  );
+  return Object.fromEntries(
     Object.entries(parameters).map(([name, parameter]) => {
       const description = MAP_PARAMETER_DESCRIPTIONS[`${rule}.${name}`];
       if (parameter.list) {
@@ -1091,7 +1126,7 @@ const toMapParameters = (
         return [name, { type: 'boolean', description, suggestions }];
       }
       if (parameter.entityType === 'inference_endpoint') {
-        const suggestions = (context?.inferenceEndpoints ?? []).map(
+        const suggestions = (endpointsByTask.get(parameter.taskType ?? '') ?? []).map(
           createInferenceEndpointToCompletionItem
         );
         return [name, { type: 'string', description, suggestions }];
@@ -1107,6 +1142,7 @@ const toMapParameters = (
       ];
     })
   );
+};
 
 /**
  * The entries of a command's `WITH { … }` map: the parameters not set yet, the values of the
@@ -1136,6 +1172,6 @@ export const mapEntries =
 
     return getCommandMapExpressionSuggestions(
       query.slice(0, cursorPosition),
-      toMapParameters(rule, applicableParameters(ctx, parameters), ctx)
+      await toMapParameters(rule, applicableParameters(ctx, parameters), ctx)
     );
   };

@@ -15,101 +15,31 @@ import type { ParameterHint } from '../../..';
 import { getFunctionDefinition } from '../../commands/definitions/utils';
 import { parametersFromHintsResolvers } from '../../commands/definitions/utils/autocomplete/parameters_from_hints';
 import type { ICommandContext } from '../../commands/registry/types';
-import { getPolicyHelper, getSourcesHelper } from '../shared/resources_helpers';
 
+/**
+ * The eager context of a command: the controls flags the expression engine reads, and PROMQL's
+ * time-series sources, which its own autocomplete reads. The generic autocomplete reads
+ * everything else from the request's lazy context.
+ */
 export const getCommandContext = async (
   command: ESQLAstAllCommands,
-  queryString: string,
   callbacks?: ESQLCallbacks
 ): Promise<Partial<ICommandContext>> => {
-  const getSources = getSourcesHelper(callbacks);
-  const helpers = getPolicyHelper(callbacks);
-
   let context: Partial<ICommandContext> = {};
 
   switch (command.name) {
-    case 'completion':
-      context = {
-        inferenceEndpoints:
-          (await callbacks?.getInferenceEndpoints?.('completion'))?.inferenceEndpoints || [],
-      };
-      break;
-    case 'rerank':
-      context = {
-        inferenceEndpoints:
-          (await callbacks?.getInferenceEndpoints?.('rerank'))?.inferenceEndpoints || [],
-      };
-      break;
-    // The multimodal step makes this task type depend on the command's `type` option.
-    case 'dense_vector':
-      context = {
-        inferenceEndpoints:
-          (await callbacks?.getInferenceEndpoints?.('text_embedding'))?.inferenceEndpoints || [],
-      };
-      break;
-    case 'enrich':
-      const policies = await helpers.getPolicies();
-      const policiesMap = new Map(policies.map((policy) => [policy.name, policy]));
-      context = {
-        policies: policiesMap,
-      };
-      break;
-    case 'from': {
-      const [editorExtensionsResult, views, datasets, sources] = await Promise.all([
-        callbacks?.getEditorExtensions?.(queryString),
-        callbacks?.getViews?.(),
-        callbacks?.getDatasets?.(),
-        getSources(),
-      ]);
-      context = {
-        sources,
-        editorExtensions: editorExtensionsResult ?? {
-          recommendedQueries: [],
-          recommendedFields: [],
-        },
-        views: views?.views ?? [],
-        datasets: datasets?.datasets ?? [],
-      };
-      break;
-    }
     case 'join':
-      const joinSources = await callbacks?.getJoinIndices?.();
       context = {
-        joinSources: joinSources?.indices || [],
         supportsControls: callbacks?.canSuggestVariables?.() ?? false,
       };
       break;
     case 'stats':
-      const histogramBarTarget = (await callbacks?.getPreferences?.())?.histogramBarTarget || 50;
-      context = {
-        histogramBarTarget,
-        supportsControls: callbacks?.canSuggestVariables?.() ?? false,
-        variables: callbacks?.getVariables?.(),
-      };
-      break;
     case 'inline stats':
       context = {
-        histogramBarTarget: (await callbacks?.getPreferences?.())?.histogramBarTarget || 50,
         supportsControls: callbacks?.canSuggestVariables?.() ?? false,
         variables: callbacks?.getVariables?.(),
       };
       break;
-    case 'ts': {
-      const [timeseriesSources, sources, editorExtensionsResult] = await Promise.all([
-        callbacks?.getTimeseriesIndices?.(),
-        getSources(),
-        callbacks?.getEditorExtensions?.(queryString),
-      ]);
-      context = {
-        timeSeriesSources: timeseriesSources?.indices || [],
-        sources,
-        editorExtensions: editorExtensionsResult ?? {
-          recommendedQueries: [],
-          recommendedFields: [],
-        },
-      };
-      break;
-    }
     case 'promql':
       const promqlTimeseriesSources = await callbacks?.getTimeseriesIndices?.();
       context = {

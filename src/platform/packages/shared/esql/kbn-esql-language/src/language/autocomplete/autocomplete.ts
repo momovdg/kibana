@@ -29,9 +29,14 @@ import { locateCursor } from '../shared/cursor_location/cursor_location';
 import { getCommandAutocomplete } from '../../commands/registry/generic_autocomplete/command_autocomplete';
 import { getFromCommandHelper } from '../shared/resources_helpers';
 import { getCommandContext } from './get_command_context';
+import { createLazyContext } from './lazy_context';
 import { mapRecommendedQueriesFromExtensions } from './recommended_queries_helpers';
 import { getQueryForFields } from '../shared/get_query_for_fields';
-import type { ColumnsMap, GetColumnMapFn } from '../shared/columns_retrieval_helpers';
+import type {
+  ColumnsMap,
+  GetColumnMapFn,
+  GetEditorExtensionsFn,
+} from '../shared/columns_retrieval_helpers';
 import { getColumnsByTypeRetriever } from '../shared/columns_retrieval_helpers';
 import { getUnmappedFieldsStrategy } from '../../commands/definitions/utils/settings';
 import {
@@ -69,7 +74,7 @@ export async function suggest(
   // Keep the current pipeline's fields and the outer header commands completed before the cursor.
   const astForFields = { ...astContext.astForContext, header: completedHeader };
 
-  const { getColumnsByType, getColumnMap } = getColumnsByTypeRetriever(
+  const { getColumnsByType, getColumnMap, getEditorExtensions } = getColumnsByTypeRetriever(
     getQueryForFields(innerText, astForFields),
     innerText,
     resourceRetriever
@@ -240,7 +245,8 @@ export async function suggest(
       offset,
       hasMinimumLicenseRequired,
       // Only the LET bindings completed before the cursor can be referenced.
-      getNamedSubqueries(completedHeader)
+      getNamedSubqueries(completedHeader),
+      getEditorExtensions
     );
 
     const lineStart = fullText.lastIndexOf('\n', offset - 1) + 1;
@@ -279,7 +285,8 @@ async function getSuggestionsWithinCommandExpression(
   callbacks?: ESQLCallbacks,
   offset?: number,
   hasMinimumLicenseRequired?: (minimumLicenseRequired: LicenseType) => boolean,
-  namedSubqueries: readonly NamedSubquery[] = []
+  namedSubqueries: readonly NamedSubquery[] = [],
+  getEditorExtensions?: GetEditorExtensionsFn
 ) {
   const innerText = fullText.substring(0, offset);
   const autocomplete = getCommandAutocomplete(astContext.command.name);
@@ -305,11 +312,14 @@ async function getSuggestionsWithinCommandExpression(
   const unmappedFieldsStrategy = getUnmappedFieldsStrategy(headers);
 
   // Get the context that might be needed by the command itself
-  const additionalCommandContext = await getCommandContext(
-    astContext.command,
-    innerText,
-    callbacks
-  );
+  const additionalCommandContext = await getCommandContext(astContext.command, callbacks);
+  // What the generic autocomplete reads, fetched only when read.
+  const resources = createLazyContext({
+    callbacks,
+    queryString: innerText,
+    getColumnMap,
+    getEditorExtensions,
+  });
 
   const isInsideSubquery = astContext.isCursorInSubquery; // We only show resource browser suggestions in the main query
   const canSuggestResourceBrowser = (await callbacks?.canSuggestResourceBrowser?.()) ?? false;
@@ -324,6 +334,7 @@ async function getSuggestionsWithinCommandExpression(
     isTimeseriesSource: isTimeseriesSourceCommand(commands.filter((cmd) => cmd.type === 'command')),
     namedSubqueries,
     cursorLocation: locateCursor(fullText, offset ?? fullText.length),
+    resources,
   };
 
   // Wrap getColumnsByType so the fields browser option is injected from context;

@@ -9,7 +9,11 @@
 import type { ESQLCallbacks } from '@kbn/esql-types';
 import type { EditorExtensions } from '../../commands/registry/options/recommended_queries';
 import type { ESQLPolicy, ICommandContext } from '../../commands/registry/types';
-import type { ColumnsMap, GetColumnMapFn } from '../shared/columns_retrieval_helpers';
+import type {
+  ColumnsMap,
+  GetColumnMapFn,
+  GetEditorExtensionsFn,
+} from '../shared/columns_retrieval_helpers';
 
 type License = Awaited<ReturnType<NonNullable<ESQLCallbacks['getLicense']>>>;
 
@@ -50,16 +54,19 @@ const once = <T>(load: () => Promise<T | undefined> | undefined, fallback: T) =>
 
 /**
  * The lazy context of one suggestion request. `queryString` is the text the editor extensions
- * are read for; `getColumnMap` computes the columns at the cursor.
+ * are read for; `getColumnMap` computes the columns at the cursor. `getEditorExtensions`, when
+ * given, is the request's own memoized fetch, as the column retriever's, so both read one.
  */
 export const createLazyContext = ({
   callbacks,
   queryString,
   getColumnMap,
+  getEditorExtensions,
 }: {
   callbacks?: ESQLCallbacks;
   queryString: string;
   getColumnMap: GetColumnMapFn;
+  getEditorExtensions?: GetEditorExtensionsFn;
 }): LazyCommandContext => {
   const inferenceEndpointsByTaskType = new Map<
     string,
@@ -89,10 +96,11 @@ export const createLazyContext = ({
       }
       return getter();
     },
-    editorExtensions: once(async () => callbacks?.getEditorExtensions?.(queryString), {
-      recommendedQueries: [],
-      recommendedFields: [],
-    }),
+    editorExtensions: once(
+      async () =>
+        getEditorExtensions ? getEditorExtensions() : callbacks?.getEditorExtensions?.(queryString),
+      { recommendedQueries: [], recommendedFields: [] }
+    ),
     histogramBarTarget: once(
       async () =>
         (await callbacks?.getPreferences?.())?.histogramBarTarget || DEFAULT_HISTOGRAM_BAR_TARGET,
@@ -101,3 +109,22 @@ export const createLazyContext = ({
     license: once(async () => callbacks?.getLicense?.(), undefined),
   };
 };
+
+/**
+ * Getters over an eager context's values, as the ones tests pass: each resolves to the value
+ * the context holds, or to the same default as `createLazyContext`.
+ */
+export const lazyContextFromEager = (context?: Partial<ICommandContext>): LazyCommandContext => ({
+  columns: async () => context?.columns ?? new Map(),
+  policies: async () => context?.policies ?? new Map(),
+  sources: async () => context?.sources ?? [],
+  views: async () => context?.views ?? [],
+  datasets: async () => context?.datasets ?? [],
+  joinIndices: async () => context?.joinSources ?? [],
+  timeSeriesSources: async () => context?.timeSeriesSources ?? [],
+  inferenceEndpoints: async () => context?.inferenceEndpoints ?? [],
+  editorExtensions: async () =>
+    context?.editorExtensions ?? { recommendedQueries: [], recommendedFields: [] },
+  histogramBarTarget: async () => context?.histogramBarTarget ?? DEFAULT_HISTOGRAM_BAR_TARGET,
+  license: async () => undefined,
+});

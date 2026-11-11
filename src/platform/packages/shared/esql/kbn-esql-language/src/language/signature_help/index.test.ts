@@ -35,6 +35,7 @@ describe('getSignatureHelp', () => {
     mockGetColumnsByTypeRetriever.mockReturnValue({
       getColumnsByType: jest.fn().mockResolvedValue(new Map()),
       getColumnMap: jest.fn().mockResolvedValue(new Map()),
+      getEditorExtensions: jest.fn(),
     });
   });
 
@@ -157,6 +158,7 @@ describe('getSignatureHelp', () => {
       mockGetColumnsByTypeRetriever.mockReturnValue({
         getColumnsByType: jest.fn().mockResolvedValue(new Map()),
         getColumnMap: jest.fn().mockResolvedValue(columnsMap),
+        getEditorExtensions: jest.fn(),
       });
 
       const query = 'FROM logs | EVAL result = COUNT(field1';

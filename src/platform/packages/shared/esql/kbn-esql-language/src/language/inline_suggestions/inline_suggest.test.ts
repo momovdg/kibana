@@ -75,6 +75,7 @@ describe('inlineSuggest', () => {
     mockGetColumnsByTypeRetriever.mockReturnValue({
       getColumnsByType: jest.fn(),
       getColumnMap: jest.fn(),
+      getEditorExtensions: jest.fn(),
     });
 
     // Callbacks
