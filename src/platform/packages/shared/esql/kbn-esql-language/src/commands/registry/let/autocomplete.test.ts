@@ -9,10 +9,13 @@
 
 import { mockContext } from '../../../__tests__/commands/context_fixtures';
 import { expectSuggestions } from '../../../__tests__/commands/autocomplete';
-import { autocomplete } from './autocomplete';
+import { genericAutocomplete as autocomplete } from '../generic_autocomplete/command_autocomplete';
 
 describe('LET Autocomplete', () => {
   it.each([
+    ['LET ', ['subquery0 = ']],
+    // A name being typed is the user's own.
+    ['LET sel', []],
     ['LET selected ', ['= ']],
     ['let\tselected\n', ['= ']],
     ['LET selected = ', ['(FROM $0);', '(ROW $0);', '(TS $0);']],

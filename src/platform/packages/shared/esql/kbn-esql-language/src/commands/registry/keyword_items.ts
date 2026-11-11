@@ -21,6 +21,7 @@ import {
   fuseGroupByCompleteItem,
   fuseKeyByCompleteItem,
   fuseScoreByCompleteItem,
+  headerAssignCompleteItem,
   inlineStatsKeywordCompleteItem,
   joinKeywordCompleteItem,
   joinOnCompleteItem,
@@ -66,7 +67,10 @@ const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'PIPE', items: newLineAndPipeCompleteItems },
   { token: 'COMMA', items: [withAutoSuggest({ ...commaCompleteItem, text: ', ' })] },
   { token: 'ASSIGN', items: [assignCompletionItem] },
-  // The grammar's `;` only ends a header statement (SET).
+  // A header's `=` binds a setting or a subquery, not a new column.
+  { token: 'ASSIGN', command: 'setCommand', items: [headerAssignCompleteItem] },
+  { token: 'ASSIGN', command: 'letCommand', items: [headerAssignCompleteItem] },
+  // The grammar's `;` only ends a header statement (SET, LET).
   { token: 'SEMICOLON', items: [statementEndCompleteItem] },
   { token: 'AS', items: [asCompletionItem] },
   // A JOIN qualifier (`idx AS q`) is not offered: Elasticsearch may not support it yet.
@@ -83,6 +87,8 @@ const buildKeywordEntries = (): readonly KeywordEntry[] => [
   { token: 'METADATA', items: [metadataSuggestion] },
   // FORK's `(` opens a branch, not an expression.
   { token: 'LP', command: 'forkCommand', items: [forkNewBranchCompleteItem] },
+  // LET's `(` opens the subquery its name is bound to.
+  { token: 'LP', command: 'letCommand', items: buildSubqueryCompleteItems() },
   // FROM's `(` opens a subquery as one of its sources (`subqueries` on its argument list); TS
   // takes none, so it has no entry.
   {

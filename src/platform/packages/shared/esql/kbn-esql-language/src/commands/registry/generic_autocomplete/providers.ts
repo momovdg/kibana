@@ -64,9 +64,11 @@ import {
 } from '../../definitions/utils/maps';
 import { matchesWildcardPattern } from '../../definitions/utils/regex';
 import type { Commands } from '../../definitions/keywords';
+import { getNextNamedSubqueryName } from '../../definitions/utils/named_subqueries';
 import {
   assignCompletionItem,
   buildMapValueCompleteItem,
+  getNewNamedSubquerySuggestion,
   getNewUserDefinedColumnSuggestion,
 } from '../complete_items';
 import {
@@ -531,6 +533,15 @@ export const remainingMetadataFields = ({ command, callbacks }: SuggestContext):
   );
   return getAvailableMetadataFields(callbacks?.isServerless).filter((name) => !used.has(name));
 };
+
+/** The next free `subqueryN` name for a new LET binding, at an empty position. */
+export const newNamedSubquery = async ({
+  context,
+  location,
+}: SuggestContext): Promise<ISuggestionItem[]> =>
+  location.partial
+    ? []
+    : [getNewNamedSubquerySuggestion(getNextNamedSubqueryName(context?.namedSubqueries))];
 
 /** METADATA fields, each offered once. */
 export const metadataFields = async (ctx: SuggestContext): Promise<ISuggestionItem[]> =>

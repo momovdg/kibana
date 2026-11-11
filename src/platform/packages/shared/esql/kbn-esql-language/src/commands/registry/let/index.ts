@@ -8,12 +8,9 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
 import type { ICommandContext } from '../types';
 
-const letCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
-};
+const letCommandMethods: ICommandMethods<ICommandContext> = {};
 
 export const letCommand = {
   name: 'let',
