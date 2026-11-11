@@ -36,6 +36,8 @@ export type ArgumentRole =
   | { kind: 'column'; types?: string[]; constraints?: Record<string, string> }
   /** The name of a column the command creates. Any name is valid, including an existing one. */
   | { kind: 'new_column' }
+  /** The name of a thing the query defines, as a LET binding's subquery, for FROM to read. */
+  | { kind: 'new_entity'; entityType: 'named_subquery' }
   /**
    * A named thing outside the query, e.g. an enrich policy or an inference endpoint. A `source`
    * is an index, alias, data stream, view or dataset name, or a pattern of them.

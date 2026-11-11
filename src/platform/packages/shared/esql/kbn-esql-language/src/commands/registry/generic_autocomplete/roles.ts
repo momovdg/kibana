@@ -51,6 +51,7 @@ import {
   merged,
   metadataFields,
   newName,
+  newNamedSubquery,
   none,
   optionNames,
   policies,
@@ -523,11 +524,15 @@ const getConstraintAbove = (rules: string[], constraint: string): string | undef
 const indexModeAt = ({ stack, rule }: ExpectedRule): string | undefined =>
   getConstraintAbove([...stack, rule], 'indexMode');
 
-/** The provider for a role of a bare-token argument, as a METADATA field. */
+/** The provider for a role of a bare-token argument, as a METADATA field or a LET name. */
 const tokenProviderFor = (
   role: ArgumentRole
-): ((ctx: SuggestContext) => Promise<ISuggestionItem[]>) | undefined =>
-  role.kind === 'entity' && role.entityType === 'metadata_field' ? metadataFields : undefined;
+): ((ctx: SuggestContext) => Promise<ISuggestionItem[]>) | undefined => {
+  if (role.kind === 'entity' && role.entityType === 'metadata_field') {
+    return metadataFields;
+  }
+  return role.kind === 'new_entity' ? newNamedSubquery : undefined;
+};
 
 /** The roles of the bare-token arguments expected at the cursor, as METADATA's fields. */
 const tokenRolesAt = ({ expectedTokens, tokenStacks }: CursorLocation): ArgumentRole[] =>
@@ -691,7 +696,11 @@ export const getRoleSlot = (slot: ExpectedRule): SlotDefinition | undefined => {
  * Whether only the statement's `;` may follow a value at the slot, as SET's value: its call
  * ends `setField`, which only `;` follows in `setCommand`.
  */
-export const endsStatement = ({ rule, stack, invokingStates }: ExpectedRule): boolean => {
+export const endsStatement = ({
+  rule,
+  stack,
+  invokingStates,
+}: Pick<ExpectedRule, 'rule' | 'stack' | 'invokingStates'>): boolean => {
   let invokes = rule;
   for (let index = stack.length - 1; index >= 0; index--) {
     const state = invokingStates?.[index + 1];
@@ -711,6 +720,27 @@ export const endsStatement = ({ rule, stack, invokingStates }: ExpectedRule): bo
     invokes = stack[index];
   }
   return false;
+};
+
+/**
+ * Whether the expected token opens a value only the statement's `;` may follow, as LET's `(`:
+ * its rule starts right after the previous token and ends the statement. SET's `=` doesn't:
+ * it is inside `setField`.
+ */
+export const opensStatementEnd = (
+  { tokenStacks, previousTokenType }: CursorLocation,
+  token: string
+): boolean => {
+  const rules = tokenStacks.get(getTokenType(token))?.rules ?? [];
+  const [caller, rule] = rules.slice(-2);
+  if (!caller || !rule || previousTokenType === undefined) {
+    return false;
+  }
+  const previous = getTokenName(previousTokenType);
+  return (
+    getCallSites(caller, rule).some(({ precededBy }) => precededBy.includes(previous)) &&
+    endsStatement({ rule, stack: rules.slice(0, -1) })
+  );
 };
 
 /**

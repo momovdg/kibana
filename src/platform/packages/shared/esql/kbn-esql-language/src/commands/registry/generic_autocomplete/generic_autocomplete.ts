@@ -36,6 +36,7 @@ import {
   getTokenRoleItems,
   isCompleteName,
   isCoveredByRole,
+  opensStatementEnd,
   withoutExhaustedLists,
   withoutUsedClauses,
 } from './roles';
@@ -418,7 +419,13 @@ const suggestAt = async (
     ? adjustKeywords(keywordsAt(location), ctx)
         // A command that needs an argument and has none cannot end yet, as `STATS `.
         .filter(({ token }) => !(token === 'PIPE' && needsArgument(ctx)))
-        .map((keyword) => toItem(keyword, location))
+        .map((keyword) => {
+          const item = toItem(keyword, location);
+          // A keyword opening the statement's last value ends it too, as LET's `(FROM …);`.
+          return endStatement && opensStatementEnd(location, keyword.token)
+            ? { ...item, text: `${item.text};` }
+            : item;
+        })
     : [];
   // What the role of the argument just completed adds, as the recommended queries after a source.
   // While a word is typed, as `METADATA`, nothing has been completed yet: a complete name gets

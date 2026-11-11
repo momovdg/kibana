@@ -278,6 +278,8 @@ export const UNLABELLED_ARGUMENT_ROLES: Readonly<Record<string, ArgumentRole>> =
  * UNQUOTED_SOURCE)*`.
  */
 export const TOKEN_ROLES: Readonly<Record<string, ArgumentRole>> = {
+  // `LET <name> = (<subquery>);`: the name FROM reads the subquery by.
+  'letBinding>UNQUOTED_IDENTIFIER': { kind: 'new_entity', entityType: 'named_subquery' },
   // Elasticsearch rejects a field declared twice.
   'metadata>UNQUOTED_SOURCE': {
     kind: 'entity',
