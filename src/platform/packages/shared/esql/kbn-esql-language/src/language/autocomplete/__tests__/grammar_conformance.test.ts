@@ -13,6 +13,10 @@ import {
   getMappedKeywordTokens,
 } from '../../../commands/registry/keyword_items';
 import { locateCursor } from '../../shared/cursor_location/cursor_location';
+import { PREFERRED_RULES } from '../../shared/cursor_location/grammar_rules';
+import { getArgumentRole, getCalledRules, getCallSites } from '../../../esql_js_prototype';
+import { DEFAULT_SLOTS } from '../../../commands/registry/generic_autocomplete/providers';
+import { EXPRESSION_RULES } from '../../../commands/registry/generic_autocomplete/slot_matching';
 
 /**
  * Checks autocomplete against the grammar, so an `@elastic/esql` upgrade that adds a keyword or
@@ -40,18 +44,31 @@ const UNSUPPORTED_COMMANDS: Readonly<Record<string, string>> = {
   TS_COLLAPSE: 'not supported by Kibana yet; to add as a command (registry entry and roles)',
 };
 
+/**
+ * Slots no provider fills, keyed by the call path from the command (`limitCommand > constant`),
+ * with why. Each one here is a decision, not an oversight.
+ */
+const UNFILLED_SLOTS: Readonly<Record<string, string>> = {};
+
 const { symbolicNames, literalNames } = Parser.create('').parser;
 
 /** A token's fixed text in the grammar, as `limit`; none for names, values and whitespace. */
 const fixedText = (type: number): string | undefined =>
   literalNames[type]?.replace(/^'|'$/g, '') || undefined;
 
-/** Tokens that start a command: in the header, as the source, or after a pipe. */
-const commandTokens = new Set(
-  ['', 'FROM a | ', 'SET a = 1;\n'].flatMap((query) =>
-    [...locateCursor(query, query.length).expectedTokens].map((type) => symbolicNames[type] ?? '')
-  )
+/**
+ * Tokens that start a command (in the header, as the source, or after a pipe), with the command
+ * rule each starts, as `limitCommand` for `LIMIT`.
+ */
+const commandStarts = new Map(
+  ['', 'FROM a | ', 'SET a = 1;\n'].flatMap((query) => {
+    const { expectedTokens, tokenStacks } = locateCursor(query, query.length);
+    return [...expectedTokens].map(
+      (type) => [symbolicNames[type] ?? '', tokenStacks.get(type)?.rules.at(-1) ?? ''] as const
+    );
+  })
 );
+const commandTokens = new Set(commandStarts.keys());
 
 /** Tokens dev builds of Elasticsearch only accept, not offered in Kibana. */
 const isDevOnly = (name: string): boolean => name.startsWith('DEV_');
@@ -74,6 +91,53 @@ const registeredCommandFor = (name: string): string | undefined => {
     (command) => command === word || command.split(' ')[0] === word.split(' ')[0]
   );
 };
+
+/** Rules the cursor locator reports as slots, which a provider must fill. */
+const SLOT_RULES: readonly string[] = PREFERRED_RULES;
+
+/** Rules whose subtree another part fills: the expression engine, or a nested command. */
+const FILLED_ELSEWHERE: readonly string[] = [...EXPRESSION_RULES, 'subquery', 'forkSubQuery'];
+
+const defaultSlotRules = DEFAULT_SLOTS.map(({ rule }) => rule);
+
+/**
+ * The slots of a command's grammar no provider fills: a call of a slot rule reached without a
+ * role on the way (a role says what fills the argument, as a column or a constant), outside an
+ * expression and not filled by a default slot. Paths read `limitCommand > constant`.
+ */
+const unfilledSlots = (command: string): string[] => {
+  const found: string[] = [];
+  const walk = (rule: string, path: string[]) => {
+    for (const called of getCalledRules(rule)) {
+      const callPath = [...path, called];
+      const hasRole = getCallSites(rule, called).some((site) => getArgumentRole(site));
+      const isNested = called.endsWith('Command') && called !== command;
+      if (hasRole || isNested || FILLED_ELSEWHERE.includes(called) || path.includes(called)) {
+        continue;
+      }
+      if (SLOT_RULES.includes(called)) {
+        if (!defaultSlotRules.includes(called)) {
+          found.push(callPath.join(' > '));
+        }
+        continue;
+      }
+      walk(called, callPath);
+    }
+  };
+  walk(command, [command]);
+  return [...new Set(found)];
+};
+
+/** The command rules the generic autocomplete fills: of registered commands without their own. */
+const genericCommandRules = [
+  ...new Set(
+    [...commandStarts].flatMap(([token, rule]) => {
+      const command = registeredCommandFor(token);
+      const methods = command && esqlCommandRegistry.getCommandMethods(command);
+      return methods && !methods.autocomplete ? [rule] : [];
+    })
+  ),
+];
 
 describe('grammar conformance', () => {
   describe('keywords', () => {
@@ -131,6 +195,36 @@ describe('grammar conformance', () => {
         ...staleAliases.map((token) => `${token}: fix or remove it in COMMAND_ALIASES`),
         ...staleUnsupported.map((token) => `${token}: remove it from UNSUPPORTED_COMMANDS`),
       ]).toEqual([]);
+    });
+  });
+
+  describe('slots', () => {
+    it('are checked for every command on the generic autocomplete', () => {
+      // A guard against the check silently covering nothing.
+      expect(genericCommandRules).toEqual(
+        expect.arrayContaining(['limitCommand', 'statsCommand', 'fromCommand', 'letCommand'])
+      );
+      expect(genericCommandRules).not.toContain('promqlCommand');
+    });
+
+    it('are each filled by a role or a default slot, or listed with why not', () => {
+      const unfilled = genericCommandRules
+        .flatMap(unfilledSlots)
+        .filter((path) => !(path in UNFILLED_SLOTS));
+
+      expect(
+        unfilled.map(
+          (path) =>
+            `${path}: give the call a role in esql_js_prototype/argument_roles/argument_roles.ts, or list it in UNFILLED_SLOTS with why`
+        )
+      ).toEqual([]);
+    });
+
+    it('are listed as unfilled only while that holds', () => {
+      const unfilled = new Set(genericCommandRules.flatMap(unfilledSlots));
+      const stale = Object.keys(UNFILLED_SLOTS).filter((path) => !unfilled.has(path));
+
+      expect(stale.map((path) => `${path}: remove it from UNFILLED_SLOTS`)).toEqual([]);
     });
   });
 });
