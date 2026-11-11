@@ -26,7 +26,11 @@ import type {
 import { getControlSuggestionIfSupported } from '../../commands/definitions/utils';
 import { getAutocompleteCursorContext } from '../shared/parse_for_autocomplete_query';
 import { locateCursor } from '../shared/cursor_location/cursor_location';
-import { getCommandAutocomplete } from '../../commands/registry/generic_autocomplete/command_autocomplete';
+import {
+  genericAutocomplete,
+  getCommandAutocomplete,
+} from '../../commands/registry/generic_autocomplete/command_autocomplete';
+import { readsColumns } from '../../commands/registry/generic_autocomplete/generic_autocomplete';
 import { getFromCommandHelper } from '../shared/resources_helpers';
 import { getCommandContext } from './get_command_context';
 import { createLazyContext } from './lazy_context';
@@ -255,8 +259,12 @@ export async function suggest(
       ? commandsSpecificSuggestions.filter((s) => s.category !== SuggestionCategory.NEW_LINE)
       : commandsSpecificSuggestions;
 
+    // The ranges read the columns only to match items that need an existing column.
+    const matchesColumns = visibleSuggestions.some(
+      ({ requiresExistingColumnMatch }) => requiresExistingColumnMatch
+    );
     return attachReplacementRanges(innerText, visibleSuggestions, {
-      commandContext: { columns: await getColumnMapOnce() },
+      commandContext: { columns: matchesColumns ? await getColumnMapOnce() : new Map() },
       tokens,
     });
   }
@@ -295,8 +303,13 @@ async function getSuggestionsWithinCommandExpression(
     return [];
   }
 
-  // collect all fields + userDefinedColumns to suggest
-  const columnMap: Map<string, ESQLColumnData> = await getColumnMap();
+  const cursorLocation = locateCursor(fullText, offset ?? fullText.length);
+  // The columns at the cursor, fetched only where the generic autocomplete reads them; a
+  // command's own autocomplete (PROMQL) gets them up front.
+  const columnMap: Map<string, ESQLColumnData> =
+    autocomplete !== genericAutocomplete || readsColumns(cursorLocation)
+      ? await getColumnMap()
+      : new Map();
   const references = { columns: columnMap };
 
   const getSuggestedUserDefinedColumnName = () => {
@@ -333,7 +346,7 @@ async function getSuggestionsWithinCommandExpression(
     unmappedFieldsStrategy,
     isTimeseriesSource: isTimeseriesSourceCommand(commands.filter((cmd) => cmd.type === 'command')),
     namedSubqueries,
-    cursorLocation: locateCursor(fullText, offset ?? fullText.length),
+    cursorLocation,
     resources,
   };
 

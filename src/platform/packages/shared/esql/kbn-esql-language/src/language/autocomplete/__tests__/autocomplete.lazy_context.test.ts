@@ -63,4 +63,21 @@ describe('autocomplete data fetching', () => {
 
     expect(callbacks.getInferenceEndpoints).toHaveBeenCalledWith('rerank');
   });
+
+  // Columns are cached per query across requests, so each case reads its own source.
+  it.each([
+    ['FROM lazy_limit | LIMIT ^', 0],
+    ['FROM lazy_enrich | ENRICH ^', 0],
+    ['FROM lazy_join | LOOKUP JOIN ^', 0],
+    ['FROM lazy_where | WHERE ^', 1],
+    ['FROM lazy_keep | KEEP ^', 1],
+    ['FROM lazy_stats | STATS ^', 1],
+  ])('fetches the columns at %j only where they are read', async (query, calls) => {
+    const callbacks = createCustomCallbackMocks();
+    const { suggest } = await setup('^');
+
+    await suggest(query, { callbacks });
+
+    expect(callbacks.getColumnsFor).toHaveBeenCalledTimes(calls);
+  });
 });

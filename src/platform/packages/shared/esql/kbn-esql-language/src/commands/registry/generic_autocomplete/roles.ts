@@ -663,6 +663,32 @@ const providerFor = (role: ArgumentRole, site: CallSite): SlotProvider => {
   }
 };
 
+/** Role kinds whose providers read no column: things outside the query, literals, options. */
+const COLUMN_FREE_KINDS: readonly string[] = [
+  'entity',
+  'new_entity',
+  'constant',
+  'option_name',
+  'map',
+  'setting_value',
+];
+
+/**
+ * Whether filling the slot may read the columns: an expression, a column or a new column's
+ * name, or a name without a role (the default columns). An entity, a constant, an option or a
+ * command's map reads none, as LIMIT's count or FROM's sources.
+ */
+export const slotReadsColumns = (slot: ExpectedRule): boolean => {
+  if (isExpressionSlot(slot)) {
+    return true;
+  }
+  if (getMapSlot(slot)) {
+    return false;
+  }
+  const roles = getArgumentSites(slot).map(getArgumentRole);
+  return !roles.length || roles.some((role) => !role || !COLUMN_FREE_KINDS.includes(role.kind));
+};
+
 /**
  * The slot definition given by the roles of the argument the slot starts, when each of its
  * positions has one. Expression roles are left to the expression engine.

@@ -113,7 +113,7 @@ export class QueryColumns {
     ignored: string[] = []
   ): Promise<ESQLColumnData[]> {
     const types = Array.isArray(expectedType) ? expectedType : [expectedType];
-    const fields = await this.getColumnsForQuery(this.query, this.getFields, this.getPolicies);
+    const fields = await this.getQueryColumns();
     return (
       fields?.filter(({ name, type }) => {
         const ts = Array.isArray(type) ? type : [type];
@@ -137,13 +137,21 @@ export class QueryColumns {
    * Internal method to get columns as map.
    */
   private async getColumnsAsMap(): Promise<Map<string, ESQLColumnData>> {
-    const fields = await this.getColumnsForQuery(this.query, this.getFields, this.getPolicies);
+    const fields = await this.getQueryColumns();
     const result = new Map<string, ESQLColumnData>();
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       result.set(field.name, field);
     }
     return result;
+  }
+
+  /** The query's columns, computed once per instance however many readers ask concurrently. */
+  private queryColumns: Promise<ESQLColumnData[]> | undefined;
+
+  private getQueryColumns(): Promise<ESQLColumnData[]> {
+    this.queryColumns ??= this.getColumnsForQuery(this.query, this.getFields, this.getPolicies);
+    return this.queryColumns;
   }
 
   private getFields = async (queryToES: string) => {
