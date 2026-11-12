@@ -15,6 +15,13 @@ import {
 import { monaco } from '../../../../../monaco_imports';
 import { ESQLLang, type ESQLDependencies } from '../../language';
 import { createDisposedTextModel, createField, createTextModel } from './test_helpers';
+import { getStreamNames } from './stream_names';
+
+// The real stream-name reader, watched to check when it runs.
+jest.mock('./stream_names', () => {
+  const actual = jest.requireActual('./stream_names');
+  return { getStreamNames: jest.fn(actual.getStreamNames) };
+});
 
 export const getCompletionItemFromProvider = async (
   suggestionProvider: monaco.languages.CompletionItemProvider,
@@ -184,6 +191,36 @@ describe('suggestion_provider', () => {
     });
 
     describe('stream descriptions', () => {
+      it('should read the stream names only when field items are resolved, once per list', async () => {
+        const suggestionProvider = ESQLLang.getSuggestionProvider({
+          getFieldsMetadata: Promise.resolve({
+            find: jest.fn().mockResolvedValue({ fields: {}, streamFields: {} }),
+          }),
+          getColumnsFor: jest.fn(async () => [createField('body.text'), createField('host')]),
+        });
+        const model = createTextModel({ value: 'FROM logs-kibana.otel-default | WHERE ' });
+
+        const result = await suggestionProvider.provideCompletionItems(
+          model,
+          new monaco.Position(1, model.getValue().length + 1),
+          {} as monaco.languages.CompletionContext,
+          tokenSource.token
+        );
+
+        expect(getStreamNames).not.toHaveBeenCalled();
+
+        const fieldItems = (result?.suggestions ?? []).filter(
+          ({ kind }) => kind === monaco.languages.CompletionItemKind.Variable
+        );
+        expect(fieldItems.length).toBeGreaterThan(1);
+        for (const item of fieldItems) {
+          await suggestionProvider.resolveCompletionItem!(item, tokenSource.token);
+        }
+
+        expect(getStreamNames).toHaveBeenCalledTimes(1);
+        expect(getStreamNames).toHaveBeenCalledWith(model.getValue());
+      });
+
       it('should show stream description for a field when the query sources a stream', async () => {
         const mockFind = jest.fn().mockImplementation(({ streamNames, source }) => {
           if (streamNames?.includes('logs-kibana.otel-default') && source?.includes('streams')) {
