@@ -19,11 +19,7 @@ import { createCustomCallbackMocks, fields, setup } from './helpers';
  */
 
 /** Examples that don't parse, with why. Fixing them changes what users see in the docs. */
-const STALE_EXAMPLES: Readonly<Record<string, string>> = {
-  'ROW question = "What is Elasticsearch?"\n| COMPLETION answer = question WITH test_completion_model\n| KEEP question, answer':
-    'COMPLETION now takes a map after WITH, as `WITH { "inference_id": "…" }`',
-  'FROM employees\n| KEEP emp_no\n| SAMPLE 0.05,': 'ends with a stray comma',
-};
+const STALE_EXAMPLES: Readonly<Record<string, string>> = {};
 
 /**
  * The query an example stands for: `… | LIMIT 1` reads from a source, and a header statement

@@ -27,7 +27,7 @@ export const sampleCommand = {
     examples: [
       `FROM employees
 | KEEP emp_no
-| SAMPLE 0.05,`,
+| SAMPLE 0.05`,
     ],
   },
 };
