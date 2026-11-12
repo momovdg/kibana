@@ -11,6 +11,12 @@ import type { ISuggestionItem } from '../../../../commands/registry/types';
 import type { SortingContext } from './types';
 import { calculatePriority } from './priority_provider';
 
+/**
+ * Compares labels ignoring case and accents. Created once: `localeCompare` with options builds a
+ * collator on every comparison.
+ */
+const labelCollator = new Intl.Collator(undefined, { sensitivity: 'base' });
+
 export class SuggestionOrderingEngine {
   /**
    * Sorts suggestions based on their inferred category and context.
@@ -44,9 +50,7 @@ export class SuggestionOrderingEngine {
       }
 
       // Case-insensitive alphabetical sorting for items with same priority
-      return a.suggestion.label.localeCompare(b.suggestion.label, undefined, {
-        sensitivity: 'base',
-      });
+      return labelCollator.compare(a.suggestion.label, b.suggestion.label);
     });
 
     return withPriorities.map(({ suggestion }, index) => {

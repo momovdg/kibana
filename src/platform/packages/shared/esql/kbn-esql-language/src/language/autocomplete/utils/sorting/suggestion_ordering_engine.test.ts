@@ -38,6 +38,19 @@ describe('SuggestionOrderingEngine', () => {
     expect(result[3].label).toBe('operator');
   });
 
+  it('should order labels that differ by case and accents as localeCompare does', () => {
+    const labels = ['Zeta', 'éclair', 'Apple', 'eclair', 'apple', 'Éclair', 'zeta', 'Ápple'];
+    const suggestions = labels.map((label) => createSuggestion(label, SuggestionCategory.FIELD));
+
+    const result = engine.sort(suggestions, { command: 'EVAL' });
+
+    // The order before the shared collator: case and accents ignored, ties kept in input order.
+    const expected = [...labels].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' })
+    );
+    expect(result.map(({ label }) => label)).toEqual(expected);
+  });
+
   it('should apply context-specific boosts (STATS BY)', () => {
     const suggestions = [
       createSuggestion('myColumn', SuggestionCategory.USER_DEFINED_COLUMN),
