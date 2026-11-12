@@ -303,13 +303,15 @@ async function getSuggestionsWithinCommandExpression(
     return [];
   }
 
-  const cursorLocation = locateCursor(fullText, offset ?? fullText.length);
+  // The generic autocomplete reads what the grammar allows at the cursor. A command's own
+  // autocomplete (PROMQL) doesn't, so the location isn't computed for it: PromQL's query is a
+  // long run of tokens, the locator's slowest case.
+  const isGeneric = autocomplete === genericAutocomplete;
+  const cursorLocation = isGeneric ? locateCursor(fullText, offset ?? fullText.length) : undefined;
   // The columns at the cursor, fetched only where the generic autocomplete reads them; a
-  // command's own autocomplete (PROMQL) gets them up front.
+  // command's own autocomplete gets them up front.
   const columnMap: Map<string, ESQLColumnData> =
-    autocomplete !== genericAutocomplete || readsColumns(cursorLocation)
-      ? await getColumnMap()
-      : new Map();
+    !cursorLocation || readsColumns(cursorLocation) ? await getColumnMap() : new Map();
   const references = { columns: columnMap };
 
   const getSuggestedUserDefinedColumnName = () => {

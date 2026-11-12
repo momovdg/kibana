@@ -9,7 +9,6 @@
 
 import { esqlCommandRegistry } from '../../../commands/registry';
 import * as cursorLocation from '../../shared/cursor_location/cursor_location';
-import { locateCursor } from '../../shared/cursor_location/cursor_location';
 import { setup } from './helpers';
 
 const CARET = '^';
@@ -19,25 +18,27 @@ describe('autocomplete cursor location', () => {
     jest.restoreAllMocks();
   });
 
+  // A command's own autocomplete doesn't read the location, so it isn't computed for it: PromQL's
+  // query, a long run of tokens, is the locator's slowest case.
   it.each([
-    ['promql', 'PROMQL ^', 'PROMQL '],
-    ['promql', 'PROMQL ^\n| WHERE b > 1', 'PROMQL '],
-  ])('hands %s the location of %j', async (commandName, query, segmentText) => {
+    ['promql', 'PROMQL ^'],
+    ['promql', 'PROMQL ^\n| WHERE b > 1'],
+    ['promql', 'PROMQL index=metrics step=1m (sum by (instance) (^'],
+  ])('computes no location for %s at %j', async (commandName, query) => {
     const methods = esqlCommandRegistry.getCommandMethods(commandName);
     if (!methods) {
       throw new Error(`${commandName} is not registered`);
     }
-    const spy = jest.spyOn(methods, 'autocomplete');
+    const autocompleteSpy = jest.spyOn(methods, 'autocomplete');
+    const locateSpy = jest.spyOn(cursorLocation, 'locateCursor');
     const { suggest } = await setup(CARET);
 
     await suggest(query);
 
-    const offset = query.indexOf(CARET);
-    const text = query.replace(CARET, '');
-    expect(spy).toHaveBeenCalledTimes(1);
-    const [, , , context] = spy.mock.calls[0];
-    expect(context?.cursorLocation).toEqual(locateCursor(text, offset));
-    expect(context?.cursorLocation?.segment.text).toBe(segmentText);
+    expect(autocompleteSpy).toHaveBeenCalledTimes(1);
+    const [, , , context] = autocompleteSpy.mock.calls[0];
+    expect(context?.cursorLocation).toBeUndefined();
+    expect(locateSpy).not.toHaveBeenCalled();
   });
 
   // Commands without their own autocomplete read the location suggest() computed.
