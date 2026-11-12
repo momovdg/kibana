@@ -7,13 +7,14 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { getIndexSourcesFromQuery, suggest } from '@kbn/esql-language';
+import { suggest } from '@kbn/esql-language';
 import { monaco, isCancellationError } from '../../../../../monaco_imports';
 import { createCancellableCallbacks, createMonacoProvider } from './providers_factory';
 import { wrapAsMonacoSuggestions } from '../converters/suggestions';
 import { filterSuggestionsWithCustomCommands, monacoPositionToOffset } from '../shared/utils';
 import type { ESQLDependencies } from './types';
 import { handleInterruptibleMonacoOperation } from '../../../../helpers';
+import { getStreamNames } from './stream_names';
 
 export const ESQL_AUTOCOMPLETE_TRIGGER_CHARS = ['(', ' ', '[', '?'];
 
@@ -27,7 +28,8 @@ export function getSuggestionProvider(
   const itemContext = new WeakMap<
     monaco.languages.CompletionItem,
     {
-      streamNames: string[];
+      /** The query's stream names, read from its text only when a field item is resolved. */
+      getStreamNames: () => string[];
       getFieldsMetadata: ESQLDependencies['getFieldsMetadata'];
     }
   >();
@@ -79,12 +81,13 @@ export function getSuggestionProvider(
             safeModel.getLineCount()
           );
 
-          const streamNames = getIndexSourcesFromQuery(fullText).filter(
-            (name) => !name.includes('*')
-          );
+          // Parsed once per completion list, from the text at this point, and only if a field
+          // item is resolved: most lists are never resolved.
+          let streamNames: string[] | undefined;
+          const getListStreamNames = () => (streamNames ??= getStreamNames(fullText));
           for (const suggestion of result.suggestions) {
             itemContext.set(suggestion, {
-              streamNames,
+              getStreamNames: getListStreamNames,
               getFieldsMetadata: resolvedDeps?.getFieldsMetadata,
             });
           }
@@ -111,7 +114,7 @@ export function getSuggestionProvider(
           if (typeof item.label !== 'string') return item;
 
           const strippedFieldName = removeKeywordSuffix(item.label);
-          const { streamNames } = context;
+          const streamNames = context.getStreamNames();
           const documentationParts: string[] = [];
 
           // 1. ECS description
