@@ -16,7 +16,6 @@ import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplet
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   ARGUMENT_ROLES,
-  resolveRole,
   type ArgumentRole,
   type DependentValueRole,
   type MapParameter,
@@ -28,7 +27,7 @@ import type { ExpectedArgument } from '../../../esql_js_sim/grammar';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
-import { partOf, unquoted, pathOf } from '../written';
+import { partOf, unquoted, pathOf, roleIdOf } from '../written';
 
 const STRING_TYPES: readonly string[] = ['keyword', 'text', 'string'];
 const NUMBER_TYPES: readonly string[] = ['integer', 'long', 'double', 'number'];
@@ -140,7 +139,7 @@ export const provideOptionNames = (
   context: SuggestionContext
 ): ISuggestionItem[] => {
   const used = context.ir.written
-    .filter((written) => !written.open && resolveRole(pathOf(written))?.id === resolved.id)
+    .filter((written) => !written.open && roleIdOf(written) === resolved.id)
     .map(({ text }) => unquoted(text).toLowerCase());
   const isUsed = (name: string) => used.includes(name.toLowerCase());
 

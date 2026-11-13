@@ -13,7 +13,6 @@ import { esqlCommandRegistry } from '../../../commands/registry';
 import { buildSubqueryCompleteItems } from '../../../commands/registry/complete_items';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
-  resolveRole,
   type EntityItem,
   type EntityRole,
   type EntityScope,
@@ -23,7 +22,7 @@ import {
 import { getRegisteredCommand } from '../command_metadata';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
-import { unquoted } from '../written';
+import { unquoted, roleIdOf } from '../written';
 
 /** How an entity of each kind looks in the list. */
 const ENTITY_KINDS: Readonly<Record<EntityType, ISuggestionItem['kind']>> = {
@@ -43,10 +42,6 @@ const NAMES_AS_TYPED: readonly EntityType[] = [
   'metadata_field',
   'setting',
 ];
-
-/** The path of a written argument, as `resolveRole` takes it. */
-const roleIdOf = (argument: SuggestionContext['ir']['written'][number]): string | undefined =>
-  resolveRole([...argument.ancestors.map((ancestor) => ancestor.id), argument.id])?.id;
 
 /** What narrows the entities at the cursor: what the role says, and what is written. */
 const toScope = (role: EntityRole, { ir, callbacks }: SuggestionContext): EntityScope => {

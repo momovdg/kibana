@@ -9,7 +9,7 @@
 
 import { FUNCTION_CALL, FUNCTION_LAMBDAS } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenAncestor, WrittenArgument } from '../../../esql_js_sim/grammar';
-import { isSamePlace, partOf } from '../written';
+import { isSamePlace, partOf, isDirectlyIn } from '../written';
 
 interface Range {
   start: number;
@@ -37,7 +37,7 @@ export interface LambdaParameter {
 
 /** What is written directly in a place, and not in a place nested in it. */
 const writtenIn = (ir: CursorIR, place: WrittenAncestor): WrittenArgument[] =>
-  ir.written.filter(({ ancestors }) => isSamePlace(ancestors.at(-1), place));
+  ir.written.filter((written) => isDirectlyIn(written, place));
 
 /** The function call a place is an argument of: its name, and where each argument starts. */
 const getCall = (
