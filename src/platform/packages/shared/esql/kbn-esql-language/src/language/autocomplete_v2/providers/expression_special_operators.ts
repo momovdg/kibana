@@ -27,9 +27,9 @@ import {
 } from '../../../commands/registry/complete_items';
 import { esqlCommandRegistry } from '../../../commands/registry';
 import type { ISuggestionItem } from '../../../commands/registry/types';
-import { EXPRESSION_PARTS } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
 import { getOperandRange, type ExpressionPosition } from './expression_position';
+import { isColumnPart, lowerTextOf } from '../written';
 
 /** What the rules of an operator need: the cursor, the item builders and the type lookup. */
 export interface OperatorRuleInput {
@@ -46,10 +46,6 @@ const NOT_FOLLOWERS: readonly string[] = ['like', 'rlike', 'in'];
 const getSubquerySources = (): string[] =>
   esqlCommandRegistry.getAllCommands({ isStartingSubquery: true }).map(({ name }) => name);
 
-const textOf = ({ text }: WrittenArgument): string => text.toLowerCase();
-
-const isColumn = (item: WrittenArgument): boolean => EXPRESSION_PARTS[item.id]?.part === 'column';
-
 const logicalContinuation = (): ISuggestionItem[] => logicalOperators.map(getOperatorSuggestion);
 
 /**
@@ -57,8 +53,11 @@ const logicalContinuation = (): ISuggestionItem[] => logicalOperators.map(getOpe
  * can still become.
  */
 export const decideNullCheck = ({ ir, position }: OperatorRuleInput): ISuggestionItem[] => {
-  const start = position.written.findLastIndex((item) => textOf(item) === 'is');
-  const typed = [...position.written.slice(start).map(textOf), ir.word?.text.toLowerCase() ?? '']
+  const start = position.written.findLastIndex((item) => lowerTextOf(item) === 'is');
+  const typed = [
+    ...position.written.slice(start).map(lowerTextOf),
+    ir.word?.text.toLowerCase() ?? '',
+  ]
     .join(' ')
     .trim();
 
@@ -179,11 +178,14 @@ export const decideIn = async (
     .slice(0, index)
     .filter((item) => item.kind === 'rule' || item.class === 'value');
   const [left] = leftItems;
-  const column = leftItems.length === 1 && isColumn(left) ? left : undefined;
+  const column = leftItems.length === 1 && isColumnPart(left) ? left : undefined;
   const type = column && typeOf(getOperandRange(operator, column));
   const types = type ? ([type] as FunctionParameterType[]) : undefined;
   const ignoredColumns = list.values.length
-    ? [...(column ? [column.text] : []), ...list.values.filter(isColumn).map(({ text }) => text)]
+    ? [
+        ...(column ? [column.text] : []),
+        ...list.values.filter(isColumnPart).map(({ text }) => text),
+      ]
     : [];
   const builder = new SuggestionBuilder(context);
 

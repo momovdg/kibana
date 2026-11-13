@@ -17,9 +17,7 @@ import { getColumnsByTypeRetriever } from '../shared/columns_retrieval_helpers';
 import { getNesting, getQueryBeforeCursor } from './pipeline';
 import { getRegisteredCommand } from './command_metadata';
 import type { SuggestionContext } from './types';
-
-const isSame = (first: string[], second: string[]): boolean =>
-  first.length === second.length && first.every((rule, index) => rule === second[index]);
+import { isSameNesting } from './written';
 
 const NAME_RULES: readonly string[] = ['qualifiedName', 'qualifiedNamePattern', 'identifier'];
 
@@ -68,7 +66,8 @@ export const createContext = async (
   });
   const isHeader = ({ metadata }: ICommand) => metadata.type === 'header';
   const pipeline = registered.filter(
-    ({ command, enclosingCommands }) => !isHeader(command) && isSame(enclosingCommands, nesting)
+    ({ command, enclosingCommands }) =>
+      !isHeader(command) && isSameNesting(enclosingCommands, nesting)
   );
   const [source] = pipeline;
   // What stands for the value typed here: a name where one can come, a literal otherwise.

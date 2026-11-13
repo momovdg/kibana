@@ -26,8 +26,7 @@ import {
 import { esqlCommandRegistry } from '../../../commands/registry';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import type { SuggestionContext } from '../types';
-
-const MAP_OPENER = '{';
+import { ASSIGNMENT, MAP_OPENER } from '../written';
 
 const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggestionItem =>
   withAutoSuggest({
@@ -124,10 +123,8 @@ export const provideSubqueryOpener = ({
   }));
 };
 
-const ASSIGNMENT = '=';
-
 /** The token assigns a value to the name before it, as in `name = value`. */
-export const isAssignment = ({ class: tokenClass, text }: Follower): boolean =>
+export const isAssignmentToken = ({ class: tokenClass, text }: Follower): boolean =>
   tokenClass === 'operator' && text === ASSIGNMENT;
 
 /**

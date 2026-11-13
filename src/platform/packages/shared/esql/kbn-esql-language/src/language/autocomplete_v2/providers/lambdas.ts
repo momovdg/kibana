@@ -7,12 +7,9 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import {
-  EXPRESSION_PARTS,
-  FUNCTION_CALL,
-  FUNCTION_LAMBDAS,
-} from '../../../esql_js_sim/definitions';
+import { FUNCTION_CALL, FUNCTION_LAMBDAS } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenAncestor, WrittenArgument } from '../../../esql_js_sim/grammar';
+import { isSamePlace, partOf } from '../written';
 
 interface Range {
   start: number;
@@ -38,22 +35,19 @@ export interface LambdaParameter {
   valuesFrom?: number;
 }
 
-const isSame = (first: WrittenAncestor | undefined, second: WrittenAncestor): boolean =>
-  first?.id === second.id && first.start === second.start;
-
 /** What is written directly in a place, and not in a place nested in it. */
 const writtenIn = (ir: CursorIR, place: WrittenAncestor): WrittenArgument[] =>
-  ir.written.filter(({ ancestors }) => isSame(ancestors.at(-1), place));
-
-const partOf = ({ id }: WrittenArgument): string | undefined => EXPRESSION_PARTS[id]?.part;
+  ir.written.filter(({ ancestors }) => isSamePlace(ancestors.at(-1), place));
 
 /** The function call a place is an argument of: its name, and where each argument starts. */
 const getCall = (
   ir: CursorIR,
   place: WrittenAncestor
 ): { name?: string; separators: WrittenArgument[]; argumentStarts: number[] } | undefined => {
-  const chain = ir.written.find(({ ancestors }) => ancestors.some((above) => isSame(above, place)));
-  const index = chain?.ancestors.findIndex((above) => isSame(above, place)) ?? -1;
+  const chain = ir.written.find(({ ancestors }) =>
+    ancestors.some((above) => isSamePlace(above, place))
+  );
+  const index = chain?.ancestors.findIndex((above) => isSamePlace(above, place)) ?? -1;
   const call = place.id === FUNCTION_CALL ? place : chain?.ancestors[index - 1];
 
   if (call?.id !== FUNCTION_CALL) {
@@ -123,7 +117,7 @@ export const getLambdas = (ir: CursorIR): WrittenLambda[] => {
     if (lambda) {
       lambdas.set(place.start, {
         ...lambda,
-        isAroundCursor: around.some((above) => isSame(above, place)),
+        isAroundCursor: around.some((above) => isSamePlace(above, place)),
       });
     }
   }

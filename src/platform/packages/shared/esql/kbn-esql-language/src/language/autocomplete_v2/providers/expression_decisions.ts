@@ -69,6 +69,7 @@ import {
   type ExpressionPosition,
   type FunctionCallPosition,
 } from './expression_position';
+import { ASSIGNMENT, CAST } from '../written';
 
 /** What a decision needs: the cursor in the grammar, and what the item builders take. */
 export interface DecisionInput {
@@ -171,8 +172,6 @@ const STRING_PREDICATES = namesOf([
   ...nullCheckOperators,
 ]);
 const NULL_CHECK_END = 'null';
-const ASSIGNMENT = '=';
-
 /**
  * The operators that can follow an operand of a type, by name; all of them when undefined,
  * none when empty. Every operator on a string gives a boolean, so a role that asks for
@@ -639,8 +638,6 @@ const decideArgumentStart = async (
     },
   });
 };
-
-const CAST = '::';
 
 /**
  * Right after `::`: the types the value before it can be cast to, or every type when no
