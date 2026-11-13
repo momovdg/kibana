@@ -23,7 +23,7 @@ import {
   provideMap,
   provideOptionNames,
 } from './providers/structured';
-import { SUGGESTED_VALUES_BY_NAME } from './presentation';
+import { getSuggestedValuesByName } from './presentation';
 import { withAutoSuggest } from '../../commands/definitions/utils/autocomplete/helpers';
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
@@ -74,7 +74,7 @@ const provideForRole = async (
         ...items.flat(),
         ...(isInMap ? [] : provideSuggestedValues(role, resolved, context)),
         // A value that can be a map is offered its braces, the cursor inside.
-        ...(!isInMap && candidates.some(({ kind }) => kind === 'map') ? [MAP_ITEM] : []),
+        ...(!isInMap && candidates.some(({ kind }) => kind === 'map') ? [getMapItem()] : []),
       ];
     }
     // The providers of the other roles come with the next steps.
@@ -83,13 +83,14 @@ const provideForRole = async (
   }
 };
 
-const MAP_ITEM: ISuggestionItem = withAutoSuggest({
-  label: '{ }',
-  text: '{ $0 }',
-  asSnippet: true,
-  kind: 'Value',
-  category: SuggestionCategory.CONSTANT_VALUE,
-});
+const getMapItem = (): ISuggestionItem =>
+  withAutoSuggest({
+    label: '{ }',
+    text: '{ $0 }',
+    asSnippet: true,
+    kind: 'Value',
+    category: SuggestionCategory.CONSTANT_VALUE,
+  });
 
 /**
  * The values the editor suggests for the value of a name, as the common values of a setting.
@@ -102,7 +103,7 @@ const provideSuggestedValues = (
 ): ISuggestionItem[] => {
   const name = dependentName(role, context)?.toLowerCase();
   const values =
-    (id !== undefined && name !== undefined && SUGGESTED_VALUES_BY_NAME[id]?.[name]) || [];
+    (id !== undefined && name !== undefined && getSuggestedValuesByName()[id]?.[name]) || [];
   const isInString = context.ir.position === 'inside_string';
 
   return values.map((value) => ({

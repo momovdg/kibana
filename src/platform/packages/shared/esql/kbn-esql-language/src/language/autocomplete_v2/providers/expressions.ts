@@ -56,16 +56,16 @@ export interface ExpressionSuggestions {
 
 /**
  * The set of functions and operators a mode stands for, in the terms of the function
- * definitions. This table and `locationOf` are the only place the engine uses these terms.
+ * definitions. This table (a function, so that nothing is read while the module loads) and `locationOf` are the only place the engine uses these terms.
  */
-const MODE_LOCATIONS: Readonly<Record<ExpressionMode, Location>> = {
+const getModeLocations = (): Readonly<Record<ExpressionMode, Location>> => ({
   scalar: Location.SORT,
   aggregation: Location.STATS,
   grouping: Location.STATS_BY,
   filter: Location.WHERE,
   constant: Location.ROW,
   full_text: Location.HIGHLIGHT_QUERY,
-};
+});
 
 /** The cursor is between the brackets of a function call. */
 const isInFunctionCall = ({ written }: CursorIR): boolean =>
@@ -92,7 +92,7 @@ const locationOf = (
     return Location.EVAL;
   }
 
-  return MODE_LOCATIONS[role.mode];
+  return getModeLocations()[role.mode];
 };
 
 // The modes that read a column only as the argument of a function.

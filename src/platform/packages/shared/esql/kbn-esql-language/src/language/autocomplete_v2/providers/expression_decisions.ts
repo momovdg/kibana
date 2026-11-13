@@ -165,12 +165,8 @@ const namesOf = (operators: Array<{ name: string }>): string[] => operators.map(
 
 const STRING_TYPES: readonly string[] = ['text', 'keyword'];
 // What tells of a string: whether it matches, is in a list, or is missing.
-const STRING_PREDICATES = namesOf([
-  ...matchOperators,
-  ...patternMatchOperators,
-  ...inOperators,
-  ...nullCheckOperators,
-]);
+const getStringPredicates = (): string[] =>
+  namesOf([...matchOperators, ...patternMatchOperators, ...inOperators, ...nullCheckOperators]);
 const NULL_CHECK_END = 'null';
 /**
  * The operators that can follow an operand of a type, by name; all of them when undefined,
@@ -188,7 +184,7 @@ const getOperatorsAfter = (type: string, preferred: readonly string[]): string[]
     return [];
   }
 
-  return [...(takesBoolean ? namesOf(comparisonFunctions) : []), ...STRING_PREDICATES];
+  return [...(takesBoolean ? namesOf(comparisonFunctions) : []), ...getStringPredicates()];
 };
 
 /**
