@@ -21,22 +21,34 @@ import {
   patternMatchOperators,
 } from '../../../commands/definitions/all_operators';
 import {
+  isArrayType,
   isParameterType,
   type FunctionParameterType,
   type SupportedDataType,
 } from '../../../commands/definitions/types';
+import { getFunctionDefinition } from '../../../commands/definitions/utils/functions';
 import { getOperatorSuggestion } from '../../../commands/definitions/utils/operators';
+import { getMatchingSignatures } from '../../../commands/definitions/utils/signatures/matchers';
 import { commaWithAutoSuggestCompleteItem } from '../../../commands/registry/complete_items';
-import { EXPRESSION_PARTS } from '../../../esql_js_sim/definitions';
+import { EXPRESSION_PARTS, FUNCTION_CALL } from '../../../esql_js_sim/definitions';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
-import type { ExpressionPosition, ExpressionPositionKind } from './expression_position';
+import {
+  getOperandRange,
+  isOperandOf,
+  type ExpressionPosition,
+  type ExpressionPositionKind,
+} from './expression_position';
 
 /**
  * The positions this layer decides. The others still go to the expression engine of the
  * current flow, until each is moved here.
  */
-export const DECIDED_KINDS = new Set<ExpressionPositionKind>(['empty', 'after_operand']);
+export const DECIDED_KINDS = new Set<ExpressionPositionKind>([
+  'empty',
+  'after_operand',
+  'after_operator',
+]);
 
 /** What a decision needs: the cursor in the grammar, and what the item builders take. */
 export interface DecisionInput {
@@ -45,8 +57,12 @@ export interface DecisionInput {
   /** The role and the editor, in the terms the item builders take. */
   request: SuggestForExpressionParams;
   /** The type of what is written of the expression. */
-  expressionType: SupportedDataType | 'unknown';
+  expressionType: ExpressionType;
+  /** The type of what is written between two offsets. */
+  typeOf: (range: { start: number; end: number }) => ExpressionType;
 }
+
+type ExpressionType = SupportedDataType | 'unknown';
 
 // The grammar name of the bracket that opens the arguments of a function.
 const OPENING_BRACKET = 'LP';
@@ -179,6 +195,129 @@ const decideAfterOperand = (input: DecisionInput): ISuggestionItem[] | undefined
   return builder.build();
 };
 
+// The operators that have rules of their own, decided in a later step.
+const WITH_OWN_RULES: readonly string[] = ['in', 'like', 'rlike', 'is', 'not', 'null', ':'];
+const LOGICAL: readonly string[] = ['and', 'or'];
+const UNTYPED: readonly string[] = ['unknown', 'unsupported'];
+const MATCH = ':';
+
+const isLiteralAlone = (written: Array<{ id: string }>): boolean =>
+  written.length === 1 && EXPRESSION_PARTS[written[0].id]?.part === 'literal';
+
+/** The types an operator takes on its right for a type on its left. */
+const getRightTypes = (
+  signatures: Array<{ params: Array<{ name: string; type: string }> }>,
+  leftType: string
+): FunctionParameterType[] =>
+  signatures
+    .filter(({ params }) => params.some(({ name, type }) => name === 'left' && type === leftType))
+    .flatMap(({ params }) => (params[1] ? [params[1].type] : []))
+    .filter((type) => !isArrayType(type)) as FunctionParameterType[];
+
+/**
+ * After an operator, outside a function call. While the operator lacks its right operand: the
+ * columns, literals and functions of the types it takes there for the type on its left. Once
+ * it has both: the operators that can follow what it gives.
+ */
+const decideAfterOperator = async (
+  input: DecisionInput
+): Promise<ISuggestionItem[] | undefined> => {
+  const { ir, position, request, typeOf } = input;
+  const { options = {}, location, cursorPosition } = request;
+  const { lastOperator, written } = position;
+  const name = lastOperator?.text.toLowerCase() ?? '';
+  const definition = getFunctionDefinition(name);
+  const index = lastOperator ? written.indexOf(lastOperator) : -1;
+  const before = written[index - 1];
+
+  // An operator typed as the word, one before its operand, and one with rules of its own
+  // are not decided here yet.
+  if (!lastOperator || !definition || !before || WITH_OWN_RULES.includes(name)) {
+    return undefined;
+  }
+
+  // What follows the operator and is still its operand: a bracket that closes it is not.
+  const after = written.slice(index + 1).filter(isOperandOf(lastOperator, before));
+  const lastWritten = after.at(-1);
+  const left = getOperandRange(lastOperator, before);
+  const right = lastWritten
+    ? getOperandRange(lastOperator, lastWritten)
+    : ir.word && { start: ir.word.start, end: cursorPosition };
+  const leftType = typeOf(left);
+  const rightType = right ? typeOf(right) : 'unknown';
+  const builder = new SuggestionBuilder(toBuilderContext(input));
+
+  // The right operand is missing, or is a name that is still being typed.
+  if (!right || rightType === 'unknown') {
+    // A condition is joined to any operand: the next condition starts with one.
+    const types =
+      leftType === 'boolean' && LOGICAL.includes(name)
+        ? (['any'] as FunctionParameterType[])
+        : getRightTypes(definition.signatures, leftType);
+
+    await builder.addFields({
+      types,
+      values: true,
+      addSpaceAfterField: options.addSpaceAfterOperator ?? false,
+      openSuggestions: options.openSuggestions ?? false,
+    });
+
+    return builder
+      .addLiterals({
+        types,
+        includeDateLiterals: true,
+        includeCompatibleLiterals: false,
+        addComma: false,
+        advanceCursorAndOpenSuggestions: options.openSuggestions ?? false,
+      })
+      .addFunctions({ types, addSpaceAfterFunction: options.addSpaceAfterOperator ?? false })
+      .build();
+  }
+
+  const preferred = [options.preferredExpressionType ?? []].flat();
+  const isLiteral = [written.slice(0, index), after].map((side) =>
+    isLiteralAlone(side.filter((item) => item.kind === 'rule'))
+  );
+  const fits = getMatchingSignatures(definition.signatures, [leftType, rightType], isLiteral, true);
+
+  // The operands do not fit the operator, as a string joined to a condition: an operator
+  // that makes of the right operand what the role asks for.
+  if (!fits.length) {
+    const canConvert =
+      preferred.length > 0 && !preferred.includes(rightType) && !UNTYPED.includes(rightType);
+
+    return canConvert
+      ? builder.addOperators({ leftParamType: rightType, returnTypes: preferred }).build()
+      : [];
+  }
+
+  // What the operator gives; when its right operand is a function call, what the call gives.
+  const call = lastWritten?.class === 'closer' && lastWritten.ancestors.at(-1);
+  const result =
+    call && call.id === FUNCTION_CALL ? typeOf(call) : typeOf({ ...left, end: right.end });
+  const [first] = written;
+  const isInBrackets = first.class === 'opener' && written.at(-1)?.class === 'closer';
+  const allowed =
+    result === 'boolean' && isInBrackets
+      ? namesOf([...logicalOperators, ...nullCheckOperators])
+      : getOperatorsAfter(result, preferred) ??
+        (result === 'boolean'
+          ? namesOf(
+              logicalOperators.filter((operator) => operator.locationsAvailable.includes(location))
+            )
+          : undefined);
+
+  if (allowed?.length !== 0) {
+    builder.addOperators({
+      leftParamType: UNTYPED.includes(result) ? 'any' : result,
+      ignored: [ASSIGNMENT, MATCH],
+      allowed,
+    });
+  }
+
+  return builder.build();
+};
+
 /**
  * The items for a position inside an expression, decided from the grammar position. Returns
  * nothing for a position this layer does not decide yet.
@@ -192,5 +331,12 @@ export const decideExpression = async (
     return undefined;
   }
 
-  return kind === 'after_operand' ? decideAfterOperand(input) : decideOperandStart(input);
+  switch (kind) {
+    case 'after_operand':
+      return decideAfterOperand(input);
+    case 'after_operator':
+      return decideAfterOperator(input);
+    default:
+      return decideOperandStart(input);
+  }
 };
