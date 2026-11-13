@@ -54,6 +54,9 @@ const loadTables = (): ScenarioTable[] =>
  * again; the expression has ended there, so the decisions offer nothing of it.
  */
 const ACCEPTED_DIFFERENCES = [
+  // Inside a string that is still open, the current engine reads a finished string and offers
+  // the operators after it; the decisions offer nothing inside a string.
+  '[highlight] from a | highlight "fo▮',
   '[sort] from a | sort keywordField ASC▮',
   '[sort] from a | sort keywordField asc▮',
   '[sort] from a | sort keywordField desc▮',
@@ -120,9 +123,20 @@ describe('expression decisions', () => {
     expect(await engineCallsAt('FROM d | WHERE n IN (1, 2) ')).toBe(0);
   });
 
+  it('decides the match operator, strings, maps and a typed operator without that engine', async () => {
+    expect(await engineCallsAt('FROM d | WHERE k : ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE k : "a" ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE KQL("""fie')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE k == "ab')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE MATCH(k, "a", {')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE n > 1 AND')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE NOT STARTS_WITH(k, "a") ')).toBe(0);
+  });
+
   it('still asks that engine at the positions that are not moved yet', async () => {
-    expect(await engineCallsAt('FROM d | WHERE k : ')).toBe(1);
     expect(await engineCallsAt('FROM d | WHERE n::')).toBe(1);
+    expect(await engineCallsAt('FROM d | WHERE ABS(n) IN (')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE ROUND(n IN ')).toBe(1);
   });
 
   /**
@@ -160,6 +174,6 @@ describe('expression decisions', () => {
 
     expect(differing).toEqual(ACCEPTED_DIFFERENCES);
     // The rows the decisions serve alone. The number grows as positions are moved.
-    expect(served).toMatchInlineSnapshot(`288`);
+    expect(served).toMatchInlineSnapshot(`307`);
   });
 });
