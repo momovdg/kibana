@@ -7,6 +7,8 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { createIndicesBrowserSuggestion } from '../../../commands/registry/complete_items';
+import { buildResourceBrowserCommandArgs } from '../../autocomplete/autocomplete_utils';
 import { settings } from '../../../commands/definitions/generated/settings';
 import { parseMapParams } from '../../../commands/definitions/utils/maps';
 import {
@@ -22,6 +24,24 @@ import type { EntityRegistry } from './types';
  */
 export const ENTITIES: EntityRegistry = {
   source: {
+    // The browser of data sources, outside a subquery and where the editor has one.
+    actions: async (callbacks, { indexMode, inSubquery }) => {
+      if (inSubquery || !((await callbacks.canSuggestResourceBrowser?.()) ?? false)) {
+        return [];
+      }
+
+      const sources = (await callbacks.getSources?.())?.filter(({ hidden }) => !hidden);
+      const timeSeriesSources =
+        indexMode === 'time_series'
+          ? (await callbacks.getTimeseriesIndices?.())?.indices
+          : undefined;
+
+      return [
+        createIndicesBrowserSuggestion(
+          buildResourceBrowserCommandArgs({ sources, timeSeriesSources })
+        ),
+      ];
+    },
     fetch: async (callbacks, { indexMode }) => {
       if (indexMode === 'time_series') {
         const { indices = [] } = (await callbacks.getTimeseriesIndices?.()) ?? {};

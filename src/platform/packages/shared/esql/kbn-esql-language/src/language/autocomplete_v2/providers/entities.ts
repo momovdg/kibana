@@ -142,8 +142,14 @@ export const provideEntities = async (
   const suffix = suffixAfterName(context);
   const visible = items.filter(({ hidden, name }) => !hidden && !used.includes(name));
   const scope = toScope(role, context);
+  // What the editor can do where a name starts, before any is typed.
+  const startsName = !context.ir.word && context.ir.position === 'start_of_argument';
+  const actions = startsName
+    ? (await ENTITIES[role.entityType].actions?.(context.callbacks ?? {}, scope)) ?? []
+    : [];
 
   return [
+    ...actions,
     // Where a subquery can stand for the entity: one per command a subquery can start with.
     ...(role.subqueries && !scope.inSubquery ? provideSubqueries(context) : []),
     ...visible.map((item) => toSuggestion(item.name, item, role.entityType, suffix)),

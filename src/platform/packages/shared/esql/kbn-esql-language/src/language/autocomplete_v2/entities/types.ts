@@ -8,6 +8,7 @@
  */
 
 import type { ESQLCallbacks } from '@kbn/esql-types';
+import type { ISuggestionItem } from '../../../commands/registry/types';
 import type {
   ArgumentRole,
   EntityItem,
@@ -32,6 +33,11 @@ export interface EntityDefinition {
   exists?: (name: string, items: EntityItem[]) => boolean;
   /** The entities an entity groups, as the data streams of an integration. */
   children?: (item: EntityItem) => EntityItem[];
+  /**
+   * What the editor can do where an entity of this kind is expected, besides naming one: as
+   * opening a browser of the sources. These are items of the editor, ready to show.
+   */
+  actions?: (callbacks: EntityCallbacks, scope: EntityScope) => Promise<ISuggestionItem[]>;
   /**
    * For an entity that defines what its value can be, as a setting does: the roles a value of
    * the named entity can have.
