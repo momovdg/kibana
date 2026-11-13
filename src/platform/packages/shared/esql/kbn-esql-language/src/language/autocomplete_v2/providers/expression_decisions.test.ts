@@ -87,8 +87,15 @@ describe('expression decisions', () => {
     expect(await engineCallsAt('FROM d | WHERE k IS NULL ')).toBe(0);
   });
 
+  it('decides what follows an operator without that engine', async () => {
+    expect(await engineCallsAt('FROM d | WHERE n > ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE n > 1 ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE n > 1 AND ')).toBe(0);
+    expect(await engineCallsAt('FROM d | EVAL a = n + n * ')).toBe(0);
+  });
+
   it('still asks that engine at the positions that are not moved yet', async () => {
-    expect(await engineCallsAt('FROM d | WHERE n > ')).toBe(1);
+    expect(await engineCallsAt('FROM d | WHERE k LIKE ')).toBe(1);
     expect(await engineCallsAt('FROM d | WHERE ABS(')).toBe(1);
   });
 
@@ -127,6 +134,6 @@ describe('expression decisions', () => {
 
     expect(differing).toEqual(ACCEPTED_DIFFERENCES);
     // The rows the decisions serve alone. The number grows as positions are moved.
-    expect(served).toMatchInlineSnapshot(`152`);
+    expect(served).toMatchInlineSnapshot(`190`);
   });
 });
