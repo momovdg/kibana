@@ -30,11 +30,15 @@ import {
   type SupportedDataType,
 } from '../../../commands/definitions/types';
 import { shouldSuggestOperators } from '../../../commands/definitions/utils/autocomplete/expressions/positions/after_complete/should_suggest_operators';
+import { getKqlSuggestionsIfApplicable } from '../../../commands/definitions/utils/autocomplete/expressions/utils';
+import { getCommandMapExpressionSuggestions } from '../../../commands/definitions/utils/autocomplete/map_expression';
 import { getFunctionDefinition } from '../../../commands/definitions/utils/functions';
+import { parseMapParams } from '../../../commands/definitions/utils/maps';
 import { getTimeUnitLiterals } from '../../../commands/definitions/utils/literals';
 import {
   canAcceptMoreArgs,
   doesParamAcceptType,
+  extractSignatureMapParams,
   isAmbiguousPosition,
   isTypeAcceptedAtPosition,
 } from '../../../commands/definitions/utils/signatures/signature_analyzer';
@@ -45,12 +49,13 @@ import {
 import { getOperatorSuggestion } from '../../../commands/definitions/utils/operators';
 import { getMatchingSignatures } from '../../../commands/definitions/utils/signatures/matchers';
 import {
+  buildMapValueCompleteItem,
   commaCompleteItem,
   commaWithAutoSuggestCompleteItem,
 } from '../../../commands/registry/complete_items';
 import { EXPRESSION_PARTS, FUNCTION_CALL } from '../../../esql_js_sim/definitions';
 import type { ISuggestionItem } from '../../../commands/registry/types';
-import type { CursorIR } from '../../../esql_js_sim/grammar';
+import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
 import {
   decideAfterNot,
   decideIn,
@@ -74,6 +79,8 @@ export const DECIDED_KINDS = new Set<ExpressionPositionKind>([
   'after_operand',
   'after_operator',
   'after_not',
+  'in_string',
+  'in_map',
 ]);
 
 /** What a decision needs: the cursor in the grammar, and what the item builders take. */
@@ -90,7 +97,10 @@ export interface DecisionInput {
    * What the definition of the function around the cursor says about the argument there, by
    * the types of the arguments written before it. Nothing for a function that is not known.
    */
-  getParameter: (call: FunctionCallPosition, startsArgument: boolean) => FunctionParameter;
+  getParameter: (
+    call: { start: number; name?: string },
+    startsArgument: boolean
+  ) => FunctionParameter;
 }
 
 type FunctionParameter =
@@ -159,6 +169,10 @@ const decideOperandStart = async (input: DecisionInput): Promise<ISuggestionItem
 const isTypedKeyword = ({ word, followers }: CursorIR): boolean =>
   followers.some((follower) => follower.token === word?.keyword && follower.class === 'keyword');
 
+/** A comma of the expression itself, and not one between the arguments of a call in it. */
+const isOwnSeparator = (item: WrittenArgument): boolean =>
+  item.class === 'separator' && item.ancestors.at(-1)?.id !== FUNCTION_CALL;
+
 const namesOf = (operators: Array<{ name: string }>): string[] => operators.map(({ name }) => name);
 
 const STRING_TYPES: readonly string[] = ['text', 'keyword'];
@@ -204,7 +218,7 @@ const decideAfterOperand = (input: DecisionInput): ISuggestionItem[] | undefined
   const closers = brackets.filter((item) => item.class === 'closer').length;
 
   // A list in brackets, as `(a, b)`, is not decided here yet.
-  if (brackets.some((item) => item.class === 'separator')) {
+  if (brackets.some(isOwnSeparator)) {
     return undefined;
   }
   // A null check is a complete condition: only another condition can be joined to it.
@@ -249,7 +263,7 @@ const decideAfterOperand = (input: DecisionInput): ISuggestionItem[] | undefined
 };
 
 // The operators that have rules of their own, decided in a later step.
-const WITH_OWN_RULES: readonly string[] = ['is', 'not', 'null', ':'];
+const WITH_OWN_RULES: readonly string[] = ['is', 'null'];
 const PATTERN_OPERATORS: readonly string[] = ['like', 'rlike'];
 const LIST_OPERATOR = 'in';
 const NEGATION = 'not';
@@ -270,117 +284,30 @@ const getRightTypes = (
     .flatMap(({ params }) => (params[1] ? [params[1].type] : []))
     .filter((type) => !isArrayType(type)) as FunctionParameterType[];
 
+/** The type of a range, or of the function call that ends it: a call gives its own type. */
+const getResultType = (
+  typeOf: DecisionInput['typeOf'],
+  range: { start: number; end: number },
+  last: WrittenArgument | undefined
+): ExpressionType => {
+  const closedCall = last?.class === 'closer' && last.ancestors.at(-1);
+
+  return closedCall && closedCall.id === FUNCTION_CALL ? typeOf(closedCall) : typeOf(range);
+};
+
 /**
- * After an operator, outside a function call. While the operator lacks its right operand: the
- * columns, literals and functions of the types it takes there for the type on its left. Once
- * it has both: the operators that can follow what it gives.
+ * The operators that can follow what an operator gives, and inside a function call the comma
+ * when that can be the whole argument.
  */
-const decideAfterOperator = async (
+const offerAfterResult = (
   input: DecisionInput,
-  call?: FunctionCallPosition
-): Promise<ISuggestionItem[] | undefined> => {
-  const { ir, position, request, typeOf } = input;
-  const { options = {}, location, cursorPosition } = request;
-  const { lastOperator, written } = position;
-  const name = lastOperator?.text.toLowerCase() ?? '';
-  const index = lastOperator ? written.indexOf(lastOperator) : -1;
-  // `NOT` right before the operator is part of it, as in `a NOT LIKE b`.
-  const isNegated = written[index - 1]?.text.toLowerCase() === NEGATION && name !== NEGATION;
-  const before = written[index - (isNegated ? 2 : 1)];
-  const definition = getFunctionDefinition(isNegated ? `${NEGATION} ${name}` : name);
-
-  // An operator typed as the word, one before its operand, and one with rules of its own
-  // are not decided here yet.
-  if (!lastOperator || !definition || !before || WITH_OWN_RULES.includes(name)) {
-    return undefined;
-  }
-
-  // What follows the operator and is still its operand: a bracket that closes it is not.
-  const after = written.slice(index + 1).filter(isOperandOf(lastOperator, before));
-  const lastWritten = after.at(-1);
-
-  // The operators that take a list or a pattern have rules of their own, outside a call.
-  if (!call && (name === LIST_OPERATOR || PATTERN_OPERATORS.includes(name))) {
-    const rule = { ...input, context: toBuilderContext(input) };
-    const own =
-      name === LIST_OPERATOR
-        ? await decideIn(rule, lastOperator, written.slice(index + 1))
-        : decideLike(rule, name, written.slice(index + 1));
-
-    if (own) {
-      return own;
-    }
-  } else if (name === LIST_OPERATOR || PATTERN_OPERATORS.includes(name)) {
-    return undefined;
-  }
-
-  const left = getOperandRange(lastOperator, before);
-  const right = lastWritten
-    ? getOperandRange(lastOperator, lastWritten)
-    : ir.word && { start: ir.word.start, end: cursorPosition };
-  const leftType = typeOf(left);
-  const rightType = right ? typeOf(right) : 'unknown';
-  // Inside a call, the definition of the function says what its argument may be.
-  const parameter = call && input.getParameter(call, false);
-
-  if (call && !parameter) {
-    return [];
-  }
-
-  const context =
-    call && parameter ? toCallContext(input, call, parameter) : toBuilderContext(input);
-  const builder = new SuggestionBuilder(context);
-
-  // The right operand is missing, or is a name that is still being typed.
-  if (!right || rightType === 'unknown') {
-    // A condition is joined to any operand: the next condition starts with one.
-    const types =
-      leftType === 'boolean' && LOGICAL.includes(name)
-        ? (['any'] as FunctionParameterType[])
-        : getRightTypes(definition.signatures, leftType);
-
-    await builder.addFields({
-      types,
-      values: true,
-      addSpaceAfterField: options.addSpaceAfterOperator ?? false,
-      openSuggestions: options.openSuggestions ?? false,
-    });
-
-    return builder
-      .addLiterals({
-        types,
-        includeDateLiterals: true,
-        includeCompatibleLiterals: false,
-        addComma: false,
-        advanceCursorAndOpenSuggestions: options.openSuggestions ?? false,
-      })
-      .addFunctions({ types, addSpaceAfterFunction: options.addSpaceAfterOperator ?? false })
-      .build();
-  }
-
+  result: ExpressionType,
+  { parameter, context }: { parameter?: FunctionParameter; context: ExpressionContext }
+): ISuggestionItem[] => {
+  const { written } = input.position;
+  const { options = {}, location } = input.request;
   const preferred = [options.preferredExpressionType ?? []].flat();
-  const isLiteral = [written.slice(0, index), after].map((side) =>
-    isLiteralAlone(side.filter((item) => item.kind === 'rule'))
-  );
-  const fits = getMatchingSignatures(definition.signatures, [leftType, rightType], isLiteral, true);
-
-  // The operands do not fit the operator, as a string joined to a condition: an operator
-  // that makes of the right operand what the role asks for.
-  if (!fits.length) {
-    const canConvert =
-      preferred.length > 0 && !preferred.includes(rightType) && !UNTYPED.includes(rightType);
-
-    return canConvert
-      ? builder.addOperators({ leftParamType: rightType, returnTypes: preferred }).build()
-      : [];
-  }
-
-  // What the operator gives; when its right operand is a function call, what the call gives.
-  const closedCall = lastWritten?.class === 'closer' && lastWritten.ancestors.at(-1);
-  const result =
-    closedCall && closedCall.id === FUNCTION_CALL
-      ? typeOf(closedCall)
-      : typeOf({ ...left, end: right.end });
+  const builder = new SuggestionBuilder(context);
   const [first] = written;
   const isInBrackets = first.class === 'opener' && written.at(-1)?.class === 'closer';
   const ownRule = parameter
@@ -430,6 +357,163 @@ const decideAfterOperator = async (
   return builder.build();
 };
 
+/**
+ * After an operator, outside a function call. While the operator lacks its right operand: the
+ * columns, literals and functions of the types it takes there for the type on its left. Once
+ * it has both: the operators that can follow what it gives.
+ */
+const decideAfterOperator = async (
+  input: DecisionInput,
+  call?: FunctionCallPosition
+): Promise<ISuggestionItem[] | undefined> => {
+  const { ir, position, request, typeOf } = input;
+  const { options = {}, cursorPosition } = request;
+  const { lastOperator, written } = position;
+  // An operator typed in full is the word, as `AND` in `a AND`: nothing is written after it.
+  const typedOperator = lastOperator ? undefined : ir.word?.keyword && ir.word.text.toLowerCase();
+  const name = lastOperator?.text.toLowerCase() ?? typedOperator ?? '';
+  const index = lastOperator ? written.indexOf(lastOperator) : written.length;
+  // `NOT` right before the operator is part of it, as in `a NOT LIKE b`.
+  const isNegated = written[index - 1]?.text.toLowerCase() === NEGATION && name !== NEGATION;
+  const before = written[index - (isNegated ? 2 : 1)];
+  const definition = getFunctionDefinition(isNegated ? `${NEGATION} ${name}` : name);
+  const following = written.slice(index + 1);
+
+  const hasOwnRule = name === LIST_OPERATOR || PATTERN_OPERATORS.includes(name);
+
+  // A null check has its own rule. Inside a call, so have the operators that take a list or
+  // a pattern: those are not decided here yet.
+  if (!definition || WITH_OWN_RULES.includes(name) || (call && hasOwnRule)) {
+    return undefined;
+  }
+
+  // Inside a call, the definition of the function says what its argument may be.
+  const parameter = call && input.getParameter(call, false);
+
+  if (call && !parameter) {
+    return [];
+  }
+
+  const context =
+    call && parameter ? toCallContext(input, call, parameter) : toBuilderContext(input);
+
+  // An operator before its operand, as `NOT a`: what follows is by what the operand gives.
+  if (!before) {
+    const [first] = following;
+    const last = following.at(-1);
+
+    return first && last
+      ? offerAfterResult(
+          input,
+          getResultType(typeOf, { start: first.start, end: last.end }, last),
+          {
+            parameter,
+            context,
+          }
+        )
+      : undefined;
+  }
+
+  // What follows the operator and is still its operand: a bracket that closes it is not.
+  const after = lastOperator ? following.filter(isOperandOf(lastOperator, before)) : [];
+  const lastWritten = after.at(-1);
+
+  // The operators that take a list or a pattern have rules of their own, outside a call.
+  if (lastOperator && hasOwnRule) {
+    const rule = { ...input, context };
+    const own =
+      name === LIST_OPERATOR
+        ? await decideIn(rule, lastOperator, following)
+        : decideLike(rule, name, following);
+
+    if (own) {
+      return own;
+    }
+  }
+
+  // The left operand: what the operator applies to, or all that is written before a typed one.
+  const left = lastOperator
+    ? getOperandRange(lastOperator, before)
+    : { start: position.start ?? before.start, end: before.end };
+  const right = lastWritten
+    ? getOperandRange(lastOperator ?? lastWritten, lastWritten)
+    : lastOperator && ir.word && { start: ir.word.start, end: cursorPosition };
+  const leftType = typeOf(left);
+  const rightType = right ? typeOf(right) : 'unknown';
+  const builder = new SuggestionBuilder(context);
+
+  // The match operator takes a constant of the type its left operand asks for.
+  if (name === MATCH && !right) {
+    const matched = input.getParameter({ start: left.start, name }, true);
+    const constants = matched
+      ? new SuggestionBuilder(context)
+          .addConstants({
+            paramDefinitions: matched.paramDefinitions,
+            shouldAddComma: false,
+            hasMoreMandatoryArgs: matched.hasMoreMandatoryArgs,
+            preferredPlaceholderType: matched.firstArgumentType,
+            includeValuesControl: true,
+            includeConstantFunctions: false,
+          })
+          .build()
+      : [];
+
+    if (constants.length) {
+      return constants;
+    }
+  }
+
+  // The right operand is missing, or is a name that is still being typed.
+  if (!right || rightType === 'unknown') {
+    // A condition is joined to any operand: the next condition starts with one.
+    const types =
+      leftType === 'boolean' && LOGICAL.includes(name)
+        ? (['any'] as FunctionParameterType[])
+        : getRightTypes(definition.signatures, leftType);
+
+    await builder.addFields({
+      types,
+      values: true,
+      addSpaceAfterField: options.addSpaceAfterOperator ?? false,
+      openSuggestions: options.openSuggestions ?? false,
+    });
+
+    return builder
+      .addLiterals({
+        types,
+        includeDateLiterals: true,
+        includeCompatibleLiterals: false,
+        addComma: false,
+        advanceCursorAndOpenSuggestions: options.openSuggestions ?? false,
+      })
+      .addFunctions({ types, addSpaceAfterFunction: options.addSpaceAfterOperator ?? false })
+      .build();
+  }
+
+  const preferred = [options.preferredExpressionType ?? []].flat();
+  const isLiteral = [written.slice(0, index), after].map((side) =>
+    isLiteralAlone(side.filter((item) => item.kind === 'rule'))
+  );
+  const fits = getMatchingSignatures(definition.signatures, [leftType, rightType], isLiteral, true);
+
+  // The operands do not fit the operator, as a string joined to a condition: an operator
+  // that makes of the right operand what the role asks for.
+  if (!fits.length) {
+    const canConvert =
+      preferred.length > 0 && !preferred.includes(rightType) && !UNTYPED.includes(rightType);
+
+    return canConvert
+      ? builder.addOperators({ leftParamType: rightType, returnTypes: preferred }).build()
+      : [];
+  }
+
+  // What the operator gives; when its right operand is a function call, what the call gives.
+  return offerAfterResult(input, getResultType(typeOf, { ...left, end: right.end }, lastWritten), {
+    parameter,
+    context,
+  });
+};
+
 const TIME_TYPES: readonly string[] = ['time_duration', 'date_period'];
 
 /**
@@ -449,7 +533,7 @@ const decideAfterOperandInCall = (
   if (
     !last ||
     position.start === undefined ||
-    brackets.some((item) => item.class === 'separator') ||
+    brackets.some(isOwnSeparator) ||
     (position.operator !== undefined && position.operator !== NULL_CHECK_END)
   ) {
     return undefined;
@@ -557,6 +641,44 @@ const decideArgumentStart = async (
 };
 
 /**
+ * Inside a string. A query in another language, as the one KQL takes, has suggestions of its
+ * own from the editor; any other string has none.
+ */
+const decideInString = async (input: DecisionInput): Promise<ISuggestionItem[]> =>
+  (await getKqlSuggestionsIfApplicable(toBuilderContext(input))) ?? [];
+
+/**
+ * Inside the named parameters of a function, `{ "name": value }`: the names its definition
+ * lists and the values each takes.
+ */
+const decideInMap = (input: DecisionInput): ISuggestionItem[] | undefined => {
+  const { call } = input.position;
+  const definition = call && getFunctionDefinition(call.name);
+  const listed = definition && extractSignatureMapParams(definition.signatures);
+  const parameters = listed ? Object.entries(parseMapParams(listed)) : [];
+
+  if (!parameters.length) {
+    return undefined;
+  }
+
+  const { innerText } = toBuilderContext(input);
+
+  return getCommandMapExpressionSuggestions(
+    innerText,
+    Object.fromEntries(
+      parameters.map(([name, parameter]) => [
+        name,
+        {
+          ...parameter,
+          suggestions: parameter.values.map((value) => buildMapValueCompleteItem(value)),
+        },
+      ])
+    ),
+    true
+  );
+};
+
+/**
  * The items for a position inside an expression, decided from the grammar position. Returns
  * nothing for a position this layer does not decide yet.
  */
@@ -567,6 +689,12 @@ export const decideExpression = async (
 
   if (!DECIDED_KINDS.has(kind)) {
     return undefined;
+  }
+  if (kind === 'in_string') {
+    return decideInString(input);
+  }
+  if (kind === 'in_map') {
+    return decideInMap(input);
   }
   if (call) {
     switch (kind) {
