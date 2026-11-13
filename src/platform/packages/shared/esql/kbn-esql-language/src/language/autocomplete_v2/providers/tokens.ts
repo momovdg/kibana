@@ -14,30 +14,68 @@ import {
 } from '../../../commands/registry/complete_items';
 import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplete/helpers';
 import type { ISuggestionItem } from '../../../commands/registry/types';
-import type { Follower } from '../../../esql_js_sim/grammar';
+import { getTokenSuccessors, type Follower } from '../../../esql_js_sim/grammar';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 
+const MAP_OPENER = '{';
+
+const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggestionItem =>
+  withAutoSuggest({
+    label,
+    text,
+    ...(asSnippet && { asSnippet }),
+    kind: 'Reference',
+    detail: label.charAt(0) + label.slice(1).toLowerCase(),
+    category: SuggestionCategory.LANGUAGE_KEYWORD,
+  });
+
+/**
+ * The items for a keyword, by what the grammar allows right after it:
+ *
+ * - nothing has to follow it (`ASC`): the keyword alone;
+ * - only other keywords can (`NULLS`, then `FIRST` or `LAST`): the keywords together, as the
+ *   first one alone says nothing;
+ * - only a map can (`WITH`): the keyword with the braces of the map, the cursor inside;
+ * - anything else has to follow (`BY`): the keyword and a space.
+ */
+const provideKeyword = ({ text = '', token, id }: Follower): ISuggestionItem[] => {
+  const label = text.toUpperCase();
+  // The rule that takes the token is the first part of the place: `rule>TOKEN` or `rule.label`.
+  const [rule] = id?.split(/[.>]/) ?? [];
+  const { tokens: next, canEnd } = rule
+    ? getTokenSuccessors(rule, token)
+    : { tokens: [], canEnd: false };
+
+  if (canEnd) {
+    return [toKeywordItem(label, label)];
+  }
+  if (next.length === 1 && next[0].text === MAP_OPENER) {
+    return [toKeywordItem(label, `${label} ${MAP_OPENER} $0 }`, true)];
+  }
+  if (next.length > 0 && next.every((successor) => successor.class === 'keyword')) {
+    return next.map((successor) => {
+      const joined = `${label} ${successor.text?.toUpperCase()}`;
+      const ends = getTokenSuccessors(rule, successor.token).canEnd;
+
+      return toKeywordItem(joined, ends ? joined : `${joined} `);
+    });
+  }
+
+  return [toKeywordItem(label, `${label} `)];
+};
+
 /** The item for a token with a fixed text, by the class of the token alone. */
-export const provideToken = ({ class: tokenClass, text = '' }: Follower): ISuggestionItem[] => {
+export const provideToken = (follower: Follower): ISuggestionItem[] => {
+  const { class: tokenClass, text = '' } = follower;
+
   switch (tokenClass) {
     case 'pipe':
       return [pipeCompleteItem];
     // A separator is followed by a space, so the next item of the list can be typed at once.
     case 'separator':
       return [withAutoSuggest({ ...commaCompleteItem, text: `${text} ` })];
-    case 'keyword': {
-      const label = text.toUpperCase();
-
-      return [
-        withAutoSuggest({
-          label,
-          text: `${label} `,
-          kind: 'Reference',
-          detail: label.charAt(0) + label.slice(1).toLowerCase(),
-          category: SuggestionCategory.LANGUAGE_KEYWORD,
-        }),
-      ];
-    }
+    case 'keyword':
+      return provideKeyword(follower);
     // Operators, brackets and statement ends are offered with the arguments they belong to.
     default:
       return [];

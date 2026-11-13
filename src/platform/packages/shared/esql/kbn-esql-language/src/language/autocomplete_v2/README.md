@@ -29,7 +29,10 @@ What the engine offers today:
 
 - Command names, with the license, tier, time-series and "hidden after" gates of the
   registered commands.
-- Keywords, the pipe, the separator of a list and the next line.
+- Keywords, the pipe, the separator of a list and the next line. A keyword is presented by
+  what the grammar allows right after it (`getTokenSuccessors`): alone when nothing has to
+  follow (`ASC`), joined with the keywords that have to follow (`NULLS FIRST`), with the
+  braces of a map (`WITH { $0 }`), or with a space when anything else has to follow (`BY `).
 - Arguments with the roles `column` (by type, each listed once where the role says so),
   `new_name` (a free name with its assignment), `constant` (its allowed values), `entity`,
   `map` (the keys not used yet, and the values of the key before the cursor), `option_name`
