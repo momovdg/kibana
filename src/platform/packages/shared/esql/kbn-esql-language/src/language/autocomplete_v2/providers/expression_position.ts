@@ -32,7 +32,7 @@ export type ExpressionPositionKind =
 export interface ExpressionPosition {
   kind: ExpressionPositionKind;
   /** The function call the cursor is directly in, and which of its arguments, from zero. */
-  call?: { name: string; argument: number };
+  call?: FunctionCallPosition;
   /** Where the expression the cursor is in starts: the argument of the call, or the whole. */
   start?: number;
   /** What is written of that expression, in order. */
@@ -41,6 +41,15 @@ export interface ExpressionPosition {
   operator?: string;
   /** That operator, as it is written. */
   lastOperator?: WrittenArgument;
+}
+
+export interface FunctionCallPosition {
+  name: string;
+  argument: number;
+  /** Where the call starts, at its name. */
+  start: number;
+  /** The names of the calls around the cursor, outermost first, this one last. */
+  enclosing: string[];
 }
 
 const CAST = '::';
@@ -88,7 +97,21 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
     : [];
   const separators = inCall.filter((item) => item.class === 'separator');
   const name = inCall.find((item) => partOf(item) === 'function_name')?.text.toLowerCase();
-  const call = callPlace && name ? { name, argument: separators.length } : undefined;
+  const nameIn = (place: WrittenAncestor): string | undefined =>
+    ir.written
+      .find((item) => isSame(item.ancestors.at(-1), place) && partOf(item) === 'function_name')
+      ?.text.toLowerCase();
+  const call =
+    callPlace && name
+      ? {
+          name,
+          argument: separators.length,
+          start: callPlace.start,
+          enclosing: around
+            .filter((place) => place.id === FUNCTION_CALL && place.open && !isClosed(place))
+            .flatMap((place) => nameIn(place) ?? []),
+        }
+      : undefined;
   // The expression starts after the bracket or the comma of the call, or where the whole does.
   const from = callPlace
     ? (separators.at(-1) ?? inCall.find(({ kind }) => kind === 'token'))?.end
