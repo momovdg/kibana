@@ -17,7 +17,7 @@ import {
 } from '../../../esql_js_sim/definitions';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { buildConstantsDefinitions } from '../../../commands/definitions/utils/literals';
-import { SUGGESTED_VALUES } from '../presentation';
+import { getSuggestedValues } from '../presentation';
 import type { SuggestionContext } from '../types';
 import { ASSIGNMENT, roleIdOf } from '../written';
 
@@ -82,7 +82,7 @@ export const provideConstant = (
   context: SuggestionContext
 ): ISuggestionItem[] => {
   const suffix = movesOn(context) ? ' ' : '';
-  const suggested = resolved.id === undefined ? undefined : SUGGESTED_VALUES[resolved.id];
+  const suggested = resolved.id === undefined ? undefined : getSuggestedValues()[resolved.id];
 
   // Values the editor suggests where the language allows any: the cursor moves on after one.
   if (!role.allowedValues && suggested) {

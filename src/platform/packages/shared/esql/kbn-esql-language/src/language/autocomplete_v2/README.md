@@ -134,6 +134,9 @@ What is here so far:
   editor's callbacks, and `EntityRegistry`, one definition per kind. The registry itself comes
   with the engine.
 - `suggest.test.ts`: the engine's own tests, by kind of request and not by command.
+- `load_order.test.ts`: the package has import cycles through its entry, so a module of the
+  engine may load before the modules it imports are ready. The test keeps every read of a
+  module outside the engine inside a function, where it runs after everything has loaded.
 - `written.ts`: the small questions the engine asks about what is written (the same place,
   the part of an expression, a name without its quotes). They read the Cursor IR. The
   predicates of `@elastic/esql` with similar names (`isColumn`, `isAssignment`) are about
