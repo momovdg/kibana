@@ -9,7 +9,7 @@
 
 // The public entry of the simulated `@elastic/esql-grammar` package. Kibana code imports only this file.
 export { describeCommands } from './cursor_ir/describe_commands';
-export { locate } from './cursor_ir/locate';
+export { getValuePlaceholder, locate } from './cursor_ir/locate';
 export type {
   CallSiteId,
   CursorIR,

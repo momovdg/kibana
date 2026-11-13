@@ -20,6 +20,10 @@ import { isExpressionComplete } from '../../../commands/definitions/utils/expres
 import { getUnmappedFieldsStrategy } from '../../../commands/definitions/utils/settings';
 import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplete/helpers';
 import {
+  getDateHistogramCompletionItem,
+  getTimeseriesDateHistogramCompletionItem,
+} from '../../../commands/registry/complete_items';
+import {
   Location,
   type ESQLColumnData,
   type ICommandCallbacks,
@@ -342,10 +346,21 @@ export const provideExpression = async (
   });
   const isComplete = isExpressionComplete(expressionType, text.slice(0, offset));
   const hasItsType = !role.completeAs || expressionType === role.completeAs;
+  // Where a grouping starts, the editor also offers a ready-made date histogram.
+  const startsGrouping = role.mode === 'grouping' && position.kind === 'empty' && !position.call;
+  const histogram = startsGrouping
+    ? [
+        (context.sourceIsTimeSeries
+          ? getTimeseriesDateHistogramCompletionItem
+          : getDateHistogramCompletionItem)(
+          (await callbacks?.getPreferences?.())?.histogramBarTarget
+        ),
+      ]
+    : [];
 
   return {
     entry,
-    items,
+    items: [...items, ...histogram],
     isUnfinished: expressionRoot !== undefined && !(isComplete && hasItsType),
   };
 };

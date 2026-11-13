@@ -17,6 +17,8 @@ import {
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
+import { buildConstantsDefinitions } from '../../../commands/definitions/utils/literals';
+import { SUGGESTED_VALUES } from '../presentation';
 import type { SuggestionContext } from '../types';
 
 const ASSIGNMENT = '=';
@@ -81,9 +83,18 @@ export const provideNewName = (
 /** The values a constant can take, when its role lists them. */
 export const provideConstant = (
   role: ConstantRole,
+  resolved: ResolvedRole,
   context: SuggestionContext
 ): ISuggestionItem[] => {
   const suffix = movesOn(context) ? ' ' : '';
+  const suggested = resolved.id === undefined ? undefined : SUGGESTED_VALUES[resolved.id];
+
+  // Values the editor suggests where the language allows any: the cursor moves on after one.
+  if (!role.allowedValues && suggested) {
+    return buildConstantsDefinitions([...suggested], '', {
+      advanceCursorAndOpenSuggestions: true,
+    });
+  }
 
   return (role.allowedValues ?? []).map((value) => ({
     label: value,

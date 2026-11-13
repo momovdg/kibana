@@ -10,6 +10,7 @@
 import {
   assignCompletionItem,
   commaCompleteItem,
+  headerSemiColonCompleteItem,
   newLineCompleteItem,
   pipeCompleteItem,
 } from '../../../commands/registry/complete_items';
@@ -99,6 +100,9 @@ export const provideToken = (follower: Follower): ISuggestionItem[] => {
       return [withAutoSuggest({ ...commaCompleteItem, text: `${text} ` })];
     case 'keyword':
       return provideKeyword(follower);
+    // The end of a header statement moves to the next line, where the next one starts.
+    case 'terminator':
+      return [headerSemiColonCompleteItem];
     // Operators, brackets and statement ends are offered with the arguments they belong to.
     default:
       return [];
