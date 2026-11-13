@@ -13,7 +13,6 @@ import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../../commands/definitions/cons
 import {
   buildFieldsDefinitionsWithMetadata,
   getExpressionType,
-  suggestForExpression,
 } from '../../../commands/definitions/utils';
 import { buildExpressionFunctionParameterContext } from '../../../commands/definitions/utils/autocomplete/expressions/utils';
 import type { SuggestForExpressionParams } from '../../../commands/definitions/utils/autocomplete/expressions/types';
@@ -331,12 +330,16 @@ export const provideExpression = async (
       ? buildExpressionFunctionParameterContext(call, fullContext, startsArgument)
       : null;
   };
-  // The position comes from the grammar. A position that is not decided here yet still goes
-  // to the expression engine of the current flow.
+  // The position comes from the grammar, and so does every decision about what to offer.
   const position = describeExpressionPosition(ir, entry);
-  const items =
-    (await decideExpression({ ir, position, request, expressionType, typeOf, getParameter })) ??
-    (await suggestForExpression(request)).suggestions;
+  const items = await decideExpression({
+    ir,
+    position,
+    request,
+    expressionType,
+    typeOf,
+    getParameter,
+  });
   const isComplete = isExpressionComplete(expressionType, text.slice(0, offset));
   const hasItsType = !role.completeAs || expressionType === role.completeAs;
 
