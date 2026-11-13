@@ -109,11 +109,13 @@ const getWrittenStart = (ir: CursorIR, entry: CallSiteId): number | undefined =>
 
 /**
  * The node of the command for the expression that starts at `start`: the first one from there
- * on, and the widest of those that start together. Brackets around it belong to no node.
+ * on, and the widest of those that start together. Brackets around it belong to no node. With
+ * an `end`, the widest that ends before it: the node of what is written between the two.
  */
 const findExpressionRoot = (
   command: ESQLAstAllCommands,
-  start: number | undefined
+  start: number | undefined,
+  end: number = Infinity
 ): ESQLSingleAstItem | undefined => {
   if (start === undefined) {
     return undefined;
@@ -121,7 +123,11 @@ const findExpressionRoot = (
 
   const candidates = Walker.findAll(
     command,
-    (node) => node !== command && node.location !== undefined && node.location.min >= start
+    (node) =>
+      node !== command &&
+      node.location !== undefined &&
+      node.location.min >= start &&
+      node.location.max < end
   ) as ESQLSingleAstItem[];
 
   return candidates.reduce<ESQLSingleAstItem | undefined>((best, node) => {
@@ -299,11 +305,18 @@ export const provideExpression = async (
     fullContext.unmappedFieldsStrategy,
     fullContext.isTimeseriesSource === true
   );
+  const typeOf = ({ start, end }: { start: number; end: number }) =>
+    getExpressionType(
+      findExpressionRoot(command, start, end),
+      fullContext.columns,
+      fullContext.unmappedFieldsStrategy,
+      fullContext.isTimeseriesSource === true
+    );
   // The position comes from the grammar. A position that is not decided here yet still goes
   // to the expression engine of the current flow.
   const position = describeExpressionPosition(ir, entry);
   const items =
-    (await decideExpression({ ir, position, request, expressionType })) ??
+    (await decideExpression({ ir, position, request, expressionType, typeOf })) ??
     (await suggestForExpression(request)).suggestions;
   const isComplete = isExpressionComplete(expressionType, text.slice(0, offset));
   const hasItsType = !role.completeAs || expressionType === role.completeAs;
