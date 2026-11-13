@@ -22,15 +22,32 @@ import {
   patternMatchOperators,
 } from '../../../commands/definitions/all_operators';
 import {
+  FunctionDefinitionTypes,
   isArrayType,
+  isNumericType,
   isParameterType,
   type FunctionParameterType,
   type SupportedDataType,
 } from '../../../commands/definitions/types';
+import { shouldSuggestOperators } from '../../../commands/definitions/utils/autocomplete/expressions/positions/after_complete/should_suggest_operators';
 import { getFunctionDefinition } from '../../../commands/definitions/utils/functions';
+import { getTimeUnitLiterals } from '../../../commands/definitions/utils/literals';
+import {
+  canAcceptMoreArgs,
+  doesParamAcceptType,
+  isAmbiguousPosition,
+  isTypeAcceptedAtPosition,
+} from '../../../commands/definitions/utils/signatures/signature_analyzer';
+import {
+  hasArbitraryExpressionSignature,
+  hasVariadicSignature,
+} from '../../../commands/definitions/utils/signatures/traits';
 import { getOperatorSuggestion } from '../../../commands/definitions/utils/operators';
 import { getMatchingSignatures } from '../../../commands/definitions/utils/signatures/matchers';
-import { commaWithAutoSuggestCompleteItem } from '../../../commands/registry/complete_items';
+import {
+  commaCompleteItem,
+  commaWithAutoSuggestCompleteItem,
+} from '../../../commands/registry/complete_items';
 import { EXPRESSION_PARTS, FUNCTION_CALL } from '../../../esql_js_sim/definitions';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
@@ -88,6 +105,24 @@ const toBuilderContext = ({ ir, request }: DecisionInput): ExpressionContext => 
     isCursorFollowedByParens: ir.next?.token === OPENING_BRACKET,
   },
 });
+
+/** The same, for a position inside the call of a function: with what its definition says. */
+const toCallContext = (
+  input: DecisionInput,
+  call: FunctionCallPosition,
+  parameter: NonNullable<FunctionParameter>
+): ExpressionContext => {
+  const context = toBuilderContext(input);
+
+  return {
+    ...context,
+    options: {
+      ...context.options,
+      functionParameterContext: parameter,
+      parentFunctionNames: call.enclosing,
+    },
+  };
+};
 
 /**
  * Where an operand starts and the expression is not inside a function call: the columns and
@@ -231,7 +266,8 @@ const getRightTypes = (
  * it has both: the operators that can follow what it gives.
  */
 const decideAfterOperator = async (
-  input: DecisionInput
+  input: DecisionInput,
+  call?: FunctionCallPosition
 ): Promise<ISuggestionItem[] | undefined> => {
   const { ir, position, request, typeOf } = input;
   const { options = {}, location, cursorPosition } = request;
@@ -256,7 +292,16 @@ const decideAfterOperator = async (
     : ir.word && { start: ir.word.start, end: cursorPosition };
   const leftType = typeOf(left);
   const rightType = right ? typeOf(right) : 'unknown';
-  const builder = new SuggestionBuilder(toBuilderContext(input));
+  // Inside a call, the definition of the function says what its argument may be.
+  const parameter = call && input.getParameter(call, false);
+
+  if (call && !parameter) {
+    return [];
+  }
+
+  const context =
+    call && parameter ? toCallContext(input, call, parameter) : toBuilderContext(input);
+  const builder = new SuggestionBuilder(context);
 
   // The right operand is missing, or is a name that is still being typed.
   if (!right || rightType === 'unknown') {
@@ -303,30 +348,156 @@ const decideAfterOperator = async (
   }
 
   // What the operator gives; when its right operand is a function call, what the call gives.
-  const call = lastWritten?.class === 'closer' && lastWritten.ancestors.at(-1);
+  const closedCall = lastWritten?.class === 'closer' && lastWritten.ancestors.at(-1);
   const result =
-    call && call.id === FUNCTION_CALL ? typeOf(call) : typeOf({ ...left, end: right.end });
+    closedCall && closedCall.id === FUNCTION_CALL
+      ? typeOf(closedCall)
+      : typeOf({ ...left, end: right.end });
   const [first] = written;
   const isInBrackets = first.class === 'opener' && written.at(-1)?.class === 'closer';
-  const allowed =
-    result === 'boolean' && isInBrackets
+  const ownRule = parameter
+    ? shouldSuggestOperators({
+        expressionType: result,
+        functionParameterContext: parameter,
+        ctx: context,
+      })
+    : undefined;
+  const allowedByType =
+    result === 'boolean' && isInBrackets && !parameter
       ? namesOf([...logicalOperators, ...nullCheckOperators])
-      : getOperatorsAfter(result, preferred) ??
-        (result === 'boolean'
-          ? namesOf(
-              logicalOperators.filter((operator) => operator.locationsAvailable.includes(location))
-            )
-          : undefined);
+      : ownRule
+      ? ownRule.allowedOperators
+      : getOperatorsAfter(result, preferred);
+  const allowed =
+    allowedByType ??
+    (result === 'boolean'
+      ? namesOf(
+          logicalOperators.filter((operator) => operator.locationsAvailable.includes(location))
+        )
+      : undefined);
 
-  if (allowed?.length !== 0) {
+  if ((ownRule?.shouldSuggest ?? true) && allowed?.length !== 0) {
     builder.addOperators({
       leftParamType: UNTYPED.includes(result) ? 'any' : result,
       ignored: [ASSIGNMENT, MATCH],
       allowed,
     });
   }
+  // The result can be a whole argument: the next one can follow.
+  if (parameter) {
+    builder.addCommaIfNeeded({
+      position: 'after_complete',
+      typeMatches: doesParamAcceptType(parameter, result, false),
+      isLiteral: false,
+      hasMoreParams: canAcceptMoreArgs(parameter),
+      isVariadic: hasVariadicSignature(parameter.signatures),
+      hasMoreMandatoryArgs: parameter.hasMoreMandatoryArgs,
+      isExpressionHeavy: hasArbitraryExpressionSignature(
+        parameter.functionDefinition?.signatures ?? []
+      ),
+      isCursorFollowedByComma: false,
+    });
+  }
 
   return builder.build();
+};
+
+const TIME_TYPES: readonly string[] = ['time_duration', 'date_period'];
+
+/**
+ * After a complete operand inside a function call: the unit of a time span after its number,
+ * or the operators the function lets its argument go on with, and the comma when the operand
+ * can be the whole argument.
+ */
+const decideAfterOperandInCall = (
+  input: DecisionInput,
+  call: FunctionCallPosition
+): ISuggestionItem[] | undefined => {
+  const { position, request, typeOf, ir } = input;
+  const brackets = position.written.filter((item) => item.kind === 'token');
+  const last = position.written.at(-1);
+
+  // A list in brackets and a null check that is not finished are not decided here yet.
+  if (
+    !last ||
+    position.start === undefined ||
+    brackets.some((item) => item.class === 'separator') ||
+    (position.operator !== undefined && position.operator !== NULL_CHECK_END)
+  ) {
+    return undefined;
+  }
+
+  const parameter = input.getParameter(call, false);
+
+  if (!parameter) {
+    return [];
+  }
+
+  const isFollowedByComma = ir.next?.class === 'separator';
+
+  // A null check is a complete condition: another one can be joined, or the argument ends.
+  if (position.operator === NULL_CHECK_END) {
+    const canEnd =
+      !isFollowedByComma && (isAmbiguousPosition(parameter) || canAcceptMoreArgs(parameter));
+
+    return [...logicalOperators.map(getOperatorSuggestion), ...(canEnd ? [commaCompleteItem] : [])];
+  }
+
+  const type = typeOf({ start: position.start, end: last.end });
+
+  if (type === 'unknown') {
+    return [];
+  }
+
+  const isLiteral = isLiteralAlone(position.written.filter((item) => item.kind === 'rule'));
+  const { hasMoreMandatoryArgs, functionDefinition, paramDefinitions, signatures } = parameter;
+  const takesTime = paramDefinitions.some((definition) => TIME_TYPES.includes(definition.type));
+
+  // A number where a time span is taken needs its unit.
+  if (isLiteral && isNumericType(type) && takesTime) {
+    const isOperator = functionDefinition?.type === FunctionDefinitionTypes.OPERATOR;
+
+    return getTimeUnitLiterals(hasMoreMandatoryArgs && !isOperator, hasMoreMandatoryArgs);
+  }
+
+  const context = toCallContext(input, call, parameter);
+  const builder = new SuggestionBuilder(context);
+  const rule = shouldSuggestOperators({
+    expressionType: type,
+    functionParameterContext: parameter,
+    ctx: context,
+  });
+  // A string, an IP or a version that is written out takes no operator.
+  const canExtend = !isLiteral || isNumericType(type) || type === 'boolean';
+
+  if (rule.shouldSuggest && canExtend) {
+    builder.addOperators({
+      leftParamType: type === 'param' ? undefined : type,
+      allowed:
+        isLiteral && type === 'boolean'
+          ? namesOf(
+              logicalOperators.filter((operator) =>
+                operator.locationsAvailable.includes(request.location)
+              )
+            )
+          : rule.allowedOperators,
+      ignored: [ASSIGNMENT],
+    });
+  }
+
+  return builder
+    .addCommaIfNeeded({
+      position: 'after_complete',
+      typeMatches: isTypeAcceptedAtPosition(parameter, type, isLiteral),
+      isLiteral,
+      hasMoreParams: canAcceptMoreArgs(parameter),
+      isVariadic: hasVariadicSignature(signatures),
+      isAmbiguousPosition: isAmbiguousPosition(parameter),
+      isExpressionHeavy: hasArbitraryExpressionSignature(functionDefinition?.signatures ?? []),
+      expressionType: type,
+      isCursorFollowedByComma: isFollowedByComma,
+    })
+    .build();
 };
 
 /**
@@ -370,8 +541,14 @@ export const decideExpression = async (
     return undefined;
   }
   if (call) {
-    // The other positions inside a function call are not decided here yet.
-    return kind === 'empty' ? decideArgumentStart(input, call) : undefined;
+    switch (kind) {
+      case 'after_operand':
+        return decideAfterOperandInCall(input, call);
+      case 'after_operator':
+        return decideAfterOperator(input, call);
+      default:
+        return decideArgumentStart(input, call);
+    }
   }
 
   switch (kind) {
