@@ -300,6 +300,10 @@ describe('suggest (v2)', () => {
       });
     });
 
+    it('offers subqueries where a bracket can only open one, with the terminator they need', async () => {
+      expect((await textsAt('LET s = ')).sort()).toEqual(['(FROM $0);', '(ROW $0);', '(TS $0);']);
+    });
+
     it('offers a ready-made date histogram where a grouping starts', async () => {
       const texts = await textsAt('FROM a | STATS COUNT() BY ');
 

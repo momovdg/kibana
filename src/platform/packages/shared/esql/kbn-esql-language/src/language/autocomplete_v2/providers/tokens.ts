@@ -9,6 +9,7 @@
 
 import {
   assignCompletionItem,
+  buildSubqueryCompleteItems,
   commaCompleteItem,
   headerSemiColonCompleteItem,
   newLineCompleteItem,
@@ -16,7 +17,13 @@ import {
 } from '../../../commands/registry/complete_items';
 import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplete/helpers';
 import type { ISuggestionItem } from '../../../commands/registry/types';
-import { getTokenSuccessors, type Follower } from '../../../esql_js_sim/grammar';
+import {
+  getCommandStarts,
+  getTokenSuccessors,
+  locate,
+  type Follower,
+} from '../../../esql_js_sim/grammar';
+import { esqlCommandRegistry } from '../../../commands/registry';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import type { SuggestionContext } from '../types';
 
@@ -65,6 +72,56 @@ const provideKeyword = ({ text = '', token, id }: Follower): ISuggestionItem[] =
   }
 
   return [toKeywordItem(label, `${label} `)];
+};
+
+let commandStarts: Set<string> | undefined;
+
+/** The tokens a command can start with, read from the grammar. */
+const getStartTokens = (): Set<string> => {
+  commandStarts ??= new Set(
+    Object.values(getCommandStarts()).flatMap((starts) => starts.map(({ token }) => token))
+  );
+
+  return commandStarts;
+};
+
+/** The bracket opens a subquery: only the name of a command can follow it. */
+export const opensSubquery = ({ class: tokenClass, token, id }: Follower): boolean => {
+  const [rule] = id?.split(/[.>]/) ?? [];
+  const next = tokenClass === 'opener' && rule ? getTokenSuccessors(rule, token).tokens : [];
+
+  return next.length > 0 && next.every((successor) => getStartTokens().has(successor.token));
+};
+
+/**
+ * The openings of a subquery, one per command a subquery can start with. When the subquery
+ * ends its statement, as the one a name is bound to, the terminator comes with it.
+ */
+export const provideSubqueryOpener = ({
+  text,
+  offset,
+  ir,
+}: SuggestionContext): ISuggestionItem[] => {
+  // A subquery inside a subquery is not offered.
+  if (ir.enclosingCommands.length > 0) {
+    return [];
+  }
+
+  const sources = esqlCommandRegistry
+    .getAllCommands({ isStartingSubquery: true })
+    .map(({ name }) => name);
+  const [first] = sources;
+  // What has to follow a whole subquery here: one is written and the grammar is asked.
+  const closed = `${text.slice(0, offset)}(${first?.toUpperCase()} a) `;
+  const after = first ? locate(closed, closed.length) : undefined;
+  const [only] = after?.followers ?? [];
+  const terminator =
+    after?.followers.length === 1 && only.class === 'terminator' ? only.text ?? '' : '';
+
+  return buildSubqueryCompleteItems({ previewCommands: sources }).map((item) => ({
+    ...item,
+    text: `${item.text}${terminator}`,
+  }));
 };
 
 const ASSIGNMENT = '=';
