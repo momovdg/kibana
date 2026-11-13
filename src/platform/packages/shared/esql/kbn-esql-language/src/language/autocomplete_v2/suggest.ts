@@ -9,12 +9,7 @@
 
 import type { ESQLCallbacks } from '@kbn/esql-types';
 import type { ISuggestionItem } from '../../commands/registry/types';
-import {
-  EXPRESSION_PARTS,
-  type ArgumentRole,
-  type ResolvedRole,
-  type RoleKind,
-} from '../../esql_js_sim/definitions';
+import { type ArgumentRole, type ResolvedRole, type RoleKind } from '../../esql_js_sim/definitions';
 import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/grammar';
 import { createContext } from './context';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
@@ -41,6 +36,7 @@ import {
 } from './providers/tokens';
 import { resolve } from './resolve';
 import type { SuggestionContext, SuggestionRequest } from './types';
+import { partOf } from './written';
 
 const NOTHING_APPLIES: readonly string[] = ['inside_comment', 'invalid'];
 
@@ -67,7 +63,7 @@ const provideForRole = async (
     // The value takes the role its name gives it. A map is offered only inside a map, and
     // the other roles only outside one.
     case 'dependent_value': {
-      const isInMap = EXPRESSION_PARTS[argument.id] !== undefined;
+      const isInMap = partOf(argument) !== undefined;
       const candidates = dependentRoles(role, context);
       const roles = candidates.filter((candidate) => (candidate.kind === 'map') === isInMap);
       const items = await Promise.all(
