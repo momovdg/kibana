@@ -108,9 +108,21 @@ describe('expression decisions', () => {
     expect(await engineCallsAt('FROM d | EVAL a = CASE(n > 1 ')).toBe(0);
   });
 
+  it('decides NOT, IS, LIKE and IN without that engine', async () => {
+    expect(await engineCallsAt('FROM d | WHERE NOT ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE k NOT ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE k IS ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE k IS NOT N')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE k LIKE ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE k NOT LIKE "a*" ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE n IN ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE n IN (1, ')).toBe(0);
+    expect(await engineCallsAt('FROM d | WHERE n IN (1, 2) ')).toBe(0);
+  });
+
   it('still asks that engine at the positions that are not moved yet', async () => {
-    expect(await engineCallsAt('FROM d | WHERE k LIKE ')).toBe(1);
-    expect(await engineCallsAt('FROM d | WHERE k IS ')).toBe(1);
+    expect(await engineCallsAt('FROM d | WHERE k : ')).toBe(1);
+    expect(await engineCallsAt('FROM d | WHERE n::')).toBe(1);
   });
 
   /**
@@ -148,6 +160,6 @@ describe('expression decisions', () => {
 
     expect(differing).toEqual(ACCEPTED_DIFFERENCES);
     // The rows the decisions serve alone. The number grows as positions are moved.
-    expect(served).toMatchInlineSnapshot(`249`);
+    expect(served).toMatchInlineSnapshot(`288`);
   });
 });

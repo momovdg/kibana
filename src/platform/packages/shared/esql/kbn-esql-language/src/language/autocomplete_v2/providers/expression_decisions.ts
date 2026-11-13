@@ -52,6 +52,12 @@ import { EXPRESSION_PARTS, FUNCTION_CALL } from '../../../esql_js_sim/definition
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
 import {
+  decideAfterNot,
+  decideIn,
+  decideLike,
+  decideNullCheck,
+} from './expression_special_operators';
+import {
   getOperandRange,
   isOperandOf,
   type ExpressionPosition,
@@ -67,6 +73,7 @@ export const DECIDED_KINDS = new Set<ExpressionPositionKind>([
   'empty',
   'after_operand',
   'after_operator',
+  'after_not',
 ]);
 
 /** What a decision needs: the cursor in the grammar, and what the item builders take. */
@@ -204,9 +211,9 @@ const decideAfterOperand = (input: DecisionInput): ISuggestionItem[] | undefined
   if (position.operator === NULL_CHECK_END) {
     return logicalOperators.map(getOperatorSuggestion);
   }
-  // A null check that is not finished, as `a IS`, is not decided here yet.
+  // A null check that is not finished, as `a IS`.
   if (position.operator !== undefined) {
-    return undefined;
+    return decideNullCheck({ ...input, context: toBuilderContext(input) });
   }
   // A keyword of the command typed in full ends the expression: nothing of it is offered.
   if (isTypedKeyword(input.ir)) {
@@ -242,7 +249,10 @@ const decideAfterOperand = (input: DecisionInput): ISuggestionItem[] | undefined
 };
 
 // The operators that have rules of their own, decided in a later step.
-const WITH_OWN_RULES: readonly string[] = ['in', 'like', 'rlike', 'is', 'not', 'null', ':'];
+const WITH_OWN_RULES: readonly string[] = ['is', 'not', 'null', ':'];
+const PATTERN_OPERATORS: readonly string[] = ['like', 'rlike'];
+const LIST_OPERATOR = 'in';
+const NEGATION = 'not';
 const LOGICAL: readonly string[] = ['and', 'or'];
 const UNTYPED: readonly string[] = ['unknown', 'unsupported'];
 const MATCH = ':';
@@ -273,9 +283,11 @@ const decideAfterOperator = async (
   const { options = {}, location, cursorPosition } = request;
   const { lastOperator, written } = position;
   const name = lastOperator?.text.toLowerCase() ?? '';
-  const definition = getFunctionDefinition(name);
   const index = lastOperator ? written.indexOf(lastOperator) : -1;
-  const before = written[index - 1];
+  // `NOT` right before the operator is part of it, as in `a NOT LIKE b`.
+  const isNegated = written[index - 1]?.text.toLowerCase() === NEGATION && name !== NEGATION;
+  const before = written[index - (isNegated ? 2 : 1)];
+  const definition = getFunctionDefinition(isNegated ? `${NEGATION} ${name}` : name);
 
   // An operator typed as the word, one before its operand, and one with rules of its own
   // are not decided here yet.
@@ -286,6 +298,22 @@ const decideAfterOperator = async (
   // What follows the operator and is still its operand: a bracket that closes it is not.
   const after = written.slice(index + 1).filter(isOperandOf(lastOperator, before));
   const lastWritten = after.at(-1);
+
+  // The operators that take a list or a pattern have rules of their own, outside a call.
+  if (!call && (name === LIST_OPERATOR || PATTERN_OPERATORS.includes(name))) {
+    const rule = { ...input, context: toBuilderContext(input) };
+    const own =
+      name === LIST_OPERATOR
+        ? await decideIn(rule, lastOperator, written.slice(index + 1))
+        : decideLike(rule, name, written.slice(index + 1));
+
+    if (own) {
+      return own;
+    }
+  } else if (name === LIST_OPERATOR || PATTERN_OPERATORS.includes(name)) {
+    return undefined;
+  }
+
   const left = getOperandRange(lastOperator, before);
   const right = lastWritten
     ? getOperandRange(lastOperator, lastWritten)
@@ -542,6 +570,9 @@ export const decideExpression = async (
   }
   if (call) {
     switch (kind) {
+      // Right after NOT inside a call is not decided here yet.
+      case 'after_not':
+        return undefined;
       case 'after_operand':
         return decideAfterOperandInCall(input, call);
       case 'after_operator':
@@ -556,6 +587,8 @@ export const decideExpression = async (
       return decideAfterOperand(input);
     case 'after_operator':
       return decideAfterOperator(input);
+    case 'after_not':
+      return decideAfterNot({ ...input, context: toBuilderContext(input) });
     default:
       return decideOperandStart(input);
   }
