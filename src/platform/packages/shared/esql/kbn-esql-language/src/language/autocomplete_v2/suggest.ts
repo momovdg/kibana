@@ -9,12 +9,7 @@
 
 import type { ESQLCallbacks } from '@kbn/esql-types';
 import type { ISuggestionItem } from '../../commands/registry/types';
-import {
-  EXPRESSION_PARTS,
-  type ArgumentRole,
-  type ResolvedRole,
-  type RoleKind,
-} from '../../esql_js_sim/definitions';
+import { type ArgumentRole, type ResolvedRole, type RoleKind } from '../../esql_js_sim/definitions';
 import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/grammar';
 import { createContext } from './context';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
@@ -28,7 +23,7 @@ import {
   provideMap,
   provideOptionNames,
 } from './providers/structured';
-import { SUGGESTED_VALUES_BY_NAME } from './presentation';
+import { getSuggestedValuesByName } from './presentation';
 import { withAutoSuggest } from '../../commands/definitions/utils/autocomplete/helpers';
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
@@ -41,6 +36,7 @@ import {
 } from './providers/tokens';
 import { resolve } from './resolve';
 import type { SuggestionContext, SuggestionRequest } from './types';
+import { partOf } from './written';
 
 const NOTHING_APPLIES: readonly string[] = ['inside_comment', 'invalid'];
 
@@ -67,7 +63,7 @@ const provideForRole = async (
     // The value takes the role its name gives it. A map is offered only inside a map, and
     // the other roles only outside one.
     case 'dependent_value': {
-      const isInMap = EXPRESSION_PARTS[argument.id] !== undefined;
+      const isInMap = partOf(argument) !== undefined;
       const candidates = dependentRoles(role, context);
       const roles = candidates.filter((candidate) => (candidate.kind === 'map') === isInMap);
       const items = await Promise.all(
@@ -78,7 +74,7 @@ const provideForRole = async (
         ...items.flat(),
         ...(isInMap ? [] : provideSuggestedValues(role, resolved, context)),
         // A value that can be a map is offered its braces, the cursor inside.
-        ...(!isInMap && candidates.some(({ kind }) => kind === 'map') ? [MAP_ITEM] : []),
+        ...(!isInMap && candidates.some(({ kind }) => kind === 'map') ? [getMapItem()] : []),
       ];
     }
     // The providers of the other roles come with the next steps.
@@ -87,13 +83,14 @@ const provideForRole = async (
   }
 };
 
-const MAP_ITEM: ISuggestionItem = withAutoSuggest({
-  label: '{ }',
-  text: '{ $0 }',
-  asSnippet: true,
-  kind: 'Value',
-  category: SuggestionCategory.CONSTANT_VALUE,
-});
+const getMapItem = (): ISuggestionItem =>
+  withAutoSuggest({
+    label: '{ }',
+    text: '{ $0 }',
+    asSnippet: true,
+    kind: 'Value',
+    category: SuggestionCategory.CONSTANT_VALUE,
+  });
 
 /**
  * The values the editor suggests for the value of a name, as the common values of a setting.
@@ -106,7 +103,7 @@ const provideSuggestedValues = (
 ): ISuggestionItem[] => {
   const name = dependentName(role, context)?.toLowerCase();
   const values =
-    (id !== undefined && name !== undefined && SUGGESTED_VALUES_BY_NAME[id]?.[name]) || [];
+    (id !== undefined && name !== undefined && getSuggestedValuesByName()[id]?.[name]) || [];
   const isInString = context.ir.position === 'inside_string';
 
   return values.map((value) => ({

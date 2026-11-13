@@ -54,7 +54,7 @@ import {
   commaCompleteItem,
   commaWithAutoSuggestCompleteItem,
 } from '../../../commands/registry/complete_items';
-import { EXPRESSION_PARTS, FUNCTION_CALL } from '../../../esql_js_sim/definitions';
+import { FUNCTION_CALL } from '../../../esql_js_sim/definitions';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
 import {
@@ -69,7 +69,7 @@ import {
   type ExpressionPosition,
   type FunctionCallPosition,
 } from './expression_position';
-import { ASSIGNMENT, CAST } from '../written';
+import { ASSIGNMENT, CAST, partOf } from '../written';
 
 /** What a decision needs: the cursor in the grammar, and what the item builders take. */
 export interface DecisionInput {
@@ -165,12 +165,8 @@ const namesOf = (operators: Array<{ name: string }>): string[] => operators.map(
 
 const STRING_TYPES: readonly string[] = ['text', 'keyword'];
 // What tells of a string: whether it matches, is in a list, or is missing.
-const STRING_PREDICATES = namesOf([
-  ...matchOperators,
-  ...patternMatchOperators,
-  ...inOperators,
-  ...nullCheckOperators,
-]);
+const getStringPredicates = (): string[] =>
+  namesOf([...matchOperators, ...patternMatchOperators, ...inOperators, ...nullCheckOperators]);
 const NULL_CHECK_END = 'null';
 /**
  * The operators that can follow an operand of a type, by name; all of them when undefined,
@@ -188,7 +184,7 @@ const getOperatorsAfter = (type: string, preferred: readonly string[]): string[]
     return [];
   }
 
-  return [...(takesBoolean ? namesOf(comparisonFunctions) : []), ...STRING_PREDICATES];
+  return [...(takesBoolean ? namesOf(comparisonFunctions) : []), ...getStringPredicates()];
 };
 
 /**
@@ -236,7 +232,7 @@ const decideAfterOperand = async (input: DecisionInput): Promise<ISuggestionItem
   }
 
   const builder = new SuggestionBuilder(toBuilderContext(input));
-  const isLiteral = values.length === 1 && EXPRESSION_PARTS[values[0].id]?.part === 'literal';
+  const isLiteral = values.length === 1 && partOf(values[0]) === 'literal';
   const preferred = [options.preferredExpressionType ?? []].flat();
   const allowed =
     isLiteral && expressionType === 'boolean'
@@ -270,7 +266,7 @@ const UNTYPED: readonly string[] = ['unknown', 'unsupported'];
 const MATCH = ':';
 
 const isLiteralAlone = (written: Array<{ id: string }>): boolean =>
-  written.length === 1 && EXPRESSION_PARTS[written[0].id]?.part === 'literal';
+  written.length === 1 && partOf(written[0]) === 'literal';
 
 /** The types an operator takes on its right for a type on its left. */
 const getRightTypes = (

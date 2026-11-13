@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { EXPRESSION_PARTS } from '../../esql_js_sim/definitions';
+import { EXPRESSION_PARTS, resolveRole } from '../../esql_js_sim/definitions';
 import type { WrittenAncestor, WrittenArgument } from '../../esql_js_sim/grammar';
 
 /*
@@ -45,3 +45,11 @@ export const pathOf = ({ ancestors, id }: WrittenArgument): string[] => [
   ...ancestors.map((ancestor) => ancestor.id),
   id,
 ];
+
+/** Whether something is written directly in a place, and not in a place nested in it. */
+export const isDirectlyIn = ({ ancestors }: WrittenArgument, place: WrittenAncestor): boolean =>
+  isSamePlace(ancestors.at(-1), place);
+
+/** The id of the role a written argument has. */
+export const roleIdOf = (written: WrittenArgument): string | undefined =>
+  resolveRole(pathOf(written))?.id;
