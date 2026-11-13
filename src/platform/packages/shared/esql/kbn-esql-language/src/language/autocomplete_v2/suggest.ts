@@ -32,8 +32,10 @@ import { withAutoSuggest } from '../../commands/definitions/utils/autocomplete/h
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
   isAssignment,
+  opensSubquery,
   provideAssignment,
   provideEndOfCommand,
+  provideSubqueryOpener,
   provideToken,
 } from './providers/tokens';
 import { resolve } from './resolve';
@@ -165,6 +167,10 @@ const provide = async (
       // A terminator that is already written right after the cursor is not offered again.
       if (request.follower.class === 'terminator' && context.ir.next?.class === 'terminator') {
         return [];
+      }
+
+      if (opensSubquery(request.follower)) {
+        return provideSubqueryOpener(context);
       }
 
       return isAssignment(request.follower)
