@@ -139,6 +139,155 @@ What is here so far:
   predicates of `@elastic/esql` with similar names (`isColumn`, `isAssignment`) are about
   nodes of the syntax tree, which the engine does not read for the command at the cursor.
 
+## Flow map
+
+One call to `suggest`, followed through the four steps on real queries. `▮` is the cursor.
+The values are what the code returns for the test world of the scenario kit; long lists are
+cut. The words are explained, in the same order, in the vocabulary below.
+
+```
+ text, offset
+      │
+      ▼
+ ┌─────────┐  Cursor IR   ┌─────────┐  requests   ┌─────────┐  items   ┌─────────┐
+ │ locate  │ ───────────▶ │ resolve │ ──────────▶ │ provide │ ───────▶ │ present │ ──▶ list
+ └─────────┘              └─────────┘             └─────────┘          └─────────┘
+   grammar                 signatures              one provider          follow-ups,
+   (esql_js_sim/grammar)   (esql_js_sim/           per kind, with        no duplicates
+                           definitions)            the context:
+                                                   columns, entities,
+                                                   editor callbacks
+```
+
+Only `provide` talks to the editor, and only for what the request needs.
+
+### 1. An argument with a role: `FROM a | KEEP keywordField, ▮`
+
+The whole flow on the simplest case.
+
+**Locate.** The grammar says where the cursor is and what is already there.
+
+| Field of the IR | Value |
+| --- | --- |
+| `command` | `keepCommand` |
+| `position` | `start_of_argument` |
+| `previous` | `,` of class `separator` |
+| `word` | none: nothing is typed yet |
+| `arguments` (expected) | one, the call site `qualifiedNamePatterns>qualifiedNamePattern`, on the path `keepCommand>qualifiedNamePatterns` / `qualifiedNamePatterns>qualifiedNamePattern` |
+| `followers` | none: a name has to come first |
+| `written` | `KEEP` (keyword), `keywordField` (at the same call site as the expected argument), `,` (separator) |
+
+**Resolve.** The path is looked up in the signatures. `keepCommand>qualifiedNamePatterns`
+has a role, and the argument takes it:
+
+```
+{ kind: 'argument',
+  argument: qualifiedNamePatterns>qualifiedNamePattern,
+  resolved: { role: { kind: 'column', wildcard: 'pattern', unique: true },
+              id: 'keepCommand>qualifiedNamePatterns', source: 'signature' } }
+```
+
+One request. Nothing was fetched so far.
+
+**Provide.** The request is an argument with a `column` role, so the column provider runs
+(`providers/arguments.ts`):
+
+- it asks the context for the columns. The context fetches them now, for the query before
+  the cursor's command (`FROM a`);
+- `unique` says a column is listed once: the written arguments with the same role
+  (`keywordField`) are left out;
+- the argument is an item of a list, so the items get no trailing space.
+
+**Present.** 20 items: every column of `a` but `keywordField`.
+
+### 2. An expression: `FROM a | WHERE doubleField > ▮`
+
+Inside an expression the grammar is deep and the engine answers once for the whole of it.
+
+**Locate.** `position` is `start_of_argument`, `previous` is `>` of class `operator`. Six
+arguments are expected: a constant, a column and a function name, each along two branches of
+the grammar, all under `whereCommand>booleanExpression`. The followers are `(`, `+` and `-`.
+`written` has `doubleField` under `valueExpression.left` and `>` as an operator.
+
+**Resolve.** Every expected argument and follower is inside the same expression, so they
+become one request, keyed by the expression entry:
+
+```
+{ kind: 'expression',
+  entry: 'whereCommand>booleanExpression',
+  role: { kind: 'expression', mode: 'filter', types: ['boolean'],
+          completeAs: 'boolean', subqueries: true } }
+```
+
+**Provide.** The expression provider (`providers/expressions.ts`):
+
+- reads the expression position from the written arguments
+  (`providers/expression_position.ts`): `after_operator`, with `>` as the last operator and
+  `doubleField` as its left operand;
+- asks for the type of that operand (`double`), from the columns and the syntax tree of the
+  command;
+- decides (`providers/expression_decisions.ts`): the right operand of `>` after a `double`
+  is a number, so the numeric columns and the functions that return a number, as allowed in
+  a `filter`.
+
+It also reports that the expression is unfinished (`doubleField >` is not a boolean yet), so
+nothing of the command outside the expression would be offered.
+
+**Present.** 96 items: `doubleField`, `integerField`, `longField`, ..., `ABS($0)`, ...
+
+One space after a value, at `FROM a | WHERE doubleField > 1 ▮`, the same request comes with
+two more: the pipe and the end of the command, because the grammar now lets the command
+end. The expression is a whole boolean, so they are kept: `AND $0`, `OR $0`, `| ` and the
+next line.
+
+### 3. Tokens and their presentation: `FROM a | SORT keywordField ▮`
+
+**Locate.** `position` is `after_argument`. The followers are the operators of an
+expression, then `nulls`, `asc`, `desc` (class `keyword`), `,` (`separator`), `|` (`pipe`)
+and the end of the text (`end`).
+
+**Resolve.** Seven requests:
+
+| Request | From |
+| --- | --- |
+| `expression`, entry `orderExpression>booleanExpression`, role `{ mode: 'scalar' }` | the operators: they are tokens of the expression, not of the command |
+| `token` × 3 | `nulls`, `asc`, `desc` |
+| `token` | `,` |
+| `token` | the pipe |
+| `end_of_command` | the pipe or the end can follow |
+
+**Provide.**
+
+- Expression: the position is `after_operand` and the operand is a keyword column, so the
+  operators that take a keyword (`IN $0`, `LIKE $0`, `IS NULL`, ...).
+- Keywords (`providers/tokens.ts`): each is presented by what the grammar allows right after
+  it. Nothing has to follow `asc` and `desc`, so they are offered alone. `nulls` has to be
+  followed by `first` or `last`, so it is offered joined: `NULLS FIRST`, `NULLS LAST`.
+- Separator: `, `. Pipe: `| `. End of the command: the next line.
+
+**Present.** 15 items.
+
+### 4. The other kinds, in short
+
+- **Command names.** `FROM a | ▮` → `position` is `start_of_command` and the followers are
+  the keywords that start a command → one `command_names` request with their command rules →
+  the provider keeps the rules Kibana registered and that the license, the tier and the
+  query allow → `EVAL `, `WHERE `, `KEEP `, ... (28 of the grammar's 33).
+- **Entity.** `FROM a | ENRICH ▮` → the expected argument is `enrichCommand.policyName` →
+  its role is `{ kind: 'entity', entityType: 'enrich_policy' }` → the entity provider asks
+  the `enrich_policy` definition of the registry, which asks the editor for the policies →
+  `policy `, `` `policy$` ``. No column is fetched.
+- **Constant.** `FROM a | LIMIT ▮` → role `{ kind: 'constant', valueType: 'integer' }` →
+  the suggested values of that place, from `presentation.ts` → `10 `, `100 `, `1000 `.
+- **New name.** `FROM a | RENAME keywordField AS ▮` → role `{ kind: 'new_name', of: 'column' }`
+  → nothing: a name is free text, and it is offered only where the grammar assigns it.
+- **Two readings of one place.** `FROM a | STATS avg(doubleField) BY ▮` → two requests: an
+  argument with role `new_name` (the name of a grouping) and an expression with mode
+  `grouping` → the items of both, in one list (216 here: columns and functions).
+- **Follow-up.** `FROM a | KEEP keywordField▮` → the `word` is `keywordField`, a whole name
+  that is an existing column → `suggest` looks at what is offered one space later and offers
+  the word with each continuation → `keywordField, `, `keywordField | ` and the next line.
+
 ## Vocabulary
 
 The words this flow uses, in the order a call to `suggest` meets them. The types behind the
