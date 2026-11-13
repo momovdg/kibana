@@ -9,6 +9,8 @@
 
 import { getSafeInsertText } from '../../../commands/definitions/utils/autocomplete/helpers';
 import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplete/helpers';
+import { esqlCommandRegistry } from '../../../commands/registry';
+import { buildSubqueryCompleteItems } from '../../../commands/registry/complete_items';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   resolveRole,
@@ -18,6 +20,7 @@ import {
   type EntityType,
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
+import { getRegisteredCommand } from '../command_metadata';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
 
@@ -104,6 +107,21 @@ const toSuggestion = (
 };
 
 /**
+ * The openings of a subquery. The commands other than the one at the cursor come with a
+ * preview: a subquery that starts as its own command does needs none.
+ */
+const provideSubqueries = ({ ir }: SuggestionContext): ISuggestionItem[] => {
+  const current = ir.command && getRegisteredCommand(ir.command)?.name;
+
+  return buildSubqueryCompleteItems({
+    previewCommands: esqlCommandRegistry
+      .getAllCommands({ isStartingSubquery: true })
+      .map(({ name }) => name)
+      .filter((name) => name !== current),
+  });
+};
+
+/**
  * The entities the role names, in the scope of the cursor. Hidden ones are left out, as are
  * the ones already listed where each is listed once. An alias is offered next to its entity.
  */
@@ -123,8 +141,11 @@ export const provideEntities = async (
     : [];
   const suffix = suffixAfterName(context);
   const visible = items.filter(({ hidden, name }) => !hidden && !used.includes(name));
+  const scope = toScope(role, context);
 
   return [
+    // Where a subquery can stand for the entity: one per command a subquery can start with.
+    ...(role.subqueries && !scope.inSubquery ? provideSubqueries(context) : []),
     ...visible.map((item) => toSuggestion(item.name, item, role.entityType, suffix)),
     ...visible.flatMap((item) =>
       (item.aliases ?? [])
