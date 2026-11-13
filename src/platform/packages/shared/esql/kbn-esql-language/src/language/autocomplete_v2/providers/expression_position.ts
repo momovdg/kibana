@@ -39,6 +39,8 @@ export interface ExpressionPosition {
   written: WrittenArgument[];
   /** The last operator written in it, in lower case. */
   operator?: string;
+  /** That operator, as it is written. */
+  lastOperator?: WrittenArgument;
 }
 
 const CAST = '::';
@@ -114,7 +116,8 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
   }
 
   const operators = getOperators(operands, callPlace);
-  const operator = operators.at(-1)?.text.toLowerCase();
+  const lastOperator = operators.at(-1);
+  const operator = lastOperator?.text.toLowerCase();
   const isNullCheck = operators.some((item) => textOf(item) === NULL_CHECK);
 
   if (!ir.word && textOf(lastOperand) === NOT && !isNullCheck) {
@@ -131,9 +134,37 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
   );
 
   if (binary.length || isTypedOperator) {
-    return { ...base, operator, kind: 'after_operator' };
+    return { ...base, operator, lastOperator, kind: 'after_operator' };
   }
 
   // A word typed after a complete operand is an operator or a keyword being typed.
   return { ...base, operator, kind: 'after_operand' };
+};
+
+/**
+ * The operand of an operator that `inside` belongs to, as a range: the whole of what the
+ * operator takes on that side. The grammar has applied the precedence of the operators, so
+ * in `a + b > c` the left operand of `>` is `a + b`.
+ */
+export const getOperandRange = (
+  operator: WrittenArgument,
+  inside: WrittenArgument
+): { start: number; end: number } => {
+  // The first place of `inside` that the operator is not in is the operand.
+  const operand = inside.ancestors.find(
+    (place, depth) => !isSame(operator.ancestors[depth], place)
+  );
+
+  return operand ?? inside;
+};
+
+/** Whether something written is inside what the operator applies to, and not after it. */
+export const isOperandOf = (operator: WrittenArgument, before: WrittenArgument) => {
+  // The place that holds the operator with its left operand holds its right operand too.
+  const shared = operator.ancestors.findLast((place, depth) =>
+    isSame(before.ancestors[depth], place)
+  );
+
+  return ({ ancestors }: WrittenArgument): boolean =>
+    shared === undefined || ancestors.some((place) => isSame(place, shared));
 };
