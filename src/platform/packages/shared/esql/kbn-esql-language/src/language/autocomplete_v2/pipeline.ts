@@ -9,9 +9,7 @@
 
 import type { CursorIR, WrittenCommand } from '../../esql_js_sim/grammar';
 import { getRegisteredCommand } from './command_metadata';
-
-const isSame = (first: string[], second: string[]): boolean =>
-  first.length === second.length && first.every((rule, index) => rule === second[index]);
+import { isSameNesting } from './written';
 
 /**
  * The commands the cursor is nested in, outermost first. Where a command starts, the command
@@ -37,7 +35,7 @@ const openBracketContentStart = ({ arguments: written }: WrittenCommand): number
   return open.at(-1);
 };
 
-const isSource = ({ rule }: WrittenCommand): boolean =>
+const isSourceCommand = ({ rule }: WrittenCommand): boolean =>
   getRegisteredCommand(rule)?.metadata.type === 'source';
 
 /**
@@ -58,17 +56,19 @@ export const getQueryBeforeCursor = (text: string, ir: CursorIR): string => {
       level < nesting.length
         ? ir.commands.findLast(
             ({ rule, enclosingCommands, start }) =>
-              rule === nesting[level] && isSame(enclosingCommands, around) && start < currentStart
+              rule === nesting[level] &&
+              isSameNesting(enclosingCommands, around) &&
+              start < currentStart
           )
         : undefined;
     const stop = enclosing?.start ?? currentStart;
     const [first] = ir.commands.filter(
       ({ enclosingCommands, start }) =>
-        isSame(enclosingCommands, around) && start >= levelStart && start < stop
+        isSameNesting(enclosingCommands, around) && start >= levelStart && start < stop
     );
     const written = text.slice(levelStart, stop).trim().replace(/\|$/, '').trim();
 
-    if (first && isSource(first) && level > 0) {
+    if (first && isSourceCommand(first) && level > 0) {
       query = written;
     } else if (written) {
       query = query ? `${query} | ${written}` : written;

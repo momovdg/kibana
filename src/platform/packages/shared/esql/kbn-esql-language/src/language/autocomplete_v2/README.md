@@ -134,3 +134,82 @@ What is here so far:
   editor's callbacks, and `EntityRegistry`, one definition per kind. The registry itself comes
   with the engine.
 - `suggest.test.ts`: the engine's own tests, by kind of request and not by command.
+- `written.ts`: the small questions the engine asks about what is written (the same place,
+  the part of an expression, a name without its quotes). They read the Cursor IR. The
+  predicates of `@elastic/esql` with similar names (`isColumn`, `isAssignment`) are about
+  nodes of the syntax tree, which the engine does not read for the command at the cursor.
+
+## Vocabulary
+
+The words this flow uses, in the order a call to `suggest` meets them. The types behind the
+grammar words are in `esql_js_sim/grammar`, those behind the meaning words in
+`esql_js_sim/definitions`.
+
+**The two flows**
+
+| Word | Meaning |
+| --- | --- |
+| Current flow | The autocomplete in `../autocomplete` and in each command's `autocomplete.ts`. Production today. |
+| New flow, v2, the engine | This folder. It knows no command. |
+| Simulated packages | `esql_js_sim/grammar` and `esql_js_sim/definitions`: what the engine expects from esql-js, kept in Kibana until it can move there. |
+
+**Where the cursor is (locate)**
+
+| Word | Meaning |
+| --- | --- |
+| Cursor IR | The result of `locate(text, offset)`: a description of the cursor that has the same shape for every command. IR stands for intermediate representation. Everything below in this table is a field of it or a word about it. |
+| Position | One of a closed set of places in a command: the start of the query, of a statement, of a command or of an argument, inside an argument, after an argument, inside a string, inside a comment, invalid. |
+| Command rule | The grammar rule of a command. The engine never names one; it gets it from the IR and asks `getRegisteredCommand` what Kibana registered for it. |
+| Call site | One place in the grammar where a rule takes a rule or a token: `rule.label` when the grammar labels it, `rule>called` otherwise. It is the identity of an argument. |
+| Path | The call sites from the command down to an argument. Roles are looked up along it. |
+| Expected argument | An argument the grammar allows at the cursor, with its path. |
+| Written argument | An argument or a token already written in the command at the cursor, with its call site, text, range and the places it is in. It replaces reading the syntax tree. |
+| Place (ancestor) | A call site with the offset it starts at: one written thing that contains others, such as one function call or one map. A place is `open` when the cursor is still inside it. |
+| Follower | A token the grammar allows next. |
+| Token class | What kind of token a follower or a written token is, derived from the grammar: `keyword`, `operator`, `separator`, `opener`, `closer`, `pipe`, `terminator`, `value`, `end`. |
+| Word | What is being typed at the cursor, and whether it is already a whole token. |
+| Previous, next | The token before the cursor and the first one after it. |
+| Enclosing commands, nesting | The commands the cursor's command is inside of: a branch, a subquery. |
+
+**What it means (resolve)**
+
+| Word | Meaning |
+| --- | --- |
+| Role | What an argument means in the language: a column of some types, a new name, an entity, a constant, a map, an expression. The grammar cannot say this. |
+| Role kind | The closed list of roles: `column`, `new_name`, `entity`, `constant`, `option_name`, `map`, `expression`, `dependent_value`, `parameter`, `sublanguage`. |
+| Signature | The roles of one command, keyed by call site. The only thing written per command. |
+| Default role | The role an argument gets with no signature, from its grammar rule. It is why a new command works before it is described. |
+| Inherited | A field of a role that an argument takes from a role above it on its path (the index mode of a list of sources). |
+| Dependent value | A value whose role depends on a name written before it (the value of a setting). |
+| Expression entry | The call site where a whole expression starts. An expression is offered as one thing, whatever the cursor is nested in. |
+| Expression part | What a call site inside an expression is: a column, a function name, a map key, the name of a lambda parameter. Described once, for all commands. |
+| Mode | The kind of expression a role asks for: scalar, aggregation, grouping, filter, constant, full text. It decides which functions apply. |
+| Sublanguage | A body in another language inside a command (PromQL). The engine hands it over whole. |
+| Request | What `resolve` asks for at the cursor: the names of commands, a token, the end of the command, an argument with its role, an expression with its role. |
+
+**What is offered (provide, present)**
+
+| Word | Meaning |
+| --- | --- |
+| Provider | The function that makes the items of one kind of request or role. There is one per kind and none per command. |
+| Context | What a provider knows besides its request: the IR, the columns of the query before the cursor, the editor's callbacks, the license. |
+| Entity | A named thing that exists outside the query: a source, an enrich policy, a lookup index, an inference endpoint, a setting, a metadata field. |
+| Entity definition | How the entities of one kind are listed (`fetch`), with optional `children`, `actions` and `valueRoles`. One per kind, in `entities/registry.ts`. |
+| Scope | What narrows the entities at the cursor: the index mode, the parent's name, inside a subquery, serverless. |
+| Action | Something the editor can do where an entity is expected, offered as an item (the browser of data sources). |
+| Expression position | Where the cursor is inside an expression: the start of an operand, after an operand, after an operator, in a string. Read from the written arguments. |
+| Decision | The rule that picks the items for one expression position. |
+| Presentation | How an item looks and what it inserts: the text of a keyword with what must follow it, suggested values, snippets. Data in `presentation.ts`, rules in `providers/tokens.ts`. |
+| Follow-up | What is offered on a word that is already whole: the word together with what can come after it. |
+| Extras | Items that are not part of the grammar (recommended queries). |
+| Override | A provider registered for one argument by hand, in `overrides.ts`. The exception, counted by a test. |
+
+**Tests**
+
+| Word | Meaning |
+| --- | --- |
+| Scenario row | One query with a cursor and the items expected there, in a command's `autocomplete.scenarios.ts`. Rows run through `suggest`, so they hold for either flow. |
+| Parity | The number of scenario rows on which the new flow gives what the current flow gives. |
+| `new` row | A row for a behaviour only the new flow has, accepted on purpose. It is skipped for the current flow. |
+| Conformance | A test that the grammar side says the right thing, with no suggestion involved. |
+| Boundary test | The test that keeps command names and command folders out of the engine, and Kibana out of the simulated packages. |

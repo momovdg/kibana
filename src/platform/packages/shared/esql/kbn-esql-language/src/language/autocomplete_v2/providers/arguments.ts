@@ -20,8 +20,7 @@ import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { buildConstantsDefinitions } from '../../../commands/definitions/utils/literals';
 import { SUGGESTED_VALUES } from '../presentation';
 import type { SuggestionContext } from '../types';
-
-const ASSIGNMENT = '=';
+import { ASSIGNMENT } from '../written';
 
 /**
  * Whether the item for an argument ends with a space and opens the next suggestions. It does
