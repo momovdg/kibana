@@ -139,7 +139,16 @@ describe('suggest (v2)', () => {
     });
 
     it('offers no end where the command cannot end', async () => {
-      expect(await textsAt('FROM a | RENAME b ')).toEqual(['AS ']);
+      const texts = await textsAt('FROM a | RENAME b ');
+
+      expect(texts).not.toContain('| ');
+      expect(texts).not.toContain('\n');
+    });
+
+    it('offers the next line wherever the next command can start, also in a branch', async () => {
+      expect(await textsAt('FROM a | FORK (LIMIT 10 ')).toEqual(
+        expect.arrayContaining(['| ', '\n'])
+      );
     });
 
     it('offers the separator of a list with a space after it', async () => {
@@ -222,6 +231,27 @@ describe('suggest (v2)', () => {
     });
   });
 
+  describe('the assignment after a name', () => {
+    const callbacks = createCallbacks({
+      columns: [{ name: 'existing', type: 'keyword', userDefined: false }],
+    });
+
+    it('is offered after a name the query does not have, and nothing that reads a column', async () => {
+      expect(await textsAt('FROM n | RENAME fresh ', callbacks)).toEqual(['= ']);
+    });
+
+    it('is not offered after an existing column', async () => {
+      expect(await textsAt('FROM n | RENAME existing ', callbacks)).toEqual(['AS ']);
+    });
+
+    it('is offered after a new name where an expression could also start', async () => {
+      const texts = await textsAt('FROM n | EVAL fresh ', callbacks);
+
+      expect(texts).toContain('= ');
+      expect(texts).not.toContain('| ');
+    });
+  });
+
   describe('new names', () => {
     it('offers a name with its assignment where the grammar assigns it', async () => {
       expect(await textsAt('FROM x | RENAME ')).toContain('col0 = ');
@@ -251,6 +281,13 @@ describe('suggest (v2)', () => {
       expect(sources).toEqual(expect.arrayContaining(['index', 'a_index']));
       expect(sources).not.toContain('.secret_index');
       expect(await textsAt('FROM index, ', callbacks)).not.toContain('index');
+    });
+
+    it('offers a subquery where one can stand for a source, and not inside a subquery', async () => {
+      const texts = await textsAt('FROM ', callbacks);
+
+      expect(texts).toEqual(expect.arrayContaining(['(FROM $0)', '(ROW $0)', '(TS $0)']));
+      expect(await textsAt('FROM a, (FROM ', callbacks)).not.toContain('(FROM $0)');
     });
 
     it('offers only time-series sources where the signature says so', async () => {

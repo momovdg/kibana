@@ -451,6 +451,7 @@ describe('locate', () => {
       ['FROM a | WHERE b IS ', ['WHERE', 'b', 'IS']],
       ['FROM a | WHERE b IS NOT ', ['WHERE', 'b', 'IS', 'NOT']],
       ['FROM a | SORT b NULLS ', ['SORT', 'b', 'NULLS']],
+      ['FROM a | RENAME b ', ['RENAME', 'b']],
     ])(
       'keeps what is written in %j, which stops on a token that needs another',
       (query, written) => {

@@ -22,7 +22,12 @@ import { provideCommandNames } from './providers/command_names';
 import { provideEntities } from './providers/entities';
 import { provideExpression, type ExpressionSuggestions } from './providers/expressions';
 import { dependentRoles, provideMap, provideOptionNames } from './providers/structured';
-import { provideEndOfCommand, provideToken } from './providers/tokens';
+import {
+  isAssignment,
+  provideAssignment,
+  provideEndOfCommand,
+  provideToken,
+} from './providers/tokens';
 import { resolve } from './resolve';
 import type { SuggestionContext, SuggestionRequest } from './types';
 
@@ -94,7 +99,9 @@ const provide = async (
     case 'command_names':
       return provideCommandNames(request.commandRules, context);
     case 'token':
-      return provideToken(request.follower);
+      return isAssignment(request.follower)
+        ? provideAssignment(context)
+        : provideToken(request.follower);
     case 'end_of_command':
       return provideEndOfCommand();
     case 'argument':
@@ -107,6 +114,11 @@ const provide = async (
 
 /** Whether the request is for something of the command itself, outside these expressions. */
 const isOutside = (request: SuggestionRequest, entries: string[]): boolean => {
+  // What is written can still be the name of an assignment and not an expression at all.
+  if (request.kind === 'token' && isAssignment(request.follower)) {
+    return false;
+  }
+
   const path =
     request.kind === 'token'
       ? request.follower.path
@@ -161,11 +173,28 @@ export const suggest = async (
   const unfinished = expressions
     .filter(({ isUnfinished }) => isUnfinished)
     .map(({ entry }) => entry);
+  // A name that is not an existing column is a new name: only its assignment can follow, and
+  // not what would read it as a column, as `AS` in a rename.
+  const assignment = requests.find(
+    (request) => request.kind === 'token' && isAssignment(request.follower)
+  );
+  const assigned = assignment ? await provide(assignment, context) : [];
+  const isNewName = (request: SuggestionRequest): boolean =>
+    assigned.length > 0 &&
+    request.kind === 'token' &&
+    assignment?.kind === 'token' &&
+    request !== assignment &&
+    request.follower.path.join() === assignment.follower.path.join();
   const items = await Promise.all(
     requests
+      .filter((request) => request !== assignment && !isNewName(request))
       .filter((request) => !unfinished.length || !isOutside(request, unfinished))
       .map((request) => provide(request, context))
   );
 
-  return present([...expressions.flatMap((expression) => expression.items), ...items.flat()]);
+  return present([
+    ...expressions.flatMap((expression) => expression.items),
+    ...assigned,
+    ...items.flat(),
+  ]);
 };

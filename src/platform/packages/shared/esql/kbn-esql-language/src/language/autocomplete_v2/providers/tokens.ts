@@ -8,6 +8,7 @@
  */
 
 import {
+  assignCompletionItem,
   commaCompleteItem,
   newLineCompleteItem,
   pipeCompleteItem,
@@ -16,6 +17,7 @@ import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplet
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import { getTokenSuccessors, type Follower } from '../../../esql_js_sim/grammar';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
+import type { SuggestionContext } from '../types';
 
 const MAP_OPENER = '{';
 
@@ -62,6 +64,27 @@ const provideKeyword = ({ text = '', token, id }: Follower): ISuggestionItem[] =
   }
 
   return [toKeywordItem(label, `${label} `)];
+};
+
+const ASSIGNMENT = '=';
+
+/** The token assigns a value to the name before it, as in `name = value`. */
+export const isAssignment = ({ class: tokenClass, text }: Follower): boolean =>
+  tokenClass === 'operator' && text === ASSIGNMENT;
+
+/**
+ * The assignment after a name. A name that is an existing column is read as that column, so
+ * only a name the query does not have yet can be assigned.
+ */
+export const provideAssignment = async ({
+  ir,
+  getColumnMap,
+}: SuggestionContext): Promise<ISuggestionItem[]> => {
+  const name = ir.written.at(-1);
+  const isExisting =
+    name?.kind === 'rule' && (await getColumnMap()).has(name.text.replace(/`/g, ''));
+
+  return isExisting ? [] : [assignCompletionItem];
 };
 
 /** The item for a token with a fixed text, by the class of the token alone. */
