@@ -66,23 +66,38 @@ one as any argument of any function; which argument takes one is a fact of the f
 - the body is offered as the value of the argument: the expression engine does not know
   lambdas, so it reads the text with the parameters and the arrow blanked out.
 
-What to offer inside an expression is being moved from the expression engine of the current
-flow into this flow, one position at a time:
+What to offer inside an expression is decided in this flow. The expression engine of the
+current flow (`suggestForExpression`), which works the position out from the syntax tree and
+the text, is not used.
 
 - `providers/expression_position.ts` says where the cursor is inside the expression from the
   grammar position alone: the start of an operand, after an operand, after an operator, after
-  `NOT` or a cast, the function call and the argument the cursor is in.
+  `NOT` or a cast, in a string or a map, and the function call and argument the cursor is in.
   `expression_position.test.ts` keeps, in a snapshot, how this agrees with what the current
-  engine works out from the syntax tree and the text, on every scenario row.
-- `providers/expression_decisions.ts` decides the items for the positions in `DECIDED_KINDS`,
-  with the item builders the current flow has (columns, functions, operators and literals by
-  type). The other positions still go to the current engine.
-  `expression_decisions.test.ts` is the guard for moving a position: on every scenario row the
-  flow must offer the same items with the decisions as without them.
+  engine works out, on every scenario row.
+- `providers/expression_decisions.ts` decides the items for each position, and
+  `providers/expression_special_operators.ts` those of `NOT`, `IS`, `LIKE` and `IN`. The
+  operands of an operator come from the written tree, so precedence is the grammar's.
+- `expression_current_flow.test.ts` compares, item by item with the current flow, the
+  positions no scenario table has a row for.
 
-What stays shared with the current flow once every position is moved: the item builders, the
-function definitions with the names they use for the places a function is allowed in, and the
-type of a written expression, which is read from the syntax tree.
+What is shared with the current flow, by design:
+
+- the item builders (columns, functions, operators and literals by type) and the small rule
+  helpers over function definitions (which signatures still fit, when a comma follows);
+- the function definitions, with the names they use for the places a function is allowed in
+  (`MODE_LOCATIONS` maps the mode of a role to them);
+- the type of a written expression, read from the syntax tree of the command: the grammar
+  gives the range, the tree gives the type.
+
+Where the new flow differs from the current engine on purpose:
+
+- after a keyword of the command typed in full (`SORT a ASC`), nothing of the expression is
+  offered: it has ended;
+- inside a string that is still open, nothing is offered, except the editor's own suggestions
+  for a KQL query;
+- right after `NOT` at the start of a function argument, the boolean columns and functions
+  are offered, as they are outside a call (the current flow offers nothing there).
 
 Entities come from `entities/registry.ts`: one definition per kind, each turning what the
 editor provides today into entities, in a scope. The scope is all a definition gets: the index

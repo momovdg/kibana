@@ -7,173 +7,30 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { readdirSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { createCallbacks, runScenario } from '../../../__tests__/scenarios';
-import type { ScenarioTable, SuggestFlow } from '../../../__tests__/scenarios';
-import { suggest } from '../suggest';
-import { DECIDED_KINDS } from './expression_decisions';
 
-const mockEngineCalls: string[] = [];
-
-// Counts the calls to the expression engine of the current flow: a decided position makes none.
-jest.mock('../../../commands/definitions/utils', () => {
-  const actual = jest.requireActual('../../../commands/definitions/utils');
-
-  return {
-    ...actual,
-    suggestForExpression: (params: { query: string }) => {
-      mockEngineCalls.push(params.query);
-
-      return actual.suggestForExpression(params);
-    },
-  };
-});
-
-const REGISTRY_DIR = join(__dirname, '../../../commands/registry');
-const newFlow: SuggestFlow = { name: 'v2', suggest, runsNewRows: true };
-
-const loadTables = (): ScenarioTable[] =>
-  readdirSync(REGISTRY_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .flatMap(({ name }) => {
-      try {
-        const exported: Record<string, ScenarioTable> = jest.requireActual(
-          join(REGISTRY_DIR, name, 'autocomplete.scenarios.ts')
-        );
-
-        return Object.values(exported);
-      } catch (error) {
-        return [];
-      }
-    });
+const ENGINE_ENTRY = 'suggestForExpression';
+const ENGINE_MODULE = 'suggestion_engine';
 
 /**
- * The rows where the decisions are right to differ. After a keyword of the command typed in
- * full, the current engine is handed the node of the whole sort order and offers operands
- * again; the expression has ended there, so the decisions offer nothing of it.
+ * What to offer inside an expression is decided in this flow, from the grammar position. The
+ * expression engine of the current flow, which works the position out from the syntax tree
+ * and the text, is not used: neither its entry nor its module is named by a provider.
  */
-const ACCEPTED_DIFFERENCES = [
-  // Inside a string that is still open, the current engine reads a finished string and offers
-  // the operators after it; the decisions offer nothing inside a string.
-  '[highlight] from a | highlight "fo▮',
-  '[sort] from a | sort keywordField ASC▮',
-  '[sort] from a | sort keywordField asc▮',
-  '[sort] from a | sort keywordField desc▮',
-  '[sort] from a | sort keywordField nulls▮',
-];
-
-const callbacks = createCallbacks({
-  columns: [
-    { name: 'k', type: 'keyword', userDefined: false },
-    { name: 'n', type: 'long', userDefined: false },
-  ],
-});
-
-const engineCallsAt = async (query: string): Promise<number> => {
-  mockEngineCalls.length = 0;
-  await suggest(query, query.length, callbacks);
-
-  return mockEngineCalls.length;
-};
-
 describe('expression decisions', () => {
-  it('decides the start of an expression without the engine of the current flow', async () => {
-    expect(await engineCallsAt('FROM d | WHERE ')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = ')).toBe(0);
-    expect(await engineCallsAt('FROM d | SORT k')).toBe(0);
+  const providers = readdirSync(__dirname).filter(
+    (name) => name.endsWith('.ts') && !name.endsWith('.test.ts')
+  );
+
+  it('has providers to check', () => {
+    expect(providers.length).toBeGreaterThan(5);
   });
 
-  it('decides what follows a complete operand without that engine', async () => {
-    expect(await engineCallsAt('FROM d | WHERE n ')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = ABS(n) ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k IS NULL ')).toBe(0);
-  });
+  it.each(providers)('%s does not use the expression engine of the current flow', (name) => {
+    const source = readFileSync(join(__dirname, name), 'utf8');
 
-  it('decides what follows an operator without that engine', async () => {
-    expect(await engineCallsAt('FROM d | WHERE n > ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE n > 1 ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE n > 1 AND ')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = n + n * ')).toBe(0);
-  });
-
-  it('decides the start of a function argument without that engine', async () => {
-    expect(await engineCallsAt('FROM d | WHERE ABS(')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = ROUND(n, ')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = CONCAT(k, TO_UPPER(')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = NO_SUCH_FUNCTION(')).toBe(0);
-  });
-
-  it('decides what follows an operand or an operator inside a function call', async () => {
-    expect(await engineCallsAt('FROM d | WHERE ABS(n ')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = ROUND(n + ')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = ROUND(n + 1 ')).toBe(0);
-    expect(await engineCallsAt('FROM d | EVAL a = CASE(n > 1 ')).toBe(0);
-  });
-
-  it('decides NOT, IS, LIKE and IN without that engine', async () => {
-    expect(await engineCallsAt('FROM d | WHERE NOT ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k NOT ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k IS ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k IS NOT N')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k LIKE ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k NOT LIKE "a*" ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE n IN ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE n IN (1, ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE n IN (1, 2) ')).toBe(0);
-  });
-
-  it('decides the match operator, strings, maps and a typed operator without that engine', async () => {
-    expect(await engineCallsAt('FROM d | WHERE k : ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k : "a" ')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE KQL("""fie')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE k == "ab')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE MATCH(k, "a", {')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE n > 1 AND')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE NOT STARTS_WITH(k, "a") ')).toBe(0);
-  });
-
-  it('still asks that engine at the positions that are not moved yet', async () => {
-    expect(await engineCallsAt('FROM d | WHERE n::')).toBe(1);
-    expect(await engineCallsAt('FROM d | WHERE ABS(n) IN (')).toBe(0);
-    expect(await engineCallsAt('FROM d | WHERE ROUND(n IN ')).toBe(1);
-  });
-
-  /**
-   * The guard for moving a position: on every row of every scenario table, the flow offers
-   * the same items with the decided positions as it does when every position goes to the
-   * engine of the current flow.
-   */
-  it('offers what the engine of the current flow offers, on every scenario row', async () => {
-    const decided = [...DECIDED_KINDS];
-    const differing: string[] = [];
-    let served = 0;
-
-    for (const { command, scenarios } of loadTables()) {
-      for (const scenario of scenarios) {
-        const texts = async (): Promise<string[]> =>
-          (await runScenario(scenario, newFlow).catch(() => []))
-            .map(({ label, text }) => `${label}|${text}`)
-            .sort();
-
-        mockEngineCalls.length = 0;
-        const withDecisions = await texts();
-        const engineCalls = mockEngineCalls.length;
-
-        DECIDED_KINDS.clear();
-        mockEngineCalls.length = 0;
-        const withEngine = await texts();
-        served += mockEngineCalls.length > engineCalls ? 1 : 0;
-        decided.forEach((kind) => DECIDED_KINDS.add(kind));
-
-        if (withDecisions.join('\n') !== withEngine.join('\n')) {
-          differing.push(`[${command}] ${scenario.query}▮${scenario.after ?? ''}`);
-        }
-      }
-    }
-
-    expect(differing).toEqual(ACCEPTED_DIFFERENCES);
-    // The rows the decisions serve alone. The number grows as positions are moved.
-    expect(served).toMatchInlineSnapshot(`307`);
+    expect(source).not.toContain(ENGINE_ENTRY);
+    expect(source).not.toContain(ENGINE_MODULE);
   });
 });

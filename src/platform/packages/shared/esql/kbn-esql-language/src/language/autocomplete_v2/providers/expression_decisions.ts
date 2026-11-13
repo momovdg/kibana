@@ -30,6 +30,7 @@ import {
   type SupportedDataType,
 } from '../../../commands/definitions/types';
 import { shouldSuggestOperators } from '../../../commands/definitions/utils/autocomplete/expressions/positions/after_complete/should_suggest_operators';
+import { getCastingTypesSuggestions } from '../../../commands/definitions/utils/autocomplete/expressions/positions/after_cast';
 import { getKqlSuggestionsIfApplicable } from '../../../commands/definitions/utils/autocomplete/expressions/utils';
 import { getCommandMapExpressionSuggestions } from '../../../commands/definitions/utils/autocomplete/map_expression';
 import { getFunctionDefinition } from '../../../commands/definitions/utils/functions';
@@ -67,21 +68,7 @@ import {
   isOperandOf,
   type ExpressionPosition,
   type FunctionCallPosition,
-  type ExpressionPositionKind,
 } from './expression_position';
-
-/**
- * The positions this layer decides. The others still go to the expression engine of the
- * current flow, until each is moved here.
- */
-export const DECIDED_KINDS = new Set<ExpressionPositionKind>([
-  'empty',
-  'after_operand',
-  'after_operator',
-  'after_not',
-  'in_string',
-  'in_map',
-]);
 
 /** What a decision needs: the cursor in the grammar, and what the item builders take. */
 export interface DecisionInput {
@@ -209,7 +196,7 @@ const getOperatorsAfter = (type: string, preferred: readonly string[]): string[]
  * After a complete operand that no operator is written with, outside a function call: the
  * operators that take an operand of its type on their left.
  */
-const decideAfterOperand = (input: DecisionInput): ISuggestionItem[] | undefined => {
+const decideAfterOperand = async (input: DecisionInput): Promise<ISuggestionItem[] | undefined> => {
   const { position, request, expressionType } = input;
   const { options = {}, location } = request;
   const values = position.written.filter((item) => item.class === 'value' || item.kind === 'rule');
@@ -217,9 +204,21 @@ const decideAfterOperand = (input: DecisionInput): ISuggestionItem[] | undefined
   const openers = brackets.filter((item) => item.class === 'opener').length;
   const closers = brackets.filter((item) => item.class === 'closer').length;
 
-  // A list in brackets, as `(a, b)`, is not decided here yet.
+  // A list in brackets, as `(a, b)`. While it is open, each value starts as an expression
+  // does, and a comma can follow a value. Once closed it can only be looked up in a list.
   if (brackets.some(isOwnSeparator)) {
-    return undefined;
+    if (openers <= closers) {
+      return new SuggestionBuilder(toBuilderContext(input))
+        .addOperators({ allowed: namesOf(inOperators) })
+        .build();
+    }
+
+    const isAfterValue = position.written.at(-1)?.class !== 'separator' && !input.ir.word;
+
+    return [
+      ...(await decideOperandStart(input)),
+      ...(isAfterValue ? [commaWithAutoSuggestCompleteItem] : []),
+    ];
   }
   // A null check is a complete condition: only another condition can be joined to it.
   if (position.operator === NULL_CHECK_END) {
@@ -381,10 +380,23 @@ const decideAfterOperator = async (
 
   const hasOwnRule = name === LIST_OPERATOR || PATTERN_OPERATORS.includes(name);
 
-  // A null check has its own rule. Inside a call, so have the operators that take a list or
-  // a pattern: those are not decided here yet.
-  if (!definition || WITH_OWN_RULES.includes(name) || (call && hasOwnRule)) {
+  // A null check has its own rule.
+  if (!definition || WITH_OWN_RULES.includes(name)) {
     return undefined;
+  }
+
+  // The operators that take a list or a pattern have rules of their own. Those rules are the
+  // same inside a function call: they need nothing of what the function takes.
+  if (lastOperator && before && hasOwnRule) {
+    const rule = { ...input, context: toBuilderContext(input) };
+    const own =
+      name === LIST_OPERATOR
+        ? await decideIn(rule, lastOperator, following)
+        : decideLike(rule, name, following);
+
+    if (own) {
+      return own;
+    }
   }
 
   // Inside a call, the definition of the function says what its argument may be.
@@ -417,19 +429,6 @@ const decideAfterOperator = async (
   // What follows the operator and is still its operand: a bracket that closes it is not.
   const after = lastOperator ? following.filter(isOperandOf(lastOperator, before)) : [];
   const lastWritten = after.at(-1);
-
-  // The operators that take a list or a pattern have rules of their own, outside a call.
-  if (lastOperator && hasOwnRule) {
-    const rule = { ...input, context };
-    const own =
-      name === LIST_OPERATOR
-        ? await decideIn(rule, lastOperator, following)
-        : decideLike(rule, name, following);
-
-    if (own) {
-      return own;
-    }
-  }
 
   // The left operand: what the operator applies to, or all that is written before a typed one.
   const left = lastOperator
@@ -529,14 +528,13 @@ const decideAfterOperandInCall = (
   const brackets = position.written.filter((item) => item.kind === 'token');
   const last = position.written.at(-1);
 
-  // A list in brackets and a null check that is not finished are not decided here yet.
-  if (
-    !last ||
-    position.start === undefined ||
-    brackets.some(isOwnSeparator) ||
-    (position.operator !== undefined && position.operator !== NULL_CHECK_END)
-  ) {
+  // A list in brackets is not decided here yet.
+  if (!last || position.start === undefined || brackets.some(isOwnSeparator)) {
     return undefined;
+  }
+  // A null check that is not finished, as `a IS`.
+  if (position.operator !== undefined && position.operator !== NULL_CHECK_END) {
+    return decideNullCheck({ ...input, context: toBuilderContext(input) });
   }
 
   const parameter = input.getParameter(call, false);
@@ -621,8 +619,10 @@ const decideArgumentStart = async (
   input: DecisionInput,
   call: FunctionCallPosition
 ): Promise<ISuggestionItem[]> => {
-  const { ir } = input;
-  const parameter = input.getParameter(call, ir.previous?.class === 'separator' && !ir.word);
+  const { ir, position } = input;
+  // Nothing of the argument is written, as after a comma or the arrow of a lambda.
+  const isNew = !ir.word && position.written.every((item) => item.class === 'opener');
+  const parameter = input.getParameter(call, isNew && ir.previous?.class !== 'opener');
 
   if (!parameter) {
     return [];
@@ -638,6 +638,22 @@ const decideArgumentStart = async (
       parentFunctionNames: call.enclosing,
     },
   });
+};
+
+const CAST = '::';
+
+/**
+ * Right after `::`: the types the value before it can be cast to, or every type when no
+ * value is written.
+ */
+const decideAfterCast = ({ position, typeOf }: DecisionInput): ISuggestionItem[] => {
+  const index = position.written.findLastIndex((item) => item.text === CAST);
+  const cast = position.written[index];
+  const value = position.written[index - 1];
+
+  return getCastingTypesSuggestions(
+    cast && value ? (typeOf(getOperandRange(cast, value)) as SupportedDataType) : undefined
+  );
 };
 
 /**
@@ -678,29 +694,29 @@ const decideInMap = (input: DecisionInput): ISuggestionItem[] | undefined => {
   );
 };
 
-/**
- * The items for a position inside an expression, decided from the grammar position. Returns
- * nothing for a position this layer does not decide yet.
- */
-export const decideExpression = async (
-  input: DecisionInput
-): Promise<ISuggestionItem[] | undefined> => {
+const decideByPosition = async (input: DecisionInput): Promise<ISuggestionItem[] | undefined> => {
   const { kind, call } = input.position;
 
-  if (!DECIDED_KINDS.has(kind)) {
-    return undefined;
-  }
   if (kind === 'in_string') {
     return decideInString(input);
   }
   if (kind === 'in_map') {
     return decideInMap(input);
   }
+  if (kind === 'after_cast') {
+    return decideAfterCast(input);
+  }
   if (call) {
     switch (kind) {
-      // Right after NOT inside a call is not decided here yet.
-      case 'after_not':
-        return undefined;
+      // The rule for NOT needs nothing of what the function takes.
+      case 'after_not': {
+        const parameter = input.getParameter(call, false);
+
+        return decideAfterNot({
+          ...input,
+          context: parameter ? toCallContext(input, call, parameter) : toBuilderContext(input),
+        });
+      }
       case 'after_operand':
         return decideAfterOperandInCall(input, call);
       case 'after_operator':
@@ -721,3 +737,10 @@ export const decideExpression = async (
       return decideOperandStart(input);
   }
 };
+
+/**
+ * The items for a position inside an expression, decided from the grammar position. A
+ * position with no rule, as after an operator that is not known, gets none.
+ */
+export const decideExpression = async (input: DecisionInput): Promise<ISuggestionItem[]> =>
+  (await decideByPosition(input)) ?? [];

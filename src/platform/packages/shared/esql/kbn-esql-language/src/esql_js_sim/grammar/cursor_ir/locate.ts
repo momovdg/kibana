@@ -216,7 +216,7 @@ const openBrackets = (textBefore: string): string[] => {
 const toCommands = (
   textBefore: string,
   requiredTokens: string,
-  expectsValue: boolean
+  placeholder: string
 ): WrittenCommand[] => {
   const caret = textBefore.length;
   const unfinished = `${textBefore}${requiredTokens}`;
@@ -224,7 +224,8 @@ const toCommands = (
     .reverse()
     .map((opener) => CLOSER_OF[opener] ?? '')
     .join('');
-  const finished = `${unfinished}${expectsValue ? CURSOR_MARKER : ''}${closers}`;
+  const finished = `${unfinished}${placeholder}${closers}`;
+  const expectsValue = placeholder !== '';
 
   return describeCommands(finished)
     .filter(({ start }) => start < caret)
@@ -295,13 +296,24 @@ const OPTIONAL: readonly TokenClass[] = ['end', 'pipe', 'closer', 'separator', '
 const MAX_REQUIRED_TOKENS = 4;
 
 const MAP_OPENER = '{';
+// The rules that take a literal and never a name.
+const LITERAL_RULES: readonly string[] = ['string', 'constant', 'integerValue', 'parameter'];
 const STRING_RULE = 'string';
 
-// What can stand where a map expects something: its names are strings, its values literals.
-const getMapValue = ({ expected }: Expectation): string =>
-  expected.length > 0 && expected.every(({ rule }) => rule === STRING_RULE)
-    ? `"${CURSOR_MARKER}"`
-    : '0';
+/**
+ * What stands for the value the grammar expects at the end of the text. A name fits wherever
+ * a name can come; where only a literal can, as after the match operator or in a map, a
+ * string or a number does.
+ */
+const getPlaceholder = ({ expected }: Expectation): string => {
+  const rules = expected.map(({ rule }) => rule);
+
+  if (!rules.length || rules.some((rule) => !LITERAL_RULES.includes(rule))) {
+    return CURSOR_MARKER;
+  }
+
+  return rules.every((rule) => rule === STRING_RULE) ? `"${CURSOR_MARKER}"` : '0';
+};
 
 /**
  * The text with the tokens the grammar requires next, as `IN (` after `a NOT`. Where the text
@@ -312,7 +324,7 @@ const getMapValue = ({ expected }: Expectation): string =>
 const withRequiredTokens = (
   textBefore: string,
   expectation: Expectation
-): { text: string; expectsValue: boolean } => {
+): { text: string; placeholder: string } => {
   let text = textBefore;
   let current = expectation;
   const isInMap = textBefore.includes(MAP_OPENER) && openBrackets(textBefore).at(-1) === MAP_OPENER;
@@ -331,7 +343,7 @@ const withRequiredTokens = (
       break;
     }
 
-    text = `${text} ${needsMapValue ? getMapValue(current) : required.text} `;
+    text = `${text} ${needsMapValue ? getPlaceholder(current) : required.text} `;
     const location = locateCursor(text, text.length);
     const expected = toArguments(location);
     const followers = toFollowers(location);
@@ -343,7 +355,7 @@ const withRequiredTokens = (
     };
   }
 
-  return { text, expectsValue: expectsValue(current) };
+  return { text, placeholder: expectsValue(current) ? getPlaceholder(current) : '' };
 };
 
 /**
@@ -403,11 +415,11 @@ export const locate = (text: string, offset: number): CursorIR => {
 
   const textBefore = text.slice(0, caret);
   const required = location.inComment
-    ? { text: textBefore, expectsValue: false }
+    ? { text: textBefore, placeholder: '' }
     : withRequiredTokens(textBefore, { position, expected, followers });
   const commands = location.inComment
     ? []
-    : toCommands(textBefore, required.text.slice(caret), required.expectsValue);
+    : toCommands(textBefore, required.text.slice(caret), required.placeholder);
   const written = getInnermost(commands, textBefore) ?? [];
 
   return {
