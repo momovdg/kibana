@@ -332,9 +332,10 @@ const withRequiredTokens = (
   for (let added = 0; added < MAX_REQUIRED_TOKENS; added++) {
     const [required] = current.followers;
     const needsMapValue = isInMap && expectsValue(current);
-    // After the name of a map entry its colon is required, though a value comes before it.
+    // A token can be required after a value too: the colon after the name of a map entry,
+    // or `AS` or `=` after the first name of a rename.
     const isRequired =
-      (current.position === 'start_of_argument' || isInMap) &&
+      (current.position === 'start_of_argument' || current.position === 'after_argument') &&
       !expectsValue(current) &&
       required?.text !== undefined &&
       current.followers.every((follower) => !OPTIONAL.includes(follower.class));

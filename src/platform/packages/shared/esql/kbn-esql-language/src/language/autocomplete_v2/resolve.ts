@@ -33,14 +33,17 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
     requests.push({ kind: 'command_names', commandRules });
   }
 
+  // The command can end here when the query can, or when the next command can start: the
+  // editor then offers a new line, also inside a branch, which ends with a bracket.
+  if (ir.followers.some(({ class: tokenClass }) => tokenClass === 'end' || tokenClass === 'pipe')) {
+    requests.push({ kind: 'end_of_command' });
+  }
+
   for (const follower of ir.followers) {
-    if (follower.startsCommand) {
+    if (follower.startsCommand || follower.class === 'end') {
       continue;
     }
-    // The end of the query stands for the end of the command: the editor offers a new line.
-    if (follower.class === 'end') {
-      requests.push({ kind: 'end_of_command' });
-    } else if (follower.text !== undefined && !isOfExpression(follower.path)) {
+    if (follower.text !== undefined && !isOfExpression(follower.path)) {
       requests.push({ kind: 'token', follower });
     }
   }
