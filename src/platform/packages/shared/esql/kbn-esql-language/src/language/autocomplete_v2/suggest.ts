@@ -15,13 +15,21 @@ import {
   type ResolvedRole,
   type RoleKind,
 } from '../../esql_js_sim/definitions';
-import { locate, type ExpectedArgument } from '../../esql_js_sim/grammar';
+import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/grammar';
 import { createContext } from './context';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
 import { provideCommandNames } from './providers/command_names';
 import { provideEntities } from './providers/entities';
 import { provideExpression, type ExpressionSuggestions } from './providers/expressions';
-import { dependentRoles, provideMap, provideOptionNames } from './providers/structured';
+import {
+  dependentName,
+  dependentRoles,
+  provideMap,
+  provideOptionNames,
+} from './providers/structured';
+import { SUGGESTED_VALUES_BY_NAME } from './presentation';
+import { withAutoSuggest } from '../../commands/definitions/utils/autocomplete/helpers';
+import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
   isAssignment,
   provideAssignment,
@@ -57,19 +65,53 @@ const provideForRole = async (
     // the other roles only outside one.
     case 'dependent_value': {
       const isInMap = EXPRESSION_PARTS[argument.id] !== undefined;
-      const roles = dependentRoles(role, context).filter(
-        (candidate) => (candidate.kind === 'map') === isInMap
-      );
+      const candidates = dependentRoles(role, context);
+      const roles = candidates.filter((candidate) => (candidate.kind === 'map') === isInMap);
       const items = await Promise.all(
         roles.map((candidate) => provideForRole(candidate, argument, resolved, context))
       );
 
-      return items.flat();
+      return [
+        ...items.flat(),
+        ...(isInMap ? [] : provideSuggestedValues(role, resolved, context)),
+        // A value that can be a map is offered its braces, the cursor inside.
+        ...(!isInMap && candidates.some(({ kind }) => kind === 'map') ? [MAP_ITEM] : []),
+      ];
     }
     // The providers of the other roles come with the next steps.
     default:
       return [];
   }
+};
+
+const MAP_ITEM: ISuggestionItem = withAutoSuggest({
+  label: '{ }',
+  text: '{ $0 }',
+  asSnippet: true,
+  kind: 'Value',
+  category: SuggestionCategory.CONSTANT_VALUE,
+});
+
+/**
+ * The values the editor suggests for the value of a name, as the common values of a setting.
+ * They are strings: quoted, unless the cursor is already inside the quotes.
+ */
+const provideSuggestedValues = (
+  role: Extract<ArgumentRole, { kind: 'dependent_value' }>,
+  { id }: ResolvedRole,
+  context: SuggestionContext
+): ISuggestionItem[] => {
+  const name = dependentName(role, context)?.toLowerCase();
+  const values =
+    (id !== undefined && name !== undefined && SUGGESTED_VALUES_BY_NAME[id]?.[name]) || [];
+  const isInString = context.ir.position === 'inside_string';
+
+  return values.map((value) => ({
+    label: value,
+    text: isInString ? value : `"${value}"`,
+    kind: 'Value',
+    category: SuggestionCategory.CONSTANT_VALUE,
+  }));
 };
 
 // The roles whose value can be a string, and so can be offered inside an open one.
@@ -168,19 +210,25 @@ const present = (items: ISuggestionItem[]): ISuggestionItem[] => {
   });
 };
 
-/**
- * The grammar-driven autocomplete. Four steps: locate the cursor in the grammar, resolve what
- * has to be offered there, provide the items for each request, and present them.
- */
-export const suggest = async (
+/** What is offered at a cursor, with the items that continue the command kept apart. */
+interface Collected {
+  ir: CursorIR;
+  context: SuggestionContext | undefined;
+  /** Everything offered, before it is presented. */
+  items: ISuggestionItem[];
+  /** The items for what can follow in the command: its keywords, separators and its end. */
+  continuations: Array<{ request: SuggestionRequest; items: ISuggestionItem[] }>;
+}
+
+const collect = async (
   fullText: string,
   offset: number,
   callbacks?: ESQLCallbacks
-): Promise<ISuggestionItem[]> => {
+): Promise<Collected> => {
   const ir = locate(fullText, offset);
 
   if (NOTHING_APPLIES.includes(ir.position)) {
-    return [];
+    return { ir, context: undefined, items: [], continuations: [] };
   }
 
   // Inside a string only a value can be offered: no keyword and no command starts there.
@@ -211,16 +259,93 @@ export const suggest = async (
     assignment?.kind === 'token' &&
     request !== assignment &&
     request.follower.path.join() === assignment.follower.path.join();
-  const items = await Promise.all(
+  const provided = await Promise.all(
     requests
       .filter((request) => request !== assignment && !isNewName(request))
       .filter((request) => !unfinished.length || !isOutside(request, unfinished))
-      .map((request) => provide(request, context))
+      .map(async (request) => ({ request, items: await provide(request, context) }))
   );
 
-  return present([
-    ...expressions.flatMap((expression) => expression.items),
-    ...assigned,
-    ...items.flat(),
-  ]);
+  return {
+    ir,
+    context,
+    items: [
+      ...expressions.flatMap((expression) => expression.items),
+      ...assigned,
+      ...provided.flatMap(({ items }) => items),
+    ],
+    continuations: provided.filter(
+      ({ request }) => request.kind === 'token' || request.kind === 'end_of_command'
+    ),
+  };
+};
+
+const SEPARATOR_GAP = ' ';
+
+/**
+ * What can follow the word being typed when the word is already whole: the items the flow
+ * offers one space later, each as the word with what follows it, so that one choice does
+ * both. A column that exists and a keyword typed in full get every continuation of the
+ * command; a complete value only the end of its statement.
+ */
+const provideFollowUps = async (
+  fullText: string,
+  offset: number,
+  { ir, context }: Collected,
+  callbacks?: ESQLCallbacks
+): Promise<ISuggestionItem[] | undefined> => {
+  const { word } = ir;
+
+  if (!word?.complete || !context) {
+    return undefined;
+  }
+
+  // A keyword typed in full is whole as a column that exists is.
+  const isKeyword = word.keyword !== undefined;
+  const isColumn =
+    word.kind === 'name' && (await context.getColumnMap()).has(word.argument?.text ?? word.text);
+  const isValue = !isKeyword && (word.kind === 'number' || word.kind === 'string');
+
+  if (!isKeyword && !isColumn && !isValue) {
+    return undefined;
+  }
+
+  const spaced = `${fullText.slice(0, offset)}${SEPARATOR_GAP}${fullText.slice(offset)}`;
+  const { continuations } = await collect(spaced, offset + SEPARATOR_GAP.length, callbacks);
+  const name = word.argument?.text ?? word.text;
+
+  if (isValue) {
+    return continuations
+      .filter(({ request }) => request.kind === 'token' && request.follower.class === 'terminator')
+      .flatMap(({ items }) => items);
+  }
+
+  return continuations.flatMap(({ request, items }) =>
+    items.map((item) => {
+      // The next line is offered as it is; a separator follows the name with no gap.
+      if (request.kind === 'end_of_command') {
+        return item;
+      }
+
+      const isSeparator = request.kind === 'token' && request.follower.class === 'separator';
+
+      return { ...item, text: `${name}${isSeparator ? '' : SEPARATOR_GAP}${item.text}` };
+    })
+  );
+};
+
+/**
+ * The grammar-driven autocomplete. Four steps: locate the cursor in the grammar, resolve what
+ * has to be offered there, provide the items for each request, and present them.
+ */
+export const suggest = async (
+  fullText: string,
+  offset: number,
+  callbacks?: ESQLCallbacks
+): Promise<ISuggestionItem[]> => {
+  const collected = await collect(fullText, offset, callbacks);
+  const followUps = await provideFollowUps(fullText, offset, collected, callbacks);
+
+  // A word that is already whole is offered with what follows it, and not as itself again.
+  return present(followUps?.length ? followUps : collected.items);
 };
