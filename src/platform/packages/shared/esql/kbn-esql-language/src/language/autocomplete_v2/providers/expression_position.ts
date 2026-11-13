@@ -9,6 +9,7 @@
 
 import { EXPRESSION_PARTS, FUNCTION_CALL, type CallSiteId } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenAncestor, WrittenArgument } from '../../../esql_js_sim/grammar';
+import { getLambdas } from './lambdas';
 
 /**
  * Where the cursor is inside an expression, read from the grammar position alone.
@@ -113,9 +114,15 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
         }
       : undefined;
   // The expression starts after the bracket or the comma of the call, or where the whole does.
-  const from = callPlace
+  const argumentStart = callPlace
     ? (separators.at(-1) ?? inCall.find(({ kind }) => kind === 'token'))?.end
     : whole?.start;
+  // In the body of a lambda, the expression is the body: it starts after the arrow.
+  const bodyStart = getLambdas(ir)
+    .filter(({ isAroundCursor }) => isAroundCursor)
+    .at(-1)?.head.end;
+  const from =
+    bodyStart !== undefined && bodyStart > (argumentStart ?? -1) ? bodyStart : argumentStart;
   const written = from === undefined ? [] : ir.written.filter(({ start }) => start >= from);
   const operands = written.filter((item) => item.class !== 'opener');
   const start = operands[0]?.start ?? ir.word?.start;

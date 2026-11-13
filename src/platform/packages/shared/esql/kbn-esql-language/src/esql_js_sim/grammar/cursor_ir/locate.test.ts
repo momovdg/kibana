@@ -471,6 +471,12 @@ describe('locate', () => {
       expect(ir.written.some(({ text }) => text.includes('esql_cursor_marker'))).toBe(false);
     });
 
+    it('keeps what is written where only a literal can follow', () => {
+      const ir = at('FROM a | EVAL x = FN(b : ');
+
+      expect(texts(ir, 'functionExpression>functionName')).toEqual(['FN']);
+    });
+
     it('is empty where a command starts', () => {
       expect(at('FROM a | ').written).toEqual([]);
       expect(at('').written).toEqual([]);
