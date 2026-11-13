@@ -14,6 +14,7 @@ import { resolveRole } from '../../../esql_js_sim/definitions';
 import { getColumnsByTypeRetriever } from '../../shared/columns_retrieval_helpers';
 import { RECOMMENDED_QUERIES } from '../presentation';
 import type { SuggestionContext } from '../types';
+import { pathOf } from '../written';
 
 const NO_EXTENSIONS = { recommendedQueries: [], recommendedFields: [] };
 
@@ -30,7 +31,7 @@ export const provideExtras = async (context: SuggestionContext): Promise<ISugges
     return [];
   }
 
-  const resolved = resolveRole([...last.ancestors.map(({ id }) => id), last.id]);
+  const resolved = resolveRole(pathOf(last));
   const isSource = resolved?.role.kind === 'entity' && resolved.role.entityType === 'source';
   const queries = resolved?.enclosing
     .map(({ id }) => RECOMMENDED_QUERIES[id])

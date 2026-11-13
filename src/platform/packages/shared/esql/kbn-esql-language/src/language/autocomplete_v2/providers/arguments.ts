@@ -10,7 +10,6 @@
 import { getNewUserDefinedColumnSuggestion } from '../../../commands/registry/complete_items';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
-  resolveRole,
   type ColumnRole,
   type ConstantRole,
   type NewNameRole,
@@ -20,7 +19,7 @@ import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { buildConstantsDefinitions } from '../../../commands/definitions/utils/literals';
 import { SUGGESTED_VALUES } from '../presentation';
 import type { SuggestionContext } from '../types';
-import { ASSIGNMENT } from '../written';
+import { ASSIGNMENT, roleIdOf } from '../written';
 
 /**
  * Whether the item for an argument ends with a space and opens the next suggestions. It does
@@ -35,10 +34,7 @@ const movesOn = ({ afterName }: SuggestionContext): boolean =>
 const writtenWithRole = ({ ir }: SuggestionContext, { id }: ResolvedRole): string[] =>
   ir.written
     .filter(({ kind, open }) => kind === 'rule' && !open)
-    .filter(
-      (argument) =>
-        resolveRole([...argument.ancestors.map((ancestor) => ancestor.id), argument.id])?.id === id
-    )
+    .filter((argument) => roleIdOf(argument) === id)
     .map(({ text }) => text.replace(/`/g, ''));
 
 /** The existing columns the role accepts. A column listed once is not offered again. */

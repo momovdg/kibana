@@ -7,10 +7,10 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { EXPRESSION_PARTS, FUNCTION_CALL, type CallSiteId } from '../../../esql_js_sim/definitions';
+import { FUNCTION_CALL, type CallSiteId } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenAncestor, WrittenArgument } from '../../../esql_js_sim/grammar';
 import { getLambdas } from './lambdas';
-import { CAST, isSamePlace, partOf, lowerTextOf } from '../written';
+import { CAST, isSamePlace, partOf, lowerTextOf, isDirectlyIn } from '../written';
 
 /**
  * Where the cursor is inside an expression, read from the grammar position alone.
@@ -81,19 +81,17 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
   const around = last?.ancestors ?? [];
   const whole = around.find(({ id }) => id === entry);
   const isClosed = (place: WrittenAncestor): boolean =>
-    ir.written.some((item) => item.class === 'closer' && isSamePlace(item.ancestors.at(-1), place));
+    ir.written.some((item) => item.class === 'closer' && isDirectlyIn(item, place));
   // The cursor is in a call until its closing bracket is written.
   const callPlace =
     whole &&
     around.findLast((place) => place.id === FUNCTION_CALL && place.open && !isClosed(place));
-  const inCall = callPlace
-    ? ir.written.filter(({ ancestors }) => isSamePlace(ancestors.at(-1), callPlace))
-    : [];
+  const inCall = callPlace ? ir.written.filter((item) => isDirectlyIn(item, callPlace)) : [];
   const separators = inCall.filter((item) => item.class === 'separator');
   const name = inCall.find((item) => partOf(item) === 'function_name')?.text.toLowerCase();
   const nameIn = (place: WrittenAncestor): string | undefined =>
     ir.written
-      .find((item) => isSamePlace(item.ancestors.at(-1), place) && partOf(item) === 'function_name')
+      .find((item) => isDirectlyIn(item, place) && partOf(item) === 'function_name')
       ?.text.toLowerCase();
   const call =
     callPlace && name
@@ -124,7 +122,7 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
   if (ir.position === 'inside_string') {
     return { ...base, kind: 'in_string' };
   }
-  if (ir.arguments.some(({ id }) => MAP_PARTS.includes(EXPRESSION_PARTS[id]?.part ?? ''))) {
+  if (ir.arguments.some(({ id }) => MAP_PARTS.includes(partOf({ id }) ?? ''))) {
     return { ...base, kind: 'in_map' };
   }
   // Nothing is written, or the word typed goes on with a name, as after the dot of `a.b`.
