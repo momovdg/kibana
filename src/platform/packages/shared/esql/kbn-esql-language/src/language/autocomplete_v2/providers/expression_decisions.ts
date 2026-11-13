@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { suggestForEmptyExpression } from '../../../commands/definitions/utils/autocomplete/expressions/positions/empty_expression';
 import { SuggestionBuilder } from '../../../commands/definitions/utils/autocomplete/expressions/suggestion_builder';
 import type {
   ExpressionContext,
@@ -37,6 +38,7 @@ import {
   getOperandRange,
   isOperandOf,
   type ExpressionPosition,
+  type FunctionCallPosition,
   type ExpressionPositionKind,
 } from './expression_position';
 
@@ -60,7 +62,16 @@ export interface DecisionInput {
   expressionType: ExpressionType;
   /** The type of what is written between two offsets. */
   typeOf: (range: { start: number; end: number }) => ExpressionType;
+  /**
+   * What the definition of the function around the cursor says about the argument there, by
+   * the types of the arguments written before it. Nothing for a function that is not known.
+   */
+  getParameter: (call: FunctionCallPosition, startsArgument: boolean) => FunctionParameter;
 }
+
+type FunctionParameter =
+  | NonNullable<SuggestForExpressionParams['options']>['functionParameterContext']
+  | null;
 
 type ExpressionType = SupportedDataType | 'unknown';
 
@@ -319,6 +330,34 @@ const decideAfterOperator = async (
 };
 
 /**
+ * Where an argument of a function starts: what the definition of the function takes there.
+ * The definition decides everything, so the items are those the current flow builds for a
+ * parameter: its listed values, or the literals, columns and functions of its types.
+ */
+const decideArgumentStart = async (
+  input: DecisionInput,
+  call: FunctionCallPosition
+): Promise<ISuggestionItem[]> => {
+  const { ir } = input;
+  const parameter = input.getParameter(call, ir.previous?.class === 'separator' && !ir.word);
+
+  if (!parameter) {
+    return [];
+  }
+
+  const context = toBuilderContext(input);
+
+  return suggestForEmptyExpression({
+    ...context,
+    options: {
+      ...context.options,
+      functionParameterContext: parameter,
+      parentFunctionNames: call.enclosing,
+    },
+  });
+};
+
+/**
  * The items for a position inside an expression, decided from the grammar position. Returns
  * nothing for a position this layer does not decide yet.
  */
@@ -327,8 +366,12 @@ export const decideExpression = async (
 ): Promise<ISuggestionItem[] | undefined> => {
   const { kind, call } = input.position;
 
-  if (!DECIDED_KINDS.has(kind) || call) {
+  if (!DECIDED_KINDS.has(kind)) {
     return undefined;
+  }
+  if (call) {
+    // The other positions inside a function call are not decided here yet.
+    return kind === 'empty' ? decideArgumentStart(input, call) : undefined;
   }
 
   switch (kind) {

@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { Walker } from '@elastic/esql';
+import { isFunctionExpression, Walker } from '@elastic/esql';
 import type { ESQLAstAllCommands, ESQLSingleAstItem } from '@elastic/esql/types';
 import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../../commands/definitions/constants';
 import {
@@ -15,6 +15,7 @@ import {
   getExpressionType,
   suggestForExpression,
 } from '../../../commands/definitions/utils';
+import { buildExpressionFunctionParameterContext } from '../../../commands/definitions/utils/autocomplete/expressions/utils';
 import type { SuggestForExpressionParams } from '../../../commands/definitions/utils/autocomplete/expressions/types';
 import { isExpressionComplete } from '../../../commands/definitions/utils/expressions';
 import { getUnmappedFieldsStrategy } from '../../../commands/definitions/utils/settings';
@@ -38,7 +39,7 @@ import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_cont
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
 import { decideExpression } from './expression_decisions';
-import { describeExpressionPosition } from './expression_position';
+import { describeExpressionPosition, type FunctionCallPosition } from './expression_position';
 import { getLambdas, getLambdaState, type LambdaParameter, type LambdaState } from './lambdas';
 
 /** What the expression at the cursor offers, and whether the command can go on after it. */
@@ -312,11 +313,23 @@ export const provideExpression = async (
       fullContext.unmappedFieldsStrategy,
       fullContext.isTimeseriesSource === true
     );
+  // The grammar says which call the cursor is in; the node of that call gives the types of
+  // the arguments written in it.
+  const getParameter = ({ start }: FunctionCallPosition, startsArgument: boolean) => {
+    const call = Walker.find(
+      command,
+      (node) => isFunctionExpression(node) && node.location.min === start
+    );
+
+    return call && isFunctionExpression(call)
+      ? buildExpressionFunctionParameterContext(call, fullContext, startsArgument)
+      : null;
+  };
   // The position comes from the grammar. A position that is not decided here yet still goes
   // to the expression engine of the current flow.
   const position = describeExpressionPosition(ir, entry);
   const items =
-    (await decideExpression({ ir, position, request, expressionType, typeOf })) ??
+    (await decideExpression({ ir, position, request, expressionType, typeOf, getParameter })) ??
     (await suggestForExpression(request)).suggestions;
   const isComplete = isExpressionComplete(expressionType, text.slice(0, offset));
   const hasItsType = !role.completeAs || expressionType === role.completeAs;
