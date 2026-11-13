@@ -39,7 +39,7 @@ import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_cont
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
 import { decideExpression } from './expression_decisions';
-import { describeExpressionPosition, type FunctionCallPosition } from './expression_position';
+import { describeExpressionPosition } from './expression_position';
 import { getLambdas, getLambdaState, type LambdaParameter, type LambdaState } from './lambdas';
 
 /** What the expression at the cursor offers, and whether the command can go on after it. */
@@ -315,10 +315,16 @@ export const provideExpression = async (
     );
   // The grammar says which call the cursor is in; the node of that call gives the types of
   // the arguments written in it.
-  const getParameter = ({ start }: FunctionCallPosition, startsArgument: boolean) => {
+  const getParameter = (
+    { start, name }: { start: number; name?: string },
+    startsArgument: boolean
+  ) => {
     const call = Walker.find(
       command,
-      (node) => isFunctionExpression(node) && node.location.min === start
+      (node) =>
+        isFunctionExpression(node) &&
+        node.location.min === start &&
+        (name === undefined || node.name === name)
     );
 
     return call && isFunctionExpression(call)
