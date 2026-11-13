@@ -146,8 +146,31 @@ describe('suggest (v2)', () => {
       expect((await textsAt('FROM a | KEEP b ')).sort()).toEqual(['\n', ', ', '| ']);
     });
 
+    describe('a keyword, by what the grammar allows right after it', () => {
+      it('is offered alone when nothing has to follow it', async () => {
+        const texts = await textsAt('FROM a | SORT 1 ');
+
+        expect(texts).toEqual(expect.arrayContaining(['ASC', 'DESC']));
+      });
+
+      it('is offered with the keywords that have to follow it', async () => {
+        const texts = await textsAt('FROM a | SORT 1 ');
+
+        expect(texts).toEqual(expect.arrayContaining(['NULLS FIRST', 'NULLS LAST']));
+        expect(texts).not.toContain('NULLS ');
+      });
+
+      it('is offered with the braces of the map that has to follow it', async () => {
+        expect(await textsAt('FROM a | COMPLETION "p" ')).toContain('WITH { $0 }');
+      });
+
+      it('is offered with a space when anything else has to follow it', async () => {
+        expect(await textsAt('FROM a | STATS c = COUNT() ')).toContain('BY ');
+      });
+    });
+
     it('offers each item once', async () => {
-      const texts = await textsAt('FROM a | SORT b ');
+      const texts = await textsAt('FROM a | SORT 1 ');
 
       expect(new Set(texts).size).toBe(texts.length);
     });

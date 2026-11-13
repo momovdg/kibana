@@ -32,6 +32,8 @@ export {
   withoutRecursion,
 } from './grammar_positions/grammar_positions';
 export type { CommandStart, GrammarPosition } from './grammar_positions/grammar_positions';
+export { getTokenSuccessors } from './grammar_positions/token_successors';
+export type { SuccessorToken, TokenSuccessors } from './grammar_positions/token_successors';
 export { GRAMMAR_LABELS } from './grammar_labels/grammar_labels.generated';
 export { getCalledRules, getCallSites } from './grammar_labels/call_sites';
 export { RULE_END, RULE_START } from './grammar_labels/types';
