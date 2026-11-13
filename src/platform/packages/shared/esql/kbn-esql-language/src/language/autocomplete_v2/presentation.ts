@@ -38,3 +38,15 @@ export const SUGGESTED_VALUES_BY_NAME: Readonly<
     unmapped_fields: Object.values(UnmappedFieldsStrategy),
   },
 };
+
+/**
+ * Where the editor offers ready-made next steps of a query once the sources are written, by
+ * the place of the list of sources. `with_templates`: the editor's own queries and the
+ * static ones; `from_the_editor`: only the editor's, where the static ones do not apply.
+ */
+export const RECOMMENDED_QUERIES: Readonly<
+  Record<CallSiteId, 'with_templates' | 'from_the_editor'>
+> = {
+  'fromCommand>indexPatternAndMetadataFields': 'with_templates',
+  'timeSeriesCommand>indexPatternAndMetadataFields': 'from_the_editor',
+};
