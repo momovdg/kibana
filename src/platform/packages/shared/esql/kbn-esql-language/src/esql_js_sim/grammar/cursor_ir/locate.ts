@@ -305,7 +305,7 @@ const STRING_RULE = 'string';
  * a name can come; where only a literal can, as after the match operator or in a map, a
  * string or a number does.
  */
-const getPlaceholder = ({ expected }: Expectation): string => {
+export const getValuePlaceholder = (expected: ExpectedArgument[]): string => {
   const rules = expected.map(({ rule }) => rule);
 
   if (!rules.length || rules.some((rule) => !LITERAL_RULES.includes(rule))) {
@@ -344,7 +344,7 @@ const withRequiredTokens = (
       break;
     }
 
-    text = `${text} ${needsMapValue ? getPlaceholder(current) : required.text} `;
+    text = `${text} ${needsMapValue ? getValuePlaceholder(current.expected) : required.text} `;
     const location = locateCursor(text, text.length);
     const expected = toArguments(location);
     const followers = toFollowers(location);
@@ -356,7 +356,7 @@ const withRequiredTokens = (
     };
   }
 
-  return { text, placeholder: expectsValue(current) ? getPlaceholder(current) : '' };
+  return { text, placeholder: expectsValue(current) ? getValuePlaceholder(current.expected) : '' };
 };
 
 /**

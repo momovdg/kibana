@@ -46,7 +46,7 @@ const provideForRole = async (
     case 'new_name':
       return provideNewName(role, context);
     case 'constant':
-      return provideConstant(role, context);
+      return provideConstant(role, resolved, context);
     case 'entity':
       return provideEntities(role, resolved, context);
     case 'option_name':
@@ -75,6 +75,21 @@ const provideForRole = async (
 // The roles whose value can be a string, and so can be offered inside an open one.
 const STRING_VALUED: readonly RoleKind[] = ['map', 'constant', 'dependent_value'];
 
+/**
+ * The terminator that has to follow a value here, as `;` after the value of a header
+ * statement, unless it is already written after the cursor.
+ */
+const getClosingTerminator = ({ afterName, ir }: SuggestionContext): string | undefined => {
+  const [only] = afterName.followers;
+  const closes =
+    afterName.followers.length === 1 &&
+    // A value that could still go on, as a number, does not change what has to follow it.
+    afterName.arguments.every(({ continues }) => continues) &&
+    only.class === 'terminator';
+
+  return closes && ir.next?.class !== 'terminator' ? only.text : undefined;
+};
+
 const provideArgument = async (
   { argument, resolved }: Extract<SuggestionRequest, { kind: 'argument' }>,
   context: SuggestionContext
@@ -88,7 +103,13 @@ const provideArgument = async (
     return [];
   }
 
-  return provideForRole(resolved.role, argument, resolved, context);
+  const items = await provideForRole(resolved.role, argument, resolved, context);
+  const terminator = getClosingTerminator(context);
+
+  // A value that ends its statement gets the terminator with it, so one choice finishes both.
+  return terminator === undefined || context.ir.position === 'inside_string'
+    ? items
+    : items.map((item) => ({ ...item, text: `${item.text.trimEnd()}${terminator}` }));
 };
 
 const provide = async (
@@ -99,6 +120,11 @@ const provide = async (
     case 'command_names':
       return provideCommandNames(request.commandRules, context);
     case 'token':
+      // A terminator that is already written right after the cursor is not offered again.
+      if (request.follower.class === 'terminator' && context.ir.next?.class === 'terminator') {
+        return [];
+      }
+
       return isAssignment(request.follower)
         ? provideAssignment(context)
         : provideToken(request.follower);

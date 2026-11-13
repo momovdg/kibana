@@ -231,6 +231,35 @@ describe('suggest (v2)', () => {
     });
   });
 
+  describe('presentation', () => {
+    it('offers the values the editor suggests where the language allows any', async () => {
+      expect(await textsAt('FROM a | LIMIT ')).toEqual(['10 ', '100 ', '1000 ']);
+    });
+
+    it('offers the end of a header statement after its value, with the next line', async () => {
+      expect(await textsAt('SET approximation = true ')).toEqual([';\n']);
+    });
+
+    it('does not offer the end of a statement that is already written', async () => {
+      const query = 'SET approximation = true ';
+
+      expect((await suggest(`${query};`, query.length)).map(({ text }) => text)).toEqual([]);
+    });
+
+    it('ends a value with the terminator its statement needs', async () => {
+      expect(await textsAt('SET approximation = ')).toEqual(
+        expect.arrayContaining(['true;', 'false;'])
+      );
+    });
+
+    it('offers a ready-made date histogram where a grouping starts', async () => {
+      const texts = await textsAt('FROM a | STATS COUNT() BY ');
+
+      expect(texts.some((text) => text.startsWith('BUCKET($0, '))).toBe(true);
+      expect(await textsAt('FROM a | EVAL b = ')).not.toContain('BUCKET($0, 50, ?_tstart, ?_tend)');
+    });
+  });
+
   describe('the assignment after a name', () => {
     const callbacks = createCallbacks({
       columns: [{ name: 'existing', type: 'keyword', userDefined: false }],
@@ -414,7 +443,7 @@ describe('suggest (v2)', () => {
 
   describe('a value that depends on a name', () => {
     it('takes the roles the named entity defines for its value', async () => {
-      expect((await textsAt('SET approximation = ')).sort()).toEqual(['false', 'true']);
+      expect((await textsAt('SET approximation = ')).sort()).toEqual(['false;', 'true;']);
       expect((await textsAt('SET approximation = { ')).sort()).toEqual([
         '"confidence_level": ',
         '"rows": ',
