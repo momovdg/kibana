@@ -202,7 +202,8 @@ describe('suggest (v2)', () => {
 
     it('leaves out a column that is already listed where each is listed once', async () => {
       expect((await textsAt('FROM x | KEEP a, ', callbacks)).sort()).toEqual(['b', 'c']);
-      expect((await textsAt('FROM x | KEEP a, b', callbacks)).sort()).toEqual(['b', 'c']);
+      // A word that is not yet a column: the list is filtered by the editor as it is typed.
+      expect((await textsAt('FROM x | KEEP a, z', callbacks)).sort()).toEqual(['b', 'c']);
     });
 
     it('ends a column with a space unless a list separator can follow it', async () => {
@@ -250,6 +251,53 @@ describe('suggest (v2)', () => {
       expect(await textsAt('SET approximation = ')).toEqual(
         expect.arrayContaining(['true;', 'false;'])
       );
+    });
+
+    it('offers the values the editor suggests for the value of a name', async () => {
+      expect(await textsAt('SET project_routing = ')).toEqual(
+        expect.arrayContaining(['"_alias:*";', '"_alias:_origin";'])
+      );
+      // Inside the quotes the value comes without them, and without the terminator.
+      expect(await textsAt('SET project_routing = "_al')).toEqual(
+        expect.arrayContaining(['_alias:*', '_alias:_origin'])
+      );
+    });
+
+    describe('a word that is already whole', () => {
+      const callbacks = createCallbacks({
+        columns: [{ name: 'host', type: 'keyword', userDefined: false }],
+      });
+
+      it('is offered with what can follow it, when it is a column that exists', async () => {
+        expect((await textsAt('FROM w | SORT host', callbacks)).sort()).toEqual([
+          '\n',
+          'host ASC',
+          'host DESC',
+          'host NULLS FIRST',
+          'host NULLS LAST',
+          'host | ',
+          'host, ',
+        ]);
+      });
+
+      it('is offered with what can follow it, when it is a keyword typed in full', async () => {
+        expect(await textsAt('FROM w | SORT host ASC', callbacks)).toEqual(
+          expect.arrayContaining(['ASC NULLS FIRST', 'ASC, ', 'ASC | '])
+        );
+      });
+
+      it('keeps the usual items while the word is not whole', async () => {
+        expect(await textsAt('FROM w | SORT hos', callbacks)).toContain('host ');
+      });
+
+      it('keeps the usual items where the command cannot go on after it', async () => {
+        // A filter is not finished by a column alone.
+        expect(await textsAt('FROM w | WHERE host', callbacks)).toContain('host ');
+      });
+
+      it('gets the end of its statement when it is a value', async () => {
+        expect(await textsAt('SET project_routing = "x"')).toEqual([';\n']);
+      });
     });
 
     it('offers a ready-made date histogram where a grouping starts', async () => {
@@ -443,7 +491,11 @@ describe('suggest (v2)', () => {
 
   describe('a value that depends on a name', () => {
     it('takes the roles the named entity defines for its value', async () => {
-      expect((await textsAt('SET approximation = ')).sort()).toEqual(['false;', 'true;']);
+      expect((await textsAt('SET approximation = ')).sort()).toEqual([
+        'false;',
+        'true;',
+        '{ $0 };',
+      ]);
       expect((await textsAt('SET approximation = { ')).sort()).toEqual([
         '"confidence_level": ',
         '"rows": ',

@@ -8,6 +8,7 @@
  */
 
 import { defaultLimitValueSuggestions } from '../../commands/registry/complete_items';
+import { UnmappedFieldsStrategy } from '../../commands/registry/types';
 import type { CallSiteId } from '../../esql_js_sim/definitions';
 
 /**
@@ -23,4 +24,17 @@ import type { CallSiteId } from '../../esql_js_sim/definitions';
 export const SUGGESTED_VALUES: Readonly<Record<CallSiteId, readonly string[]>> = {
   'limitCommand>constant': defaultLimitValueSuggestions,
   'mmrCommand.limitValue': defaultLimitValueSuggestions,
+};
+
+/**
+ * Values worth offering for the value of a name, by the place of the value and by the name:
+ * the common values of a setting that takes any string.
+ */
+export const SUGGESTED_VALUES_BY_NAME: Readonly<
+  Record<CallSiteId, Readonly<Record<string, readonly string[]>>>
+> = {
+  'setField>constant': {
+    project_routing: ['_alias:*', '_alias:_origin'],
+    unmapped_fields: Object.values(UnmappedFieldsStrategy),
+  },
 };
