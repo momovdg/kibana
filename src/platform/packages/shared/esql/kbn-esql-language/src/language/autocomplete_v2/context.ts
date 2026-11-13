@@ -12,7 +12,7 @@ import type { LicenseType } from '@kbn/licensing-types';
 import { EsqlQuery } from '@elastic/esql';
 import type { ICommand } from '../../commands/registry/registry';
 import type { ColumnsMap } from '../shared/columns_retrieval_helpers';
-import { locate, type CursorIR } from '../../esql_js_sim/grammar';
+import { getValuePlaceholder, locate, type CursorIR } from '../../esql_js_sim/grammar';
 import { getColumnsByTypeRetriever } from '../shared/columns_retrieval_helpers';
 import { getNesting, getQueryBeforeCursor } from './pipeline';
 import { getRegisteredCommand } from './command_metadata';
@@ -21,8 +21,6 @@ import type { SuggestionContext } from './types';
 const isSame = (first: string[], second: string[]): boolean =>
   first.length === second.length && first.every((rule, index) => rule === second[index]);
 
-// A name no query contains, which the lexer reads as a name in every place a name can be.
-const PLACEHOLDER_NAME = 'esql_placeholder_name';
 const NAME_RULES: readonly string[] = ['qualifiedName', 'qualifiedNamePattern', 'identifier'];
 
 type ColumnRetriever = ReturnType<typeof getColumnsByTypeRetriever>;
@@ -73,7 +71,8 @@ export const createContext = async (
     ({ command, enclosingCommands }) => !isHeader(command) && isSame(enclosingCommands, nesting)
   );
   const [source] = pipeline;
-  const afterNameText = `${text.slice(0, caret)}${PLACEHOLDER_NAME} `;
+  // What stands for the value typed here: a name where one can come, a literal otherwise.
+  const afterNameText = `${text.slice(0, caret)}${getValuePlaceholder(ir.arguments)} `;
 
   return {
     callbacks,
