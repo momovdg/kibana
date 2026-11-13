@@ -460,6 +460,17 @@ describe('locate', () => {
       }
     );
 
+    it.each([
+      'FROM a | EVAL x = FN(b, "c", {',
+      'FROM a | EVAL x = FN(b, "c", {"k": ',
+      'FROM a | EVAL x = FN(b, "c", {"k": 1, ',
+    ])('keeps what is written in %j, inside a map', (query) => {
+      const ir = at(query);
+
+      expect(texts(ir, 'functionExpression>functionName')).toEqual(['FN']);
+      expect(ir.written.some(({ text }) => text.includes('esql_cursor_marker'))).toBe(false);
+    });
+
     it('is empty where a command starts', () => {
       expect(at('FROM a | ').written).toEqual([]);
       expect(at('').written).toEqual([]);

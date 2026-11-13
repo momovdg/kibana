@@ -294,10 +294,20 @@ const expectsValue = ({ position, expected, followers }: Expectation): boolean =
 const OPTIONAL: readonly TokenClass[] = ['end', 'pipe', 'closer', 'separator', 'terminator'];
 const MAX_REQUIRED_TOKENS = 4;
 
+const MAP_OPENER = '{';
+const STRING_RULE = 'string';
+
+// What can stand where a map expects something: its names are strings, its values literals.
+const getMapValue = ({ expected }: Expectation): string =>
+  expected.length > 0 && expected.every(({ rule }) => rule === STRING_RULE)
+    ? `"${CURSOR_MARKER}"`
+    : '0';
+
 /**
  * The text with the tokens the grammar requires next, as `IN (` after `a NOT`. Where the text
  * stops on a token that needs another one, the parser cannot read the command at all, and
- * what is written of it would be lost.
+ * what is written of it would be lost. Inside a map a name alone is not enough either: an
+ * entry is a name, a colon and a value, so each is added in turn.
  */
 const withRequiredTokens = (
   textBefore: string,
@@ -305,20 +315,23 @@ const withRequiredTokens = (
 ): { text: string; expectsValue: boolean } => {
   let text = textBefore;
   let current = expectation;
+  const isInMap = textBefore.includes(MAP_OPENER) && openBrackets(textBefore).at(-1) === MAP_OPENER;
 
   for (let added = 0; added < MAX_REQUIRED_TOKENS; added++) {
     const [required] = current.followers;
+    const needsMapValue = isInMap && expectsValue(current);
+    // After the name of a map entry its colon is required, though a value comes before it.
     const isRequired =
-      current.position === 'start_of_argument' &&
+      (current.position === 'start_of_argument' || isInMap) &&
       !expectsValue(current) &&
       required?.text !== undefined &&
       current.followers.every((follower) => !OPTIONAL.includes(follower.class));
 
-    if (!isRequired) {
+    if (!needsMapValue && !isRequired) {
       break;
     }
 
-    text = `${text} ${required.text} `;
+    text = `${text} ${needsMapValue ? getMapValue(current) : required.text} `;
     const location = locateCursor(text, text.length);
     const expected = toArguments(location);
     const followers = toFollowers(location);
