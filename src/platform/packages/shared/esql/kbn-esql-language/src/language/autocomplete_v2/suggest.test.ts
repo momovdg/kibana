@@ -312,6 +312,40 @@ describe('suggest (v2)', () => {
     });
   });
 
+  describe('what the editor adds', () => {
+    const withBrowser = createCallbacks({ supportsResourceBrowser: true });
+
+    // The browser is an action: its item inserts no text.
+    const hasAction = async (query: string, callbacks: ESQLCallbacks): Promise<boolean> =>
+      (await textsAt(query, callbacks)).includes('');
+
+    it('offers the browser of data sources where a source starts, when the editor has one', async () => {
+      expect(await hasAction('FROM ', withBrowser)).toBe(true);
+      expect(await hasAction('FROM a, ', withBrowser)).toBe(true);
+      expect(await hasAction('FROM ', createCallbacks({}))).toBe(false);
+    });
+
+    it('does not offer the browser inside a subquery or while a name is typed', async () => {
+      expect(await hasAction('FROM a, (FROM ', withBrowser)).toBe(false);
+      expect(await hasAction('FROM ind', withBrowser)).toBe(false);
+    });
+
+    it('offers ready-made queries after the sources, where the next command can start', async () => {
+      const texts = await textsAt('FROM index ', createCallbacks({}));
+
+      expect(texts.some((text) => text.startsWith('\n| '))).toBe(true);
+      expect(
+        (await textsAt('FROM index, ', createCallbacks({}))).some((text) => text.startsWith('\n| '))
+      ).toBe(false);
+    });
+
+    it('offers no ready-made query after a metadata field', async () => {
+      const texts = await textsAt('FROM index METADATA _id ', createCallbacks({}));
+
+      expect(texts.some((text) => text.startsWith('\n| '))).toBe(false);
+    });
+  });
+
   describe('the assignment after a name', () => {
     const callbacks = createCallbacks({
       columns: [{ name: 'existing', type: 'keyword', userDefined: false }],

@@ -36,11 +36,14 @@ const engineFiles = (dir: string): string[] =>
 const describeFinding = (file: string, finding: string): string =>
   `${relative(__dirname, file)}: ${finding}`;
 
-// A command's folder is a folder directly under the registry.
+// The folders under the registry that hold what commands share, and belong to no command.
+const SHARED_FOLDERS: readonly string[] = ['options'];
+
+// A command's folder is any other folder directly under the registry.
 const isInCommandFolder = (target: string): boolean => {
   const [folder, ...rest] = relative(REGISTRY_DIR, target).split(sep);
 
-  return !folder.startsWith('..') && rest.length > 0;
+  return !folder.startsWith('..') && rest.length > 0 && !SHARED_FOLDERS.includes(folder);
 };
 
 describe('autocomplete v2 boundary', () => {
