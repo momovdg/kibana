@@ -172,6 +172,12 @@ export const provideOptionNames = (
     );
 };
 
+/** The name a value depends on, as it is written. */
+export const dependentName = (
+  { on }: DependentValueRole,
+  context: SuggestionContext
+): string | undefined => writtenAt(context, on);
+
 /**
  * The roles a value can have, given the name another argument gives: the role listed for
  * that name, or the roles the named entity defines for its value.
