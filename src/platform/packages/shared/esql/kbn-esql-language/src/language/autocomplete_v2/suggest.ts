@@ -21,6 +21,7 @@ import { provideColumns, provideConstant, provideNewName } from './providers/arg
 import { provideCommandNames } from './providers/command_names';
 import { provideEntities } from './providers/entities';
 import { provideExpression, type ExpressionSuggestions } from './providers/expressions';
+import { provideExtras } from './providers/extras';
 import {
   dependentName,
   dependentRoles,
@@ -265,9 +266,17 @@ const collect = async (
     assignment?.kind === 'token' &&
     request !== assignment &&
     request.follower.path.join() === assignment.follower.path.join();
+  // Where an entity is expected, its role says whether a subquery can stand for it: the
+  // bracket alone does not.
+  const roleDecidesSubquery = requests.some(
+    (request) => request.kind === 'argument' && request.resolved?.role.kind === 'entity'
+  );
+  const isOpenerOfRole = (request: SuggestionRequest): boolean =>
+    roleDecidesSubquery && request.kind === 'token' && opensSubquery(request.follower);
   const provided = await Promise.all(
     requests
       .filter((request) => request !== assignment && !isNewName(request))
+      .filter((request) => !isOpenerOfRole(request))
       .filter((request) => !unfinished.length || !isOutside(request, unfinished))
       .map(async (request) => ({ request, items: await provide(request, context) }))
   );
@@ -279,6 +288,7 @@ const collect = async (
       ...expressions.flatMap((expression) => expression.items),
       ...assigned,
       ...provided.flatMap(({ items }) => items),
+      ...(await provideExtras(context)),
     ],
     continuations: provided.filter(
       ({ request }) => request.kind === 'token' || request.kind === 'end_of_command'
