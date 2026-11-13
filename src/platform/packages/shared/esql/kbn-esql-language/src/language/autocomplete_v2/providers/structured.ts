@@ -16,7 +16,6 @@ import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplet
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   ARGUMENT_ROLES,
-  EXPRESSION_PARTS,
   resolveRole,
   type ArgumentRole,
   type DependentValueRole,
@@ -25,22 +24,14 @@ import {
   type OptionNameRole,
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
-import type { ExpectedArgument, WrittenArgument } from '../../../esql_js_sim/grammar';
+import type { ExpectedArgument } from '../../../esql_js_sim/grammar';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
+import { partOf, unquoted, pathOf } from '../written';
 
 const STRING_TYPES: readonly string[] = ['keyword', 'text', 'string'];
 const NUMBER_TYPES: readonly string[] = ['integer', 'long', 'double', 'number'];
-
-const unquoted = (text: string): string => text.replace(/^["`]|["`]$/g, '');
-
-const partOf = (id: string): string | undefined => EXPRESSION_PARTS[id]?.part;
-
-const pathOf = ({ ancestors, id }: WrittenArgument): string[] => [
-  ...ancestors.map((ancestor) => ancestor.id),
-  id,
-];
 
 /** The text of the last written argument a call site took, without its quotes. */
 const writtenAt = ({ ir }: SuggestionContext, id: string): string | undefined => {
@@ -114,10 +105,10 @@ export const provideMap = async (
   }
 
   const keys = context.ir.written.filter(
-    (written) => partOf(written.id) === 'map_key' && mapDepth(pathOf(written)) === 1
+    (written) => partOf(written) === 'map_key' && mapDepth(pathOf(written)) === 1
   );
 
-  if (partOf(argument.id) === 'map_key') {
+  if (partOf(argument) === 'map_key') {
     const used = keys.filter(({ open }) => !open).map(({ text }) => unquoted(text));
 
     return Object.entries(parameters)

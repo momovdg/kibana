@@ -10,6 +10,7 @@
 import { EXPRESSION_PARTS, FUNCTION_CALL, type CallSiteId } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenAncestor, WrittenArgument } from '../../../esql_js_sim/grammar';
 import { getLambdas } from './lambdas';
+import { CAST, isSamePlace, partOf, lowerTextOf } from '../written';
 
 /**
  * Where the cursor is inside an expression, read from the grammar position alone.
@@ -53,25 +54,17 @@ export interface FunctionCallPosition {
   enclosing: string[];
 }
 
-const CAST = '::';
 const NOT = 'not';
 const NULL_CHECK = 'is';
 const NULL_CHECK_WORDS: readonly string[] = ['is', 'not', 'null'];
 const SIGNS: readonly string[] = ['-', '+'];
 const MAP_PARTS: readonly string[] = ['map_key', 'map_value'];
 
-const isSame = (first: WrittenAncestor | undefined, second: WrittenAncestor): boolean =>
-  first?.id === second.id && first.start === second.start;
-
-const partOf = ({ id }: WrittenArgument): string | undefined => EXPRESSION_PARTS[id]?.part;
-
-const textOf = ({ text }: WrittenArgument): string => text.toLowerCase();
-
 /** The operators written in the expression itself, and not in a call nested in it. */
 const getOperators = (written: WrittenArgument[], call?: WrittenAncestor): WrittenArgument[] =>
   written.filter((item, index) => {
     const nestedCall = item.ancestors.findLast(({ id }) => id === FUNCTION_CALL);
-    const isNested = nestedCall !== undefined && !(call && isSame(nestedCall, call));
+    const isNested = nestedCall !== undefined && !(call && isSamePlace(nestedCall, call));
     // A sign before an operand belongs to the operand.
     const before = written[index - 1];
     const isSign = SIGNS.includes(item.text) && (!before || before.class === 'operator');
@@ -88,19 +81,19 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
   const around = last?.ancestors ?? [];
   const whole = around.find(({ id }) => id === entry);
   const isClosed = (place: WrittenAncestor): boolean =>
-    ir.written.some((item) => item.class === 'closer' && isSame(item.ancestors.at(-1), place));
+    ir.written.some((item) => item.class === 'closer' && isSamePlace(item.ancestors.at(-1), place));
   // The cursor is in a call until its closing bracket is written.
   const callPlace =
     whole &&
     around.findLast((place) => place.id === FUNCTION_CALL && place.open && !isClosed(place));
   const inCall = callPlace
-    ? ir.written.filter(({ ancestors }) => isSame(ancestors.at(-1), callPlace))
+    ? ir.written.filter(({ ancestors }) => isSamePlace(ancestors.at(-1), callPlace))
     : [];
   const separators = inCall.filter((item) => item.class === 'separator');
   const name = inCall.find((item) => partOf(item) === 'function_name')?.text.toLowerCase();
   const nameIn = (place: WrittenAncestor): string | undefined =>
     ir.written
-      .find((item) => isSame(item.ancestors.at(-1), place) && partOf(item) === 'function_name')
+      .find((item) => isSamePlace(item.ancestors.at(-1), place) && partOf(item) === 'function_name')
       ?.text.toLowerCase();
   const call =
     callPlace && name
@@ -141,21 +134,21 @@ export const describeExpressionPosition = (ir: CursorIR, entry: CallSiteId): Exp
 
   const lastOperand = operands[operands.length - 1];
 
-  if (textOf(lastOperand) === CAST || (ir.word && textOf(lastOperand) === CAST)) {
+  if (lowerTextOf(lastOperand) === CAST || (ir.word && lowerTextOf(lastOperand) === CAST)) {
     return { ...base, kind: 'after_cast' };
   }
 
   const operators = getOperators(operands, callPlace);
   const lastOperator = operators.at(-1);
   const operator = lastOperator?.text.toLowerCase();
-  const isNullCheck = operators.some((item) => textOf(item) === NULL_CHECK);
+  const isNullCheck = operators.some((item) => lowerTextOf(item) === NULL_CHECK);
 
-  if (!ir.word && textOf(lastOperand) === NOT && !isNullCheck) {
+  if (!ir.word && lowerTextOf(lastOperand) === NOT && !isNullCheck) {
     return { ...base, operator, kind: 'after_not' };
   }
   // A null check alone, `a IS NULL`, is a complete operand.
   const binary = operators.filter(
-    (item) => !isNullCheck || !NULL_CHECK_WORDS.includes(textOf(item))
+    (item) => !isNullCheck || !NULL_CHECK_WORDS.includes(lowerTextOf(item))
   );
   // A keyword typed in full after an operand is an operator that is written, as `a AND`.
   const typed = ir.word?.keyword;
@@ -182,7 +175,7 @@ export const getOperandRange = (
 ): { start: number; end: number } => {
   // The first place of `inside` that the operator is not in is the operand.
   const operand = inside.ancestors.find(
-    (place, depth) => !isSame(operator.ancestors[depth], place)
+    (place, depth) => !isSamePlace(operator.ancestors[depth], place)
   );
 
   return operand ?? inside;
@@ -192,9 +185,9 @@ export const getOperandRange = (
 export const isOperandOf = (operator: WrittenArgument, before: WrittenArgument) => {
   // The place that holds the operator with its left operand holds its right operand too.
   const shared = operator.ancestors.findLast((place, depth) =>
-    isSame(before.ancestors[depth], place)
+    isSamePlace(before.ancestors[depth], place)
   );
 
   return ({ ancestors }: WrittenArgument): boolean =>
-    shared === undefined || ancestors.some((place) => isSame(place, shared));
+    shared === undefined || ancestors.some((place) => isSamePlace(place, shared));
 };

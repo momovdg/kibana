@@ -32,7 +32,7 @@ import { SUGGESTED_VALUES_BY_NAME } from './presentation';
 import { withAutoSuggest } from '../../commands/definitions/utils/autocomplete/helpers';
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
-  isAssignment,
+  isAssignmentToken,
   opensSubquery,
   provideAssignment,
   provideEndOfCommand,
@@ -174,7 +174,7 @@ const provide = async (
         return provideSubqueryOpener(context);
       }
 
-      return isAssignment(request.follower)
+      return isAssignmentToken(request.follower)
         ? provideAssignment(context)
         : provideToken(request.follower);
     case 'end_of_command':
@@ -190,7 +190,7 @@ const provide = async (
 /** Whether the request is for something of the command itself, outside these expressions. */
 const isOutside = (request: SuggestionRequest, entries: string[]): boolean => {
   // What is written can still be the name of an assignment and not an expression at all.
-  if (request.kind === 'token' && isAssignment(request.follower)) {
+  if (request.kind === 'token' && isAssignmentToken(request.follower)) {
     return false;
   }
 
@@ -257,7 +257,7 @@ const collect = async (
   // A name that is not an existing column is a new name: only its assignment can follow, and
   // not what would read it as a column, as `AS` in a rename.
   const assignment = requests.find(
-    (request) => request.kind === 'token' && isAssignment(request.follower)
+    (request) => request.kind === 'token' && isAssignmentToken(request.follower)
   );
   const assigned = assignment ? await provide(assignment, context) : [];
   const isNewName = (request: SuggestionRequest): boolean =>
