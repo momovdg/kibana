@@ -8,9 +8,13 @@
  */
 
 import { i18n } from '@kbn/i18n';
-import { defaultLimitValueSuggestions } from '../../commands/registry/complete_items';
-import { UnmappedFieldsStrategy } from '../../commands/registry/types';
-import type { CallSiteId } from '../../esql_js_sim/definitions';
+import {
+  defaultLimitValueSuggestions,
+  mmrQueryVectorSuggestion,
+} from '../../commands/registry/complete_items';
+import { UnmappedFieldsStrategy, type ISuggestionItem } from '../../commands/registry/types';
+import type { CallSiteId, ValueFormat } from '../../esql_js_sim/definitions';
+import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 
 /**
  * What the editor shows beyond what the language says, by the place of an argument. This is
@@ -45,6 +49,50 @@ export const getSuggestedValues = (): Readonly<Record<CallSiteId, SuggestedValue
   'dissectCommandOption>constant': { values: ['":"', '";"'] },
   'grokCommand>string': { values: ['"%{WORD:firstWord}"'], detail: getPatternDetail() },
 });
+
+/**
+ * A ready-made string the editor offers where a value has a known use, by that use: the
+ * string is selected once inserted, so typing replaces it.
+ */
+const getValuePlaceholders = (): Readonly<Partial<Record<ValueFormat, string>>> => ({
+  llm_prompt: 'Your prompt to the LLM.',
+  search_query: 'Your search query',
+  highlight_text: i18n.translate(
+    'esqlLanguage.commands.highlight.autocomplete.queryTextPlaceholder',
+    { defaultMessage: 'The text to highlight' }
+  ),
+});
+
+/** The item for the ready-made string of a use, when the editor has one. */
+export const getValueSnippet = (format: ValueFormat | undefined): ISuggestionItem[] => {
+  const placeholder = format === undefined ? undefined : getValuePlaceholders()[format];
+
+  return placeholder === undefined
+    ? []
+    : [
+        {
+          label: placeholder,
+          text: `"\${0:${placeholder}}"`,
+          asSnippet: true,
+          kind: 'Constant',
+          detail: '',
+          category: SuggestionCategory.CONSTANT_VALUE,
+        },
+      ];
+};
+
+/** A ready-made value the editor offers where an expression starts, by its place. */
+export const getStartingValues = (): Readonly<Record<CallSiteId, ISuggestionItem>> => ({
+  'mmrCommand.queryVector': mmrQueryVectorSuggestion,
+});
+
+/**
+ * The parameter a map is opened with, by the place of the map: the one a query usually
+ * gives. A map with one parameter is opened with that one and needs no entry.
+ */
+export const OPENING_PARAMETERS: Readonly<Record<CallSiteId, string>> = {
+  'denseVectorCommand>commandNamedParameters': 'inference_id',
+};
 
 /**
  * The name the editor offers for a new column where the language takes any name, by the

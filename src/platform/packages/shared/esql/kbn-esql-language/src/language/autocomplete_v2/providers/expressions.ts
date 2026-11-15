@@ -58,6 +58,7 @@ import { NOT_SUGGESTED_TYPES } from '../../../query_columns_service';
 import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_context';
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
+import { getStartingValues, getValueSnippet } from '../presentation';
 import { decideExpression } from './expression_decisions';
 import { getDefinedNames } from './expression_names';
 import { isAssignmentToken } from './tokens';
@@ -481,9 +482,17 @@ export const provideExpression = async (
       ]
     : [];
 
+  // Where the expression starts and nothing is typed yet, the editor also offers the
+  // ready-made values it has for it.
+  const starter = resolved.id === undefined ? undefined : getStartingValues()[resolved.id];
+  const readyMade =
+    position.kind === 'empty' && !position.call && !ir.word
+      ? [...getValueSnippet(role.format), ...(starter ? [starter] : [])]
+      : [];
+
   return {
     entry,
-    items: [...items, ...histogram],
+    items: [...items, ...histogram, ...readyMade],
     isUnfinished: (expressionRoot !== undefined && !(isComplete && hasItsType)) || mayStillBeName,
   };
 };

@@ -17,6 +17,8 @@ export const COMMAND_FACTS: Readonly<Record<string, CommandFacts>> = {
   // `EVAL a = 1, b = a`: a field can read the fields before it. The same holds for ROW.
   evalCommand: { readsOwnColumns: true },
   rowCommand: { readsOwnColumns: true },
+  // The grammar lets the `WITH` map out; the inference endpoint in it is needed.
+  completionCommand: { requires: ['completionCommand>commandNamedParameters'] },
   // `STATS aggFields? (BY fields)?`: at least an aggregation or a grouping is needed.
   statsCommand: { requiresArgument: true },
   // `(fuseConfiguration)*`: Elasticsearch rejects a second `SCORE BY`.
