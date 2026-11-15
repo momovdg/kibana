@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { locate } from './locate';
+import { locate, readToEndOfCommand } from './locate';
 import type { CursorIR } from './types';
 
 const CURSOR = '▮';
@@ -531,5 +531,45 @@ describe('locate', () => {
         expect(parameters(at('FROM a | EVAL x = FN(b, v -> v + 1) + '))).toEqual([['v', false]]);
       });
     });
+  });
+});
+
+describe('readToEndOfCommand', () => {
+  /** The texts written at a place in each reading of the command around the `▮` mark. */
+  const textsAt = (marked: string, place: string): string[][] => {
+    const offset = marked.indexOf(CURSOR);
+    const text = marked.replace(CURSOR, '');
+
+    return readToEndOfCommand(text, offset, locate(text, offset)).map(({ arguments: written }) =>
+      written
+        .filter(({ ancestors }) => ancestors.some(({ id }) => id === place))
+        .map((argument) => argument.text)
+    );
+  };
+  const GROUPING = 'statsCommand.grouping';
+
+  it('reads nothing when nothing is written after the cursor', () => {
+    expect(textsAt('FROM a | STATS AVG(▮', GROUPING)).toEqual([]);
+  });
+
+  it('reads the text as it is first', () => {
+    expect(textsAt('FROM a | STATS AVG(▮) BY g = b', GROUPING)[0]).toEqual(['g', '=', 'b']);
+  });
+
+  it('reads the text with what the cursor is missing filled in second', () => {
+    // As it is, the filter takes `BY` for its value and the grouping is lost.
+    const [asItIs, filled] = textsAt('FROM a | STATS COUNT() WHERE ▮BY g = b', GROUPING);
+
+    expect(asItIs).not.toEqual(['g', '=', 'b']);
+    expect(filled).toEqual(['g', '=', 'b']);
+  });
+
+  it('reads the command the cursor is in, and not the one after it', () => {
+    const readings = textsAt(
+      'FROM a | STATS c = COUNT() WHERE ▮ | STATS SUM(c) BY g = b',
+      GROUPING
+    );
+
+    expect(readings).toEqual([[], []]);
   });
 });

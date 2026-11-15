@@ -7,8 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { isFunctionExpression, Walker } from '@elastic/esql';
-import type { ESQLAstAllCommands, ESQLSingleAstItem } from '@elastic/esql/types';
+import { isFunctionExpression, Parser, Walker } from '@elastic/esql';
+import type {
+  ESQLAstAllCommands,
+  ESQLAstQueryExpression,
+  ESQLSingleAstItem,
+} from '@elastic/esql/types';
 import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../../commands/definitions/constants';
 import {
   buildFieldsDefinitionsWithMetadata,
@@ -45,15 +49,21 @@ import {
   type ExpressionRole,
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
-import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
+import {
+  readToEndOfCommand,
+  type CursorIR,
+  type WrittenArgument,
+} from '../../../esql_js_sim/grammar';
+import { NOT_SUGGESTED_TYPES } from '../../../query_columns_service';
 import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_context';
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
 import { decideExpression } from './expression_decisions';
+import { getDefinedNames } from './expression_names';
 import { isAssignmentToken } from './tokens';
 import { describeExpressionPosition } from './expression_position';
 import { getLambdas, getLambdaState, type LambdaParameter, type LambdaState } from './lambdas';
-import { isColumnPart, lowerTextOf, partOf, unquoted } from '../written';
+import { getItems, isLoneColumn, lowerTextOf, partOf, unquoted } from '../written';
 
 /** What the expression at the cursor offers, and whether the command can go on after it. */
 export interface ExpressionSuggestions {
@@ -112,34 +122,12 @@ const COLUMNS_IN_CALLS_ONLY: readonly ExpressionMode[] = ['constant', 'aggregati
 const readsColumnsHere = (role: ExpressionRole, ir: CursorIR): boolean =>
   !COLUMNS_IN_CALLS_ONLY.includes(role.mode) || isInFunctionCall(ir);
 
-/**
- * What is written of an expression, item by item. Where the role covers a list, the items
- * are the places right below the place of the role; a separator between them is in none.
- */
-const getItems = (written: WrittenArgument[], entry: CallSiteId): WrittenArgument[][] => {
-  const items = new Map<string, WrittenArgument[]>();
-
-  for (const argument of written) {
-    const item = argument.ancestors[argument.ancestors.findIndex(({ id }) => id === entry) + 1];
-
-    if (item && argument.ancestors.some(({ id }) => id === entry)) {
-      const key = `${item.id}|${item.start}`;
-      items.set(key, [...(items.get(key) ?? []), argument]);
-    }
-  }
-
-  return [...items.values()];
-};
-
 /** The item the cursor is in: the one the last thing written belongs to. */
 const getCurrentItem = ({ written }: CursorIR, entry: CallSiteId): WrittenArgument[] => {
   const last = written.at(-1);
 
   return (last && getItems(written, entry).find((parts) => parts.includes(last))) ?? [];
 };
-
-const isLoneColumn = (parts: WrittenArgument[]): boolean =>
-  parts.length === 1 && isColumnPart(parts[0]);
 
 /** The columns that are an item of the list on their own, as `a` and not `a + 1`. */
 const getListedColumns = ({ written }: CursorIR, entry: CallSiteId): string[] =>
@@ -214,7 +202,7 @@ const getWrittenStart = (ir: CursorIR, entry: CallSiteId): number | undefined =>
  * an `end`, the widest that ends before it: the node of what is written between the two.
  */
 const findExpressionRoot = (
-  command: ESQLAstAllCommands,
+  command: ESQLAstAllCommands | ESQLAstQueryExpression,
   start: number | undefined,
   end: number = Infinity
 ): ESQLSingleAstItem | undefined => {
@@ -282,22 +270,56 @@ const provideLambdaHead = (
   ];
 };
 
+/**
+ * The names another argument of the command defines, as columns: each with the type of the
+ * value it stands for, read from the text the names were found in.
+ */
+const getDefinedColumns = (
+  place: CallSiteId,
+  { text, offset, ir }: SuggestionContext,
+  columns: Map<string, ESQLColumnData>,
+  unmappedFieldsStrategy: ICommandContext['unmappedFieldsStrategy']
+): ESQLColumnData[] => {
+  const defined = getDefinedNames(place, readToEndOfCommand(text, offset, ir));
+
+  if (!defined) {
+    return [];
+  }
+
+  const { root } = Parser.parse(defined.text);
+
+  return defined.names.map(({ name, start, end }) => ({
+    name,
+    type: getExpressionType(findExpressionRoot(root, start, end), columns, unmappedFieldsStrategy),
+    userDefined: true,
+    location: { min: start, max: end - 1 },
+  }));
+};
+
 const getCallbacks = (
   role: ExpressionRole,
   parameters: ESQLColumnData[],
+  defined: ESQLColumnData[],
   context: SuggestionContext
 ): ICommandCallbacks | undefined => {
   const { callbacks, hasLicense, getColumnsByType, usedNames } = context;
   const getColumnsFor = callbacks?.getColumnsFor;
-  const getByType: ICommandCallbacks['getByType'] = async (type, ignored, options) => [
+  // A name the command defines stands in the place of the column of the same name.
+  const redefined = new Set(defined.map(({ name }) => name));
+  const getByType: ICommandCallbacks['getByType'] = async (type, ignored = [], options) => [
     ...buildFieldsDefinitionsWithMetadata(
-      parameters.filter(
-        ({ type: own }) => type === 'any' || type.includes('any') || type.includes(own)
-      ),
+      [
+        ...parameters,
+        ...defined.filter(
+          ({ name, type: own }) => !ignored.includes(name) && !NOT_SUGGESTED_TYPES.includes(own)
+        ),
+      ].filter(({ type: own }) => type === 'any' || type.includes('any') || type.includes(own)),
       [],
       options
     ),
-    ...(await getColumnsByType(type, ignored, options)),
+    ...(await getColumnsByType(type, ignored, options)).filter(
+      ({ label }) => !redefined.has(label)
+    ),
   ];
 
   return {
@@ -362,15 +384,19 @@ export const provideExpression = async (
   );
   const inScope = lambda?.kind === 'body' ? lambda.parameters.map(({ name }) => name) : [];
   const parameters = typed.filter(({ name }) => inScope.includes(name));
+  const unmappedFieldsStrategy = getUnmappedFieldsStrategy(root.header);
+  const defined = role.namesOf
+    ? getDefinedColumns(role.namesOf, context, columns, unmappedFieldsStrategy)
+    : [];
   const commandContext: ICommandContext = {
     columns: new Map([
       ...columns,
-      ...typed.map((column): [string, ESQLColumnData] => [column.name, column]),
+      ...[...typed, ...defined].map((column): [string, ESQLColumnData] => [column.name, column]),
     ]),
     activeProduct: context.activeProduct,
     isCursorInSubquery,
     isFieldsBrowserEnabled: canBrowseFields && !isCursorInSubquery,
-    unmappedFieldsStrategy: getUnmappedFieldsStrategy(root.header),
+    unmappedFieldsStrategy,
     isTimeseriesSource: context.sourceIsTimeSeries,
   };
 
@@ -385,7 +411,7 @@ export const provideExpression = async (
     cursorPosition: offset,
     location: locationOf(role, resolved, context),
     context: fullContext,
-    callbacks: getCallbacks(role, parameters, context),
+    callbacks: getCallbacks(role, parameters, defined, context),
     options: {
       ...(role.types && { preferredExpressionType: [...role.types] }),
       ...(role.subqueries && { allowSubquery: true }),
