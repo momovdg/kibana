@@ -32,7 +32,7 @@ const timeSeriesOnly = esqlCommandRegistry
 
 describe('suggest (v2)', () => {
   describe('where nothing applies', () => {
-    it.each(['FROM a // comment', 'FROM a | WHERE b == "text', 'FROM a | KEEP )'])(
+    it.each(['FROM a // comment', 'FROM a | WHERE b == "text', 'FROM a | KEEP )', 'SHOW word '])(
       'suggests nothing at the end of %j',
       async (query) => {
         expect(await textsAt(query)).toEqual([]);
@@ -175,6 +175,19 @@ describe('suggest (v2)', () => {
 
       it('is offered with a space when anything else has to follow it', async () => {
         expect(await textsAt('FROM a | STATS c = COUNT() ')).toContain('BY ');
+      });
+    });
+
+    describe('a keyword of several words', () => {
+      it.each(['FROM a | SORT 1 nulls', 'FROM a | SORT 1 NULLS ', 'FROM a | SORT 1 NULLS F'])(
+        'is still being typed at the end of %j, so what its start offers is offered',
+        async (query) => {
+          expect((await textsAt(query)).sort()).toEqual((await textsAt('FROM a | SORT 1 ')).sort());
+        }
+      );
+
+      it('is not the name of a command with the keyword that follows it', async () => {
+        expect(await textsAt('SHOW ')).toEqual(['INFO']);
       });
     });
 
@@ -379,11 +392,21 @@ describe('suggest (v2)', () => {
     it('picks a name the query does not use yet', async () => {
       expect(await textsAt('FROM x | RENAME col0 = a, ')).toContain('col1 = ');
     });
+
+    it('offers the name the editor suggests for the place, with the separator it needs', async () => {
+      expect(await textsAt('FROM x | CHANGE_POINT a AS ')).toEqual(['changePointType, ']);
+      expect(await textsAt('FROM x | CHANGE_POINT a AS t, ')).toEqual(['pValue']);
+    });
   });
 
   describe('constants', () => {
     it('offers the values a constant can take', async () => {
       expect(await textsAt('FROM x | FUSE ')).toEqual(expect.arrayContaining(['linear ', 'rrf ']));
+    });
+
+    it('offers the values the editor suggests where any value is valid', async () => {
+      expect(await textsAt('FROM x | SAMPLE ')).toEqual(['.1 ', '.01 ', '.001 ']);
+      expect(await textsAt('FROM x | GROK a ')).toEqual(['"%{WORD:firstWord}" ']);
     });
   });
 
@@ -616,12 +639,22 @@ describe('suggest (v2)', () => {
         expect(await textsAt('FROM e | SORT ', callbacks)).not.toContain('MATCH($0)');
       });
 
+      it('offers no grouping function for a key, and only the operators a key takes', async () => {
+        expect(await textsAt('FROM e | LIMIT 1 BY ', callbacks)).not.toContain('CATEGORIZE($0)');
+        expect(await textsAt('FROM e | LIMIT 1 BY n ', callbacks)).not.toContain('IS NULL');
+      });
+
       it('offers no column where the value is a constant', async () => {
         const texts = await textsAt('ROW a = ', callbacks);
 
         expect(texts).toContain('ABS($0)');
         expect(texts).not.toContain('n ');
       });
+    });
+
+    it('offers a column once in a list where its role says so, unless it is part of an item', async () => {
+      expect(await textsAt('FROM e | SORT k, ', callbacks)).not.toContain('k ');
+      expect(await textsAt('FROM e | SORT n + 1, ', callbacks)).toContain('n ');
     });
 
     it.each([

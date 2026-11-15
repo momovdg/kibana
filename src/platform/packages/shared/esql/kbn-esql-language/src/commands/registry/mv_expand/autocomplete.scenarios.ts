@@ -28,7 +28,14 @@ export const mvExpandScenarios: ScenarioTable = {
     {
       name: 'works with a complete field name',
       query: 'from a | mv_expand keywordField',
+      status: 'replaced',
       expect: { exact: expandableColumns },
+    },
+    {
+      name: 'suggests what follows a complete field name',
+      query: 'from a | mv_expand keywordField',
+      status: 'new',
+      expect: { exact: ['keywordField | ', '\n'] },
     },
     {
       name: 'suggests pipe after column',

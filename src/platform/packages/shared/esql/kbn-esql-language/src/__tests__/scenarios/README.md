@@ -29,6 +29,8 @@ export const limitScenarios: ScenarioTable = {
   row runs with its own world: the package's column cache does not carry over between rows.
 - `status: 'new'`: a deliberate behaviour change. The row is skipped on flows that do not
   have it.
+- `status: 'replaced'`: what the current flow does where the behaviour was changed. The row is
+  skipped on the flows that have the change, and a `new` row next to it says what they do.
 
 `describeScenarios(table)` declares one test per row and per flow in `SUGGEST_FLOWS`. While
 two autocomplete flows exist, both are listed there and every row has to pass on both.
@@ -39,6 +41,9 @@ two autocomplete flows exist, both are listed there and every row has to pass on
 and counts the rows that already match. No row fails that test: the counts are kept in a
 snapshot, so a change that moves them, up or down, shows in its diff. Update the snapshot with
 `node scripts/jest <path to parity.test.ts> -u`.
+
+Rows tagged `replaced` are left out of the counts and reported as one number; rows tagged
+`new` have to pass on the new flow.
 
 Read the counts with care early on: a row that expects nothing, or only that some items are
 absent, matches a flow that offers little.

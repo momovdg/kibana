@@ -266,6 +266,11 @@ const toPosition = (
   if (!expected.length && !followers.length) {
     return 'invalid';
   }
+  // A word the lexer made no token of, as a name where only keywords can be written: what is
+  // expected was read from before the word, and no longer holds after it.
+  if (/\w/.test(location.skippedText)) {
+    return 'invalid';
+  }
   if (followers.some(({ startsCommand }) => startsCommand)) {
     if (!previous) {
       return 'start_of_query';

@@ -49,6 +49,8 @@ export type ConstantType =
  * - `scalar`: a value per row.
  * - `aggregation`: aggregates rows; aggregation functions apply.
  * - `grouping`: groups rows; grouping functions apply.
+ * - `key`: a value rows are told apart by, as what a limit counts per; grouping functions
+ *   do not apply.
  * - `filter`: a condition on rows.
  * - `constant`: no column: literals, parameters and functions of them.
  * - `full_text`: a search: a string or full-text functions, never a bare column.
@@ -57,6 +59,7 @@ export type ExpressionMode =
   | 'scalar'
   | 'aggregation'
   | 'grouping'
+  | 'key'
   | 'filter'
   | 'constant'
   | 'full_text';
@@ -151,6 +154,8 @@ export interface ExpressionRole {
   types?: readonly string[];
   /** The expression is complete only once it has this type. */
   completeAs?: 'boolean';
+  /** In a list: a column that is an item on its own is listed only once. */
+  unique?: boolean;
   /** A subquery may appear inside it. */
   subqueries?: boolean;
   /** Full-text functions are allowed only inside this function. */
