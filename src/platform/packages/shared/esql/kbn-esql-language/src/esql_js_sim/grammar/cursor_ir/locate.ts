@@ -447,3 +447,43 @@ export const locate = (text: string, offset: number): CursorIR => {
     commands,
   };
 };
+
+/** One way to read a command to its end. The positions of the arguments are those in `text`. */
+export interface CommandReading {
+  text: string;
+  arguments: WrittenArgument[];
+}
+
+/**
+ * The command the cursor is in, read to its end: what is written after the cursor belongs to
+ * it too. There are two readings, in this order: the text as it is, and the text with what
+ * the cursor is missing filled in (a value, then the brackets still open), which keeps what
+ * follows from being pulled into an unfinished expression. The caller takes the first reading
+ * that holds what it looks for. Nothing is read when nothing is written after the cursor.
+ */
+export const readToEndOfCommand = (
+  text: string,
+  offset: number,
+  ir: CursorIR
+): CommandReading[] => {
+  const [first] = ir.written;
+  const before = text.slice(0, offset);
+  const after = text.slice(offset);
+
+  if (!first || !after.trim()) {
+    return [];
+  }
+
+  const isMissingValue = !ir.word && ir.arguments.length > 0 && ir.position !== 'after_argument';
+  const value = isMissingValue ? getValuePlaceholder(ir.arguments) : '';
+  const closers = openBrackets(before)
+    .reverse()
+    .map((opener) => CLOSER_OF[opener] ?? '')
+    .join('');
+
+  return [text, `${before} ${value}${closers} ${after}`].map((reading) => ({
+    text: reading,
+    arguments:
+      describeCommands(reading).find(({ start }) => start === first.start)?.arguments ?? [],
+  }));
+};

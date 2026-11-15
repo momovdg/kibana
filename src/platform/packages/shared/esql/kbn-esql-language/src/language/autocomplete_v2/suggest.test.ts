@@ -676,6 +676,38 @@ describe('suggest (v2)', () => {
       expect(await textsAt('FROM e | EVAL ab', callbacks)).toContain('col0 = ');
     });
 
+    describe('the names another argument of the command defines', () => {
+      const labelsAt = async (before: string, after: string): Promise<string[]> =>
+        (await suggest(before + after, before.length, callbacks)).map(({ label }) => label);
+
+      it('are offered where the role reads them, also when they are written after the cursor', async () => {
+        expect(await labelsAt('FROM e | STATS AVG(', ') BY g = n')).toContain('g');
+        expect(await labelsAt('FROM e | STATS AVG(', ' BY g = n')).toContain('g');
+        expect(await labelsAt('FROM e | STATS COUNT() WHERE ', ' BY g = k')).toContain('g');
+      });
+
+      it('have the type of their value', async () => {
+        expect(await labelsAt('FROM e | STATS AVG(', ') BY g = k')).not.toContain('g');
+      });
+
+      it('include a value on its own, named by its text', async () => {
+        expect(await labelsAt('FROM e | STATS COUNT() WHERE ', ' BY ROUND(n)')).toContain(
+          'ROUND(n)'
+        );
+      });
+
+      it('stand in the place of the column of the same name', async () => {
+        expect(await labelsAt('FROM e | STATS AVG(', ') BY n = k')).not.toContain('n');
+      });
+
+      it('are not offered in the argument that defines them, nor in another command', async () => {
+        expect(await labelsAt('FROM e | STATS COUNT() BY g = k, h = ', '')).not.toContain('g');
+        expect(
+          await labelsAt('FROM e | STATS c = COUNT() WHERE ', ' | STATS SUM(c) BY g = k')
+        ).not.toContain('g');
+      });
+    });
+
     describe('inside a function call', () => {
       it('offers no aggregation inside an aggregation, nor the functions around the cursor', async () => {
         const inAggregation = await textsAt('FROM e | STATS AVG(', callbacks);
