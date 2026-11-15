@@ -63,6 +63,7 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   'evalCommand>fields': {
     kind: 'expression',
     mode: 'scalar',
+    computes: true,
     subqueries: true,
     fullTextOnlyIn: 'score',
   },
@@ -72,11 +73,19 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', range: { min: 0 } },
   'limitByGroupKey>booleanExpression': { kind: 'expression', mode: 'key', unique: true },
 
-  // Aggregations.
-  'statsCommand.stats': { kind: 'expression', mode: 'aggregation' },
-  'statsCommand.grouping': { kind: 'expression', mode: 'grouping' },
-  'inlineStatsCommand.stats': { kind: 'expression', mode: 'aggregation' },
-  'inlineStatsCommand.grouping': { kind: 'expression', mode: 'grouping' },
+  // Aggregations. An aggregation and its filter also read the names the grouping defines.
+  'statsCommand.stats': {
+    kind: 'expression',
+    mode: 'aggregation',
+    namesOf: 'statsCommand.grouping',
+  },
+  'statsCommand.grouping': { kind: 'expression', mode: 'grouping', unique: true },
+  'inlineStatsCommand.stats': {
+    kind: 'expression',
+    mode: 'aggregation',
+    namesOf: 'inlineStatsCommand.grouping',
+  },
+  'inlineStatsCommand.grouping': { kind: 'expression', mode: 'grouping', unique: true },
   // An aggregation's own filter, `AVG(a) WHERE b > 1`.
   'aggField>booleanExpression': {
     kind: 'expression',

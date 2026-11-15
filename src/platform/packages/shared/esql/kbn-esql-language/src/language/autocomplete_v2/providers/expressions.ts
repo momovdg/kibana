@@ -7,15 +7,27 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { isFunctionExpression, Walker } from '@elastic/esql';
-import type { ESQLAstAllCommands, ESQLSingleAstItem } from '@elastic/esql/types';
+import { isFunctionExpression, Parser, Walker } from '@elastic/esql';
+import type {
+  ESQLAstAllCommands,
+  ESQLAstQueryExpression,
+  ESQLSingleAstItem,
+} from '@elastic/esql/types';
 import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../../commands/definitions/constants';
 import {
   buildFieldsDefinitionsWithMetadata,
   getExpressionType,
 } from '../../../commands/definitions/utils';
 import { buildExpressionFunctionParameterContext } from '../../../commands/definitions/utils/autocomplete/expressions/utils';
-import type { SuggestForExpressionParams } from '../../../commands/definitions/utils/autocomplete/expressions/types';
+import type {
+  ExpressionContextOptions,
+  SuggestForExpressionParams,
+} from '../../../commands/definitions/utils/autocomplete/expressions/types';
+import {
+  getAllFunctions,
+  getFunctionDefinition,
+} from '../../../commands/definitions/utils/functions';
+import { FunctionDefinitionTypes } from '../../../commands/definitions/types';
 import { isExpressionComplete } from '../../../commands/definitions/utils/expressions';
 import { getUnmappedFieldsStrategy } from '../../../commands/definitions/utils/settings';
 import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplete/helpers';
@@ -37,14 +49,21 @@ import {
   type ExpressionRole,
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
-import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
+import {
+  readToEndOfCommand,
+  type CursorIR,
+  type WrittenArgument,
+} from '../../../esql_js_sim/grammar';
+import { NOT_SUGGESTED_TYPES } from '../../../query_columns_service';
 import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_context';
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
 import { decideExpression } from './expression_decisions';
+import { getDefinedNames } from './expression_names';
+import { isAssignmentToken } from './tokens';
 import { describeExpressionPosition } from './expression_position';
 import { getLambdas, getLambdaState, type LambdaParameter, type LambdaState } from './lambdas';
-import { isColumnPart, unquoted } from '../written';
+import { getItems, isLoneColumn, lowerTextOf, partOf, unquoted } from '../written';
 
 /** What the expression at the cursor offers, and whether the command can go on after it. */
 export interface ExpressionSuggestions {
@@ -103,25 +122,69 @@ const COLUMNS_IN_CALLS_ONLY: readonly ExpressionMode[] = ['constant', 'aggregati
 const readsColumnsHere = (role: ExpressionRole, ir: CursorIR): boolean =>
   !COLUMNS_IN_CALLS_ONLY.includes(role.mode) || isInFunctionCall(ir);
 
-/**
- * The columns that are an item of the list on their own, as `a` and not `a + 1`: the items
- * are the places of the expression written so far, and such an item holds one column only.
- */
-const getListedColumns = ({ written }: CursorIR, entry: CallSiteId): string[] => {
-  const items = new Map<number, WrittenArgument[]>();
+/** The item the cursor is in: the one the last thing written belongs to. */
+const getCurrentItem = ({ written }: CursorIR, entry: CallSiteId): WrittenArgument[] => {
+  const last = written.at(-1);
 
-  for (const argument of written) {
-    const item = argument.ancestors.find(({ id }) => id === entry);
-
-    if (item) {
-      items.set(item.start, [...(items.get(item.start) ?? []), argument]);
-    }
-  }
-
-  return [...items.values()].flatMap((parts) =>
-    parts.length === 1 && isColumnPart(parts[0]) ? [unquoted(parts[0].text)] : []
-  );
+  return (last && getItems(written, entry).find((parts) => parts.includes(last))) ?? [];
 };
+
+/** The columns that are an item of the list on their own, as `a` and not `a + 1`. */
+const getListedColumns = ({ written }: CursorIR, entry: CallSiteId): string[] =>
+  getItems(written, entry)
+    .filter(isLoneColumn)
+    .map(([column]) => unquoted(column.text));
+
+const namesOfType = (type: FunctionDefinitionTypes): string[] =>
+  getAllFunctions({ type }).map(({ name }) => name);
+
+// The kinds of function that aggregate: one of them is not offered inside another. A
+// function, so that nothing of another module is read while this one loads.
+const getAggregatingTypes = (): FunctionDefinitionTypes[] => [
+  FunctionDefinitionTypes.AGG,
+  FunctionDefinitionTypes.TIME_SERIES_AGG,
+];
+
+/**
+ * The functions that are not offered for an argument of a function:
+ *
+ * - full-text functions, where the role allows them only inside one function;
+ * - grouping functions inside a grouping function;
+ * - in an aggregation, the functions already written in the item, and every aggregating
+ *   function of a kind the item already has, unless the argument is declared to take one.
+ */
+const getFunctionsToIgnore =
+  (
+    role: ExpressionRole,
+    ir: CursorIR,
+    entry: CallSiteId
+  ): ExpressionContextOptions['getFunctionsToIgnore'] =>
+  (parameter) => {
+    const names: string[] = role.fullTextOnlyIn ? [...FULL_TEXT_SEARCH_DEFINITIONS] : [];
+    const allowedInsideFunctions = Object.fromEntries(
+      names.map((name) => [name, [role.fullTextOnlyIn ?? '']])
+    );
+
+    if (parameter?.functionDefinition?.type === FunctionDefinitionTypes.GROUPING) {
+      names.push(...namesOfType(FunctionDefinitionTypes.GROUPING));
+    }
+
+    if (parameter && role.mode === 'aggregation') {
+      const written = getCurrentItem(ir, entry)
+        .filter((part) => partOf(part) === 'function_name')
+        .map(lowerTextOf);
+      const takesAggregation = parameter.paramDefinitions.some(
+        ({ hint }) => hint?.kind === 'aggregation'
+      );
+      const usedKinds = getAggregatingTypes().filter((type) =>
+        written.some((name) => getFunctionDefinition(name)?.type === type)
+      );
+
+      names.push(...written, ...(takesAggregation ? [] : usedKinds.flatMap(namesOfType)));
+    }
+
+    return { names, allowedInsideFunctions };
+  };
 
 /**
  * Where the expression at the cursor starts, when part of it is written: the start of the
@@ -139,7 +202,7 @@ const getWrittenStart = (ir: CursorIR, entry: CallSiteId): number | undefined =>
  * an `end`, the widest that ends before it: the node of what is written between the two.
  */
 const findExpressionRoot = (
-  command: ESQLAstAllCommands,
+  command: ESQLAstAllCommands | ESQLAstQueryExpression,
   start: number | undefined,
   end: number = Infinity
 ): ESQLSingleAstItem | undefined => {
@@ -207,22 +270,56 @@ const provideLambdaHead = (
   ];
 };
 
+/**
+ * The names another argument of the command defines, as columns: each with the type of the
+ * value it stands for, read from the text the names were found in.
+ */
+const getDefinedColumns = (
+  place: CallSiteId,
+  { text, offset, ir }: SuggestionContext,
+  columns: Map<string, ESQLColumnData>,
+  unmappedFieldsStrategy: ICommandContext['unmappedFieldsStrategy']
+): ESQLColumnData[] => {
+  const defined = getDefinedNames(place, readToEndOfCommand(text, offset, ir));
+
+  if (!defined) {
+    return [];
+  }
+
+  const { root } = Parser.parse(defined.text);
+
+  return defined.names.map(({ name, start, end }) => ({
+    name,
+    type: getExpressionType(findExpressionRoot(root, start, end), columns, unmappedFieldsStrategy),
+    userDefined: true,
+    location: { min: start, max: end - 1 },
+  }));
+};
+
 const getCallbacks = (
   role: ExpressionRole,
   parameters: ESQLColumnData[],
+  defined: ESQLColumnData[],
   context: SuggestionContext
 ): ICommandCallbacks | undefined => {
   const { callbacks, hasLicense, getColumnsByType, usedNames } = context;
   const getColumnsFor = callbacks?.getColumnsFor;
-  const getByType: ICommandCallbacks['getByType'] = async (type, ignored, options) => [
+  // A name the command defines stands in the place of the column of the same name.
+  const redefined = new Set(defined.map(({ name }) => name));
+  const getByType: ICommandCallbacks['getByType'] = async (type, ignored = [], options) => [
     ...buildFieldsDefinitionsWithMetadata(
-      parameters.filter(
-        ({ type: own }) => type === 'any' || type.includes('any') || type.includes(own)
-      ),
+      [
+        ...parameters,
+        ...defined.filter(
+          ({ name, type: own }) => !ignored.includes(name) && !NOT_SUGGESTED_TYPES.includes(own)
+        ),
+      ].filter(({ type: own }) => type === 'any' || type.includes('any') || type.includes(own)),
       [],
       options
     ),
-    ...(await getColumnsByType(type, ignored, options)),
+    ...(await getColumnsByType(type, ignored, options)).filter(
+      ({ label }) => !redefined.has(label)
+    ),
   ];
 
   return {
@@ -287,15 +384,19 @@ export const provideExpression = async (
   );
   const inScope = lambda?.kind === 'body' ? lambda.parameters.map(({ name }) => name) : [];
   const parameters = typed.filter(({ name }) => inScope.includes(name));
+  const unmappedFieldsStrategy = getUnmappedFieldsStrategy(root.header);
+  const defined = role.namesOf
+    ? getDefinedColumns(role.namesOf, context, columns, unmappedFieldsStrategy)
+    : [];
   const commandContext: ICommandContext = {
     columns: new Map([
       ...columns,
-      ...typed.map((column): [string, ESQLColumnData] => [column.name, column]),
+      ...[...typed, ...defined].map((column): [string, ESQLColumnData] => [column.name, column]),
     ]),
     activeProduct: context.activeProduct,
     isCursorInSubquery,
     isFieldsBrowserEnabled: canBrowseFields && !isCursorInSubquery,
-    unmappedFieldsStrategy: getUnmappedFieldsStrategy(root.header),
+    unmappedFieldsStrategy,
     isTimeseriesSource: context.sourceIsTimeSeries,
   };
 
@@ -310,20 +411,13 @@ export const provideExpression = async (
     cursorPosition: offset,
     location: locationOf(role, resolved, context),
     context: fullContext,
-    callbacks: getCallbacks(role, parameters, context),
+    callbacks: getCallbacks(role, parameters, defined, context),
     options: {
       ...(role.types && { preferredExpressionType: [...role.types] }),
       ...(role.subqueries && { allowSubquery: true }),
       ...(role.unique && { ignoredColumnsForEmptyExpression: getListedColumns(ir, entry) }),
       ...(!readsColumnsHere(role, ir) && { suggestFields: false }),
-      ...(role.fullTextOnlyIn && {
-        getFunctionsToIgnore: () => ({
-          names: [...FULL_TEXT_SEARCH_DEFINITIONS],
-          allowedInsideFunctions: Object.fromEntries(
-            FULL_TEXT_SEARCH_DEFINITIONS.map((name) => [name, [role.fullTextOnlyIn ?? '']])
-          ),
-        }),
-      }),
+      getFunctionsToIgnore: getFunctionsToIgnore(role, ir, entry),
     },
   };
   const expressionType = getExpressionType(
@@ -369,6 +463,12 @@ export const provideExpression = async (
   });
   const isComplete = isExpressionComplete(expressionType, text.slice(0, offset));
   const hasItsType = !role.completeAs || expressionType === role.completeAs;
+  // Where the items are computed values that can be given a name, a column alone is not a
+  // finished item: it computes nothing, and it may still be the name.
+  const mayStillBeName =
+    role.computes === true &&
+    ir.followers.some(isAssignmentToken) &&
+    isLoneColumn(getCurrentItem(ir, entry));
   // Where a grouping starts, the editor also offers a ready-made date histogram.
   const startsGrouping = role.mode === 'grouping' && position.kind === 'empty' && !position.call;
   const histogram = startsGrouping
@@ -384,6 +484,6 @@ export const provideExpression = async (
   return {
     entry,
     items: [...items, ...histogram],
-    isUnfinished: expressionRoot !== undefined && !(isComplete && hasItsType),
+    isUnfinished: (expressionRoot !== undefined && !(isComplete && hasItsType)) || mayStillBeName,
   };
 };

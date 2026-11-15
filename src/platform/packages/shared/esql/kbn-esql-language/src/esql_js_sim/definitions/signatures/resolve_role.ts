@@ -18,7 +18,7 @@ import type { ArgumentRole, CallSiteId, ResolvedRole, RoleKind } from './types';
  */
 export const INHERITED_FIELDS: Readonly<Partial<Record<RoleKind, readonly string[]>>> = {
   entity: ['indexMode', 'subqueries'],
-  expression: ['subqueries', 'columnsOf', 'fullTextOnlyIn'],
+  expression: ['subqueries', 'columnsOf', 'namesOf', 'fullTextOnlyIn'],
 };
 
 /** Two roles describe the same thing, so the inner one refines the outer one. */

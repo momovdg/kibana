@@ -8,8 +8,10 @@
  */
 
 import type { CursorIR, WrittenCommand } from '../../esql_js_sim/grammar';
+import { COMMAND_FACTS } from '../../esql_js_sim/definitions';
 import { getRegisteredCommand } from './command_metadata';
-import { isSameNesting } from './written';
+import { isOfExpression } from './resolve';
+import { isSameNesting, pathOf } from './written';
 
 /**
  * The commands the cursor is nested in, outermost first. Where a command starts, the command
@@ -37,6 +39,25 @@ const openBracketContentStart = ({ arguments: written }: WrittenCommand): number
 
 const isSourceCommand = ({ rule }: WrittenCommand): boolean =>
   getRegisteredCommand(rule)?.metadata.type === 'source';
+
+/**
+ * The command at the cursor up to the item the cursor is in, where each item of a command
+ * reads the columns the items before it define. The items end at the separators written in
+ * the command itself, and not in an expression of it.
+ */
+const getOwnItemsBeforeCursor = (text: string, ir: CursorIR): string | undefined => {
+  const [first] = ir.written;
+  const readsOwnColumns =
+    ir.command !== undefined && COMMAND_FACTS[ir.command]?.readsOwnColumns === true;
+  const separator = ir.written.findLast(
+    (written) =>
+      written.kind === 'token' && written.class === 'separator' && !isOfExpression(pathOf(written))
+  );
+
+  return readsOwnColumns && first && separator
+    ? text.slice(first.start, separator.start)
+    : undefined;
+};
 
 /**
  * The query whose result the command at the cursor reads: the commands before it in its
@@ -77,5 +98,7 @@ export const getQueryBeforeCursor = (text: string, ir: CursorIR): string => {
     levelStart = (enclosing && openBracketContentStart(enclosing)) ?? stop;
   }
 
-  return query;
+  const own = getOwnItemsBeforeCursor(text, ir);
+
+  return own && query ? `${query} | ${own}` : own ?? query;
 };

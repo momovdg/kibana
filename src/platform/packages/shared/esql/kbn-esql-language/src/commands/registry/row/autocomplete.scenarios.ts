@@ -10,12 +10,24 @@
 import { functions } from '../../../__tests__/scenarios';
 import type { Scenario, ScenarioTable } from '../../../__tests__/scenarios';
 
-const rows = (name: string, queries: string[], exact: string[]): Scenario[] =>
-  queries.map((query) => ({ name, query, expect: { exact } }));
+const rows = (
+  name: string,
+  queries: string[],
+  exact: string[],
+  status?: Scenario['status']
+): Scenario[] =>
+  queries.map((query) => ({ name, query, ...(status && { status }), expect: { exact } }));
 
 // The suggested name for the new column, followed by the assignment.
 const newColumn = 'col0 = ';
 const rowFunctions = functions({ availableIn: 'row', scalar: true });
+
+const integerOperators = functions({
+  availableIn: 'row',
+  operators: true,
+  withoutAssignment: true,
+  accepting: ['integer'],
+});
 
 export const rowScenarios: ScenarioTable = {
   command: 'row',
@@ -29,7 +41,15 @@ export const rowScenarios: ScenarioTable = {
     ...rows(
       'suggests a comma and a pipe after a complete expression',
       ['ROW col0 = 23 ', 'ROW ABS(23) ', 'ROW ABS(23), col0=234 '],
-      [', ', '| ', '\n']
+      [', ', '| ', '\n'],
+      'replaced'
+    ),
+    // A value can go on with an operator, as in every other expression.
+    ...rows(
+      'suggests a comma, a pipe and operators after a complete expression',
+      ['ROW col0 = 23 ', 'ROW ABS(23) ', 'ROW ABS(23), col0=234 '],
+      [', ', '| ', '\n', ...integerOperators],
+      'new'
     ),
   ],
 };

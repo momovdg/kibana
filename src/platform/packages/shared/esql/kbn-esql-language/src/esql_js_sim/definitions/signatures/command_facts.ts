@@ -14,6 +14,9 @@ import type { CommandFacts } from './types';
  * command.
  */
 export const COMMAND_FACTS: Readonly<Record<string, CommandFacts>> = {
+  // `EVAL a = 1, b = a`: a field can read the fields before it. The same holds for ROW.
+  evalCommand: { readsOwnColumns: true },
+  rowCommand: { readsOwnColumns: true },
   // `STATS aggFields? (BY fields)?`: at least an aggregation or a grouping is needed.
   statsCommand: { requiresArgument: true },
   // `(fuseConfiguration)*`: Elasticsearch rejects a second `SCORE BY`.
