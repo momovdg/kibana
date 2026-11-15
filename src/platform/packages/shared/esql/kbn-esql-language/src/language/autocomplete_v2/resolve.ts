@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { getExpressionEntry, resolveRole } from '../../esql_js_sim/definitions';
+import { COMMAND_FACTS, getExpressionEntry, resolveRole } from '../../esql_js_sim/definitions';
 import type { CursorIR, ExpectedArgument } from '../../esql_js_sim/grammar';
 import type { SuggestionRequest } from './types';
 
@@ -35,12 +35,25 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
 
   // The command can end here when the query can, or when the next command can start: the
   // editor then offers a new line, also inside a branch, which ends with a bracket.
-  if (ir.followers.some(({ class: tokenClass }) => tokenClass === 'end' || tokenClass === 'pipe')) {
+  // Where the grammar lets a command stand alone and it still needs an argument, the command
+  // cannot end right after its name.
+  const lacksArgument =
+    ir.command !== undefined &&
+    COMMAND_FACTS[ir.command]?.requiresArgument === true &&
+    ir.written.length <= 1;
+  const canEnd =
+    !lacksArgument &&
+    ir.followers.some(({ class: tokenClass }) => tokenClass === 'end' || tokenClass === 'pipe');
+
+  if (canEnd) {
     requests.push({ kind: 'end_of_command' });
   }
 
   for (const follower of ir.followers) {
     if (follower.startsCommand || follower.class === 'end') {
+      continue;
+    }
+    if (follower.class === 'pipe' && lacksArgument) {
       continue;
     }
     if (follower.text !== undefined && !isOfExpression(follower.path)) {

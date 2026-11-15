@@ -191,6 +191,10 @@ const isOutside = (request: SuggestionRequest, entries: string[]): boolean => {
   if (request.kind === 'token' && isAssignmentToken(request.follower)) {
     return false;
   }
+  // The same holds for the word being typed: it can be the start of a new name.
+  if (request.kind === 'argument' && request.resolved?.role.kind === 'new_name') {
+    return false;
+  }
 
   const path =
     request.kind === 'token'
