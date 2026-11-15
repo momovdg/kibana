@@ -16,6 +16,7 @@ import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplet
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   ARGUMENT_ROLES,
+  resolveRole,
   type ArgumentRole,
   type DependentValueRole,
   type MapParameter,
@@ -23,14 +24,23 @@ import {
   type OptionNameRole,
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
-import type { ExpectedArgument } from '../../../esql_js_sim/grammar';
+import type { ExpectedArgument, Follower } from '../../../esql_js_sim/grammar';
+import { getCommandOutput } from '../../../commands/definitions/utils/columns';
+import { matchesWildcardPattern } from '../../../commands/definitions/utils/regex';
+import type { Commands } from '../../../commands/definitions/keywords';
+import { getRegisteredCommand } from '../command_metadata';
+import { OPENING_PARAMETERS } from '../presentation';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
-import { partOf, unquoted, pathOf, roleIdOf } from '../written';
+import { MAP_OPENER, partOf, unquoted, pathOf, roleIdOf } from '../written';
 
 const STRING_TYPES: readonly string[] = ['keyword', 'text', 'string'];
 const NUMBER_TYPES: readonly string[] = ['integer', 'long', 'double', 'number'];
+
+const LISTED_STRING = /"([^"]*)"/g;
+
+const isString = ({ type }: MapParameter): boolean => STRING_TYPES.includes(type);
 
 /** The text of the last written argument a call site took, without its quotes. */
 const writtenAt = ({ ir }: SuggestionContext, id: string): string | undefined => {
@@ -91,6 +101,47 @@ const valuesOf = async (
 };
 
 /**
+ * The output columns a parameter selects from: the definition of a command's output says
+ * which parameter selects them and which one tells the variants of the output apart. The
+ * variant is the one the value written for that parameter matches, or its default.
+ */
+const selectableOutputs = (
+  name: string,
+  parameters: MapRole['parameters'],
+  context: SuggestionContext
+): string[] => {
+  const { ir } = context;
+  const command = ir.command === undefined ? undefined : getRegisteredCommand(ir.command);
+  const output = command && getCommandOutput(command.name as Commands);
+
+  if (!output || output.selected_by !== name) {
+    return [];
+  }
+
+  const keys = ir.written.filter((written) => partOf(written) === 'map_key');
+  const variantKey = keys.find(({ text }) => unquoted(text) === output.vary_by);
+  const nextKey = variantKey && keys[keys.indexOf(variantKey) + 1];
+  const written =
+    variantKey &&
+    ir.written.find(
+      (value) =>
+        partOf(value) === 'map_value' &&
+        value.start > variantKey.start &&
+        (!nextKey || value.start < nextKey.start)
+    );
+  const fallback = parameters[output.vary_by]?.default;
+  const variantName = (written ? unquoted(written.text) : fallback)?.toLowerCase();
+  const variant =
+    variantName === undefined
+      ? undefined
+      : Object.entries(output.variants).find(([pattern]) =>
+          matchesWildcardPattern(pattern.toLowerCase(), variantName)
+        )?.[1];
+
+  return Object.keys(variant ?? {});
+};
+
+/**
  * The keys of a map that are not used yet, or the values of the key before the cursor. The
  * parameters of a role describe the map itself, so nothing is offered inside a nested map.
  */
@@ -122,11 +173,67 @@ export const provideMap = async (
     return [];
   }
 
-  const isString = STRING_TYPES.includes(parameter.type);
+  const name = unquoted(key.text);
+  const values = [
+    ...(await valuesOf(parameter, context)),
+    ...selectableOutputs(name, parameters, context),
+  ];
+  // In a list a value is given once: the ones written after the key are left out.
+  const listed = parameter.list
+    ? context.ir.written
+        .filter((written) => partOf(written) === 'map_value' && written.start > key.start)
+        // The grammar reads a list as one literal: its values are the strings in its text.
+        .flatMap(({ text }) => [...text.matchAll(LISTED_STRING)].map(([, value]) => value))
+    : [];
 
-  return (await valuesOf(parameter, context)).map((value) =>
-    buildMapValueCompleteItem(isString ? `"${value}"` : value, value)
+  return [...new Set(values)]
+    .filter((value) => !listed.includes(value))
+    .map((value) => buildMapValueCompleteItem(isString(parameter) ? `"${value}"` : value, value));
+};
+
+/** What stands for the value of a parameter in a ready-made map: its default when it has one. */
+const valuePlaceholder = (parameter: MapParameter): string => {
+  if (isString(parameter)) {
+    return '"$0"';
+  }
+
+  return parameter.default === undefined ? '$0' : `\${0:${parameter.default}}`;
+};
+
+/**
+ * The braces of a map where one has to be written, the cursor inside. A map that is written
+ * for one parameter is opened with it: its only parameter, or the one the editor names.
+ */
+export const provideMapOpener = (
+  { path }: Follower,
+  { ir }: SuggestionContext
+): ISuggestionItem[] => {
+  const resolved = resolveRole(path);
+  // Braces inside the map open the value of a parameter, which the role does not describe.
+  const isInMap = ir.written.some(
+    ({ text, ancestors }) => text === MAP_OPENER && ancestors.some(({ id }) => id === resolved?.id)
   );
+
+  if (resolved?.role.kind !== 'map' || isInMap) {
+    return [];
+  }
+
+  const { parameters } = resolved.role;
+  const names = Object.keys(parameters);
+  const opening =
+    (resolved.id === undefined ? undefined : OPENING_PARAMETERS[resolved.id]) ??
+    (names.length === 1 ? names[0] : undefined);
+  const content = opening ? `"${opening}": ${valuePlaceholder(parameters[opening])}` : '$0';
+
+  return [
+    withAutoSuggest({
+      label: opening ? `{ "${opening}": }` : '{ }',
+      text: `{ ${content} }`,
+      asSnippet: true,
+      kind: 'Value',
+      category: SuggestionCategory.CONSTANT_VALUE,
+    }),
+  ];
 };
 
 /**

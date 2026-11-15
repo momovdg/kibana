@@ -21,6 +21,7 @@ import {
   dependentName,
   dependentRoles,
   provideMap,
+  provideMapOpener,
   provideOptionNames,
 } from './providers/structured';
 import { getSuggestedValuesByName } from './presentation';
@@ -37,7 +38,7 @@ import {
 } from './providers/tokens';
 import { isOfExpression, resolve } from './resolve';
 import type { SuggestionContext, SuggestionRequest } from './types';
-import { partOf, pathOf } from './written';
+import { MAP_OPENER, partOf, pathOf } from './written';
 
 const NOTHING_APPLIES: readonly string[] = ['inside_comment', 'invalid'];
 
@@ -170,6 +171,9 @@ const provide = async (
 
       if (opensSubquery(request.follower)) {
         return provideSubqueryOpener(context);
+      }
+      if (request.follower.text === MAP_OPENER) {
+        return provideMapOpener(request.follower, context);
       }
 
       return isAssignmentToken(request.follower)
