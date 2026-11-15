@@ -37,13 +37,14 @@ import {
   type ExpressionRole,
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
-import type { CursorIR } from '../../../esql_js_sim/grammar';
+import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
 import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_context';
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
 import { decideExpression } from './expression_decisions';
 import { describeExpressionPosition } from './expression_position';
 import { getLambdas, getLambdaState, type LambdaParameter, type LambdaState } from './lambdas';
+import { isColumnPart, unquoted } from '../written';
 
 /** What the expression at the cursor offers, and whether the command can go on after it. */
 export interface ExpressionSuggestions {
@@ -62,6 +63,7 @@ const getModeLocations = (): Readonly<Record<ExpressionMode, Location>> => ({
   scalar: Location.SORT,
   aggregation: Location.STATS,
   grouping: Location.STATS_BY,
+  key: Location.LIMIT_BY,
   filter: Location.WHERE,
   constant: Location.ROW,
   full_text: Location.HIGHLIGHT_QUERY,
@@ -100,6 +102,26 @@ const COLUMNS_IN_CALLS_ONLY: readonly ExpressionMode[] = ['constant', 'aggregati
 
 const readsColumnsHere = (role: ExpressionRole, ir: CursorIR): boolean =>
   !COLUMNS_IN_CALLS_ONLY.includes(role.mode) || isInFunctionCall(ir);
+
+/**
+ * The columns that are an item of the list on their own, as `a` and not `a + 1`: the items
+ * are the places of the expression written so far, and such an item holds one column only.
+ */
+const getListedColumns = ({ written }: CursorIR, entry: CallSiteId): string[] => {
+  const items = new Map<number, WrittenArgument[]>();
+
+  for (const argument of written) {
+    const item = argument.ancestors.find(({ id }) => id === entry);
+
+    if (item) {
+      items.set(item.start, [...(items.get(item.start) ?? []), argument]);
+    }
+  }
+
+  return [...items.values()].flatMap((parts) =>
+    parts.length === 1 && isColumnPart(parts[0]) ? [unquoted(parts[0].text)] : []
+  );
+};
 
 /**
  * Where the expression at the cursor starts, when part of it is written: the start of the
@@ -292,6 +314,7 @@ export const provideExpression = async (
     options: {
       ...(role.types && { preferredExpressionType: [...role.types] }),
       ...(role.subqueries && { allowSubquery: true }),
+      ...(role.unique && { ignoredColumnsForEmptyExpression: getListedColumns(ir, entry) }),
       ...(!readsColumnsHere(role, ir) && { suggestFields: false }),
       ...(role.fullTextOnlyIn && {
         getFunctionsToIgnore: () => ({

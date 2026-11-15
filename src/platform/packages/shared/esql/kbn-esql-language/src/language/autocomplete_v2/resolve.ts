@@ -11,8 +11,8 @@ import { getExpressionEntry, resolveRole } from '../../esql_js_sim/definitions';
 import type { CursorIR, ExpectedArgument } from '../../esql_js_sim/grammar';
 import type { SuggestionRequest } from './types';
 
-// The tokens inside an expression are offered with it, as its operators and its brackets.
-const isOfExpression = (path: string[]): boolean =>
+/** A place inside an expression: its tokens are offered with it, as its operators and brackets. */
+export const isOfExpression = (path: string[]): boolean =>
   getExpressionEntry(path) !== undefined && resolveRole(path)?.role.kind === 'expression';
 
 /**

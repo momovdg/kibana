@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { i18n } from '@kbn/i18n';
 import { defaultLimitValueSuggestions } from '../../commands/registry/complete_items';
 import { UnmappedFieldsStrategy } from '../../commands/registry/types';
 import type { CallSiteId } from '../../esql_js_sim/definitions';
@@ -21,14 +22,38 @@ import type { CallSiteId } from '../../esql_js_sim/definitions';
  * nothing of another module may be read while this one loads.
  */
 
+/** Values the editor offers at a place, with what the item says about them. */
+export interface SuggestedValues {
+  values: readonly string[];
+  detail?: string;
+}
+
+const getPatternDetail = (): string =>
+  i18n.translate('esqlLanguage.esql.autocomplete.aPatternString', {
+    defaultMessage: 'A pattern string',
+  });
+
 /**
  * Values worth offering where any value of a type is valid: the language allows every number
- * as a limit, the editor offers a few common ones.
+ * as a limit and every string as a pattern, the editor offers a few common ones.
  */
-export const getSuggestedValues = (): Readonly<Record<CallSiteId, readonly string[]>> => ({
-  'limitCommand>constant': defaultLimitValueSuggestions,
-  'mmrCommand.limitValue': defaultLimitValueSuggestions,
+export const getSuggestedValues = (): Readonly<Record<CallSiteId, SuggestedValues>> => ({
+  'limitCommand>constant': { values: defaultLimitValueSuggestions },
+  'mmrCommand.limitValue': { values: defaultLimitValueSuggestions },
+  'sampleCommand.probability': { values: ['.1', '.01', '.001'] },
+  'dissectCommand>string': { values: ['"%{firstWord}"'], detail: getPatternDetail() },
+  'dissectCommandOption>constant': { values: ['":"', '";"'] },
+  'grokCommand>string': { values: ['"%{WORD:firstWord}"'], detail: getPatternDetail() },
 });
+
+/**
+ * The name the editor offers for a new column where the language takes any name, by the
+ * place of the name.
+ */
+export const SUGGESTED_NAMES: Readonly<Record<CallSiteId, string>> = {
+  'changePointCommand.targetType': 'changePointType',
+  'changePointCommand.targetPvalue': 'pValue',
+};
 
 /**
  * Values worth offering for the value of a name, by the place of the value and by the name:

@@ -35,7 +35,10 @@ export type SuggestFunction = (
 export interface SuggestFlow {
   readonly name: string;
   readonly suggest: SuggestFunction;
-  /** Rows tagged `new` describe behaviour only these flows have. */
+  /**
+   * Rows tagged `new` describe behaviour only these flows have, and rows tagged `replaced`
+   * behaviour only the other flows have.
+   */
   readonly runsNewRows: boolean;
 }
 
@@ -105,8 +108,11 @@ export interface Scenario {
   readonly world?: Partial<ScenarioWorld>;
   /** Function definitions that exist only while this scenario runs. */
   readonly testFunctions?: readonly FunctionDefinition[];
-  /** `new` marks a deliberate behaviour change that the current flow does not have. */
-  readonly status?: 'new';
+  /**
+   * `new` marks a deliberate behaviour change that the current flow does not have;
+   * `replaced` marks what the current flow does there instead, and the new flow no longer.
+   */
+  readonly status?: 'new' | 'replaced';
   readonly expect: ScenarioExpectation;
 }
 

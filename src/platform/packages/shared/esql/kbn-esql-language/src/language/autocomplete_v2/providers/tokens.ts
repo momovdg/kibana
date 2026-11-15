@@ -38,6 +38,22 @@ const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggest
     category: SuggestionCategory.LANGUAGE_KEYWORD,
   });
 
+// The rule that takes a token is the first part of the token's place: `rule>TOKEN`.
+const ruleOf = (id: string | undefined): string | undefined => id?.split(/[.>]/)[0];
+
+/**
+ * Whether a keyword is the first word of a longer one: only other keywords can follow it,
+ * and one has to, as `FIRST` or `LAST` after `NULLS`.
+ */
+export const startsLongerKeyword = ({ id, token }: { id?: string; token: string }): boolean => {
+  const rule = ruleOf(id);
+  const { tokens: next, canEnd } = rule
+    ? getTokenSuccessors(rule, token)
+    : { tokens: [], canEnd: true };
+
+  return !canEnd && next.length > 0 && next.every((successor) => successor.class === 'keyword');
+};
+
 /**
  * The items for a keyword, by what the grammar allows right after it:
  *
@@ -49,8 +65,7 @@ const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggest
  */
 const provideKeyword = ({ text = '', token, id }: Follower): ISuggestionItem[] => {
   const label = text.toUpperCase();
-  // The rule that takes the token is the first part of the place: `rule>TOKEN` or `rule.label`.
-  const [rule] = id?.split(/[.>]/) ?? [];
+  const rule = ruleOf(id);
   const { tokens: next, canEnd } = rule
     ? getTokenSuccessors(rule, token)
     : { tokens: [], canEnd: false };
@@ -61,7 +76,7 @@ const provideKeyword = ({ text = '', token, id }: Follower): ISuggestionItem[] =
   if (next.length === 1 && next[0].text === MAP_OPENER) {
     return [toKeywordItem(label, `${label} ${MAP_OPENER} $0 }`, true)];
   }
-  if (next.length > 0 && next.every((successor) => successor.class === 'keyword')) {
+  if (rule && startsLongerKeyword({ id, token })) {
     return next.map((successor) => {
       const joined = `${label} ${successor.text?.toUpperCase()}`;
       const ends = getTokenSuccessors(rule, successor.token).canEnd;
@@ -86,7 +101,7 @@ const getStartTokens = (): Set<string> => {
 
 /** The bracket opens a subquery: only the name of a command can follow it. */
 export const opensSubquery = ({ class: tokenClass, token, id }: Follower): boolean => {
-  const [rule] = id?.split(/[.>]/) ?? [];
+  const rule = ruleOf(id);
   const next = tokenClass === 'opener' && rule ? getTokenSuccessors(rule, token).tokens : [];
 
   return next.length > 0 && next.every((successor) => getStartTokens().has(successor.token));

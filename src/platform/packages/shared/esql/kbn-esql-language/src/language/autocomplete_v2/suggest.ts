@@ -33,10 +33,11 @@ import {
   provideEndOfCommand,
   provideSubqueryOpener,
   provideToken,
+  startsLongerKeyword,
 } from './providers/tokens';
-import { resolve } from './resolve';
+import { isOfExpression, resolve } from './resolve';
 import type { SuggestionContext, SuggestionRequest } from './types';
-import { partOf } from './written';
+import { partOf, pathOf } from './written';
 
 const NOTHING_APPLIES: readonly string[] = ['inside_comment', 'invalid'];
 
@@ -51,7 +52,7 @@ const provideForRole = async (
     case 'column':
       return provideColumns(role, resolved, context);
     case 'new_name':
-      return provideNewName(role, context);
+      return provideNewName(role, resolved, context);
     case 'constant':
       return provideConstant(role, resolved, context);
     case 'entity':
@@ -348,6 +349,45 @@ const provideFollowUps = async (
 };
 
 /**
+ * Where a keyword of several words starts when the cursor is in it, as in `NULLS F`. Its
+ * first word alone says nothing, so the editor goes on as if the keyword was typed from its
+ * start: it offers what it offered there, the whole keyword among it.
+ */
+const getLongerKeywordStart = (
+  { word, followers, written }: CursorIR,
+  fullText: string,
+  offset: number
+): number | undefined => {
+  // The first word is the word being typed, in full.
+  const spelled = followers.find(
+    (follower) => follower.class === 'keyword' && follower.token === word?.keyword
+  );
+
+  if (word && spelled) {
+    return !spelled.startsCommand && !isOfExpression(spelled.path) && startsLongerKeyword(spelled)
+      ? word.start
+      : undefined;
+  }
+
+  // The first word is written, and the cursor is at its second word. The name of the command
+  // is not such a word: what follows it is offered as the command's own.
+  const last = written.at(-1);
+  const isAtNextWord =
+    written.length > 1 &&
+    last?.kind === 'token' &&
+    last.class === 'keyword' &&
+    last.token !== undefined &&
+    fullText.slice(last.end, word?.start ?? offset).trim() === '';
+
+  return last?.token !== undefined &&
+    isAtNextWord &&
+    !isOfExpression(pathOf(last)) &&
+    startsLongerKeyword({ id: last.id, token: last.token })
+    ? last.start
+    : undefined;
+};
+
+/**
  * The grammar-driven autocomplete. Four steps: locate the cursor in the grammar, resolve what
  * has to be offered there, provide the items for each request, and present them.
  */
@@ -357,6 +397,14 @@ export const suggest = async (
   callbacks?: ESQLCallbacks
 ): Promise<ISuggestionItem[]> => {
   const collected = await collect(fullText, offset, callbacks);
+  const keywordStart = getLongerKeywordStart(collected.ir, fullText, offset);
+
+  if (keywordStart !== undefined) {
+    const without = `${fullText.slice(0, keywordStart)}${fullText.slice(offset)}`;
+
+    return present((await collect(without, keywordStart, callbacks)).items);
+  }
+
   const followUps = await provideFollowUps(fullText, offset, collected, callbacks);
 
   // A word that is already whole is offered with what follows it, and not as itself again.

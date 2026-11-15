@@ -161,11 +161,12 @@ const ROLE_SHAPES: Record<RoleKind, Shape> = {
   },
   expression: {
     required: {
-      mode: oneOf(['scalar', 'aggregation', 'grouping', 'filter', 'constant', 'full_text']),
+      mode: oneOf(['scalar', 'aggregation', 'grouping', 'key', 'filter', 'constant', 'full_text']),
     },
     optional: {
       types: strings,
       completeAs: oneOf(['boolean']),
+      unique: boolean,
       subqueries: boolean,
       fullTextOnlyIn: string,
       columnsOf: string,
