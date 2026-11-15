@@ -10,8 +10,13 @@
 import { columns } from '../../../__tests__/scenarios';
 import type { Scenario, ScenarioTable } from '../../../__tests__/scenarios';
 
-const rows = (name: string, queries: string[], exact: string[]): Scenario[] =>
-  queries.map((query) => ({ name, query, expect: { exact } }));
+const rows = (
+  name: string,
+  queries: string[],
+  exact: string[],
+  status?: Scenario['status']
+): Scenario[] =>
+  queries.map((query) => ({ name, query, ...(status && { status }), expect: { exact } }));
 
 const PATTERN = '"%{firstWord}" ';
 const stringColumns = columns({ types: ['keyword', 'text'], followedBySpace: true });
@@ -38,7 +43,15 @@ export const dissectScenarios: ScenarioTable = {
     ...rows(
       'suggests a pipe after an append separator',
       [`from a | DISSECT keywordField ${PATTERN} append_separator = ":" `],
-      ['| ', '\n']
+      ['| ', '\n'],
+      'replaced'
+    ),
+    // The grammar takes a list of options, so a comma can follow one.
+    ...rows(
+      'suggests a pipe and a comma after an append separator',
+      [`from a | DISSECT keywordField ${PATTERN} append_separator = ":" `],
+      ['| ', ', ', '\n'],
+      'new'
     ),
   ],
 };

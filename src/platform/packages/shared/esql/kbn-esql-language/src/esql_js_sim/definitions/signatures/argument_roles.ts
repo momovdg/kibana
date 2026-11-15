@@ -68,9 +68,9 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   },
   // ROW has no input, so its values are literals, parameters and functions of them.
   'rowCommand>fields': { kind: 'expression', mode: 'constant' },
-  'orderExpression>booleanExpression': { kind: 'expression', mode: 'scalar' },
+  'orderExpression>booleanExpression': { kind: 'expression', mode: 'scalar', unique: true },
   'limitCommand>constant': { kind: 'constant', valueType: 'integer', range: { min: 0 } },
-  'limitByGroupKey>booleanExpression': { kind: 'expression', mode: 'scalar' },
+  'limitByGroupKey>booleanExpression': { kind: 'expression', mode: 'key', unique: true },
 
   // Aggregations.
   'statsCommand.stats': { kind: 'expression', mode: 'aggregation' },
@@ -183,7 +183,7 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   'changePointCommand.key': { kind: 'column' },
   'changePointCommand.targetType': newColumn,
   'changePointCommand.targetPvalue': newColumn,
-  'changePointCommand.booleanExpression': { kind: 'expression', mode: 'grouping' },
+  'changePointCommand.booleanExpression': { kind: 'expression', mode: 'key', unique: true },
 
   // Inference.
   'completionCommand.targetField': newColumn,

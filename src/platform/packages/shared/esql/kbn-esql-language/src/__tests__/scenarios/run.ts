@@ -127,6 +127,10 @@ export const passesOn = async (scenario: Scenario, flow: SuggestFlow): Promise<b
   }
 };
 
+/** Whether a row describes the flow: a changed behaviour has one row per side of the change. */
+export const isRowOf = ({ status }: Scenario, { runsNewRows }: SuggestFlow): boolean =>
+  status === undefined || (status === 'new') === runsNewRows;
+
 /** Declares one test per scenario and flow. */
 export const describeScenarios = (
   { command, scenarios }: ScenarioTable,
@@ -138,7 +142,7 @@ export const describeScenarios = (
     `${command.toUpperCase()} autocomplete scenarios (%s flow)`,
     (_flowName, flow) => {
       const declare = (scenario: Scenario): void => {
-        const declareTest = scenario.status === 'new' && !flow.runsNewRows ? test.skip : test;
+        const declareTest = isRowOf(scenario, flow) ? test : test.skip;
 
         declareTest(`${scenario.name}: ${scenario.query}▮${scenario.after ?? ''}`, async () => {
           assertExpectation(await runScenario(scenario, flow), scenario.expect);
