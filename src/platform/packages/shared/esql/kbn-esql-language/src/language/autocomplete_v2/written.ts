@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { EXPRESSION_PARTS, resolveRole } from '../../esql_js_sim/definitions';
+import { EXPRESSION_PARTS, resolveRole, type CallSiteId } from '../../esql_js_sim/definitions';
 import type { WrittenAncestor, WrittenArgument } from '../../esql_js_sim/grammar';
 
 /*
@@ -53,3 +53,27 @@ export const isDirectlyIn = ({ ancestors }: WrittenArgument, place: WrittenAnces
 /** The id of the role a written argument has. */
 export const roleIdOf = (written: WrittenArgument): string | undefined =>
   resolveRole(pathOf(written))?.id;
+
+/**
+ * What is written at a place, item by item. Where the place is a list, the items are the
+ * places right below it; a separator between them is in none.
+ */
+export const getItems = (written: WrittenArgument[], place: CallSiteId): WrittenArgument[][] => {
+  const items = new Map<string, WrittenArgument[]>();
+
+  for (const argument of written) {
+    const index = argument.ancestors.findIndex(({ id }) => id === place);
+    const item = index < 0 ? undefined : argument.ancestors[index + 1];
+
+    if (item) {
+      const key = `${item.id}|${item.start}`;
+      items.set(key, [...(items.get(key) ?? []), argument]);
+    }
+  }
+
+  return [...items.values()];
+};
+
+/** Whether an item is one column and nothing else, as `a` and not `a + 1`. */
+export const isLoneColumn = (parts: WrittenArgument[]): boolean =>
+  parts.length === 1 && isColumnPart(parts[0]);

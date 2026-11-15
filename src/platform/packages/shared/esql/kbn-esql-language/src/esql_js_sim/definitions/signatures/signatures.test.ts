@@ -29,7 +29,7 @@ const referencesOf = (role: ArgumentRole): CallSiteId[] => {
     case 'entity':
       return role.dependsOn ? [role.dependsOn] : [];
     case 'expression':
-      return role.columnsOf ? [role.columnsOf] : [];
+      return [role.columnsOf, role.namesOf].flatMap((place) => (place ? [place] : []));
     case 'dependent_value':
       return [role.on, ...Object.values(role.roles ?? {}).flatMap(referencesOf)];
     case 'map':

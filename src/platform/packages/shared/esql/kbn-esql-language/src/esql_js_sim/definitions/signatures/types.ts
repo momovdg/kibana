@@ -164,6 +164,8 @@ export interface ExpressionRole {
   fullTextOnlyIn?: string;
   /** It also reads the columns of the entity another argument names. */
   columnsOf?: CallSiteId;
+  /** It also reads the names another argument of the command defines, as a grouping does. */
+  namesOf?: CallSiteId;
   /** What a string in its place holds. */
   format?: ValueFormat;
 }
