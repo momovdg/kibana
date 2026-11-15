@@ -167,6 +167,7 @@ const ROLE_SHAPES: Record<RoleKind, Shape> = {
       types: strings,
       completeAs: oneOf(['boolean']),
       unique: boolean,
+      computes: boolean,
       subqueries: boolean,
       fullTextOnlyIn: string,
       columnsOf: string,

@@ -156,6 +156,8 @@ export interface ExpressionRole {
   completeAs?: 'boolean';
   /** In a list: a column that is an item on its own is listed only once. */
   unique?: boolean;
+  /** The value is computed: a column on its own is valid there and computes nothing. */
+  computes?: boolean;
   /** A subquery may appear inside it. */
   subqueries?: boolean;
   /** Full-text functions are allowed only inside this function. */
@@ -228,6 +230,8 @@ export interface CommandFacts {
   requiresArgument?: boolean;
   /** Repeated clauses whose alternatives may each be used only once. */
   singleUse?: readonly CallSiteId[];
+  /** Each item of the command's list reads the columns the items before it define. */
+  readsOwnColumns?: boolean;
 }
 
 /** The role that applies at a place, and where it comes from. */

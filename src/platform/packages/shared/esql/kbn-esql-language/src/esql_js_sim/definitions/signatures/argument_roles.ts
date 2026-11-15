@@ -63,6 +63,7 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   'evalCommand>fields': {
     kind: 'expression',
     mode: 'scalar',
+    computes: true,
     subqueries: true,
     fullTextOnlyIn: 'score',
   },
@@ -74,9 +75,9 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
 
   // Aggregations.
   'statsCommand.stats': { kind: 'expression', mode: 'aggregation' },
-  'statsCommand.grouping': { kind: 'expression', mode: 'grouping' },
+  'statsCommand.grouping': { kind: 'expression', mode: 'grouping', unique: true },
   'inlineStatsCommand.stats': { kind: 'expression', mode: 'aggregation' },
-  'inlineStatsCommand.grouping': { kind: 'expression', mode: 'grouping' },
+  'inlineStatsCommand.grouping': { kind: 'expression', mode: 'grouping', unique: true },
   // An aggregation's own filter, `AVG(a) WHERE b > 1`.
   'aggField>booleanExpression': {
     kind: 'expression',
