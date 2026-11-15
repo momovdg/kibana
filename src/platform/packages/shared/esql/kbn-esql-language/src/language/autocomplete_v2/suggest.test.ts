@@ -652,6 +652,48 @@ describe('suggest (v2)', () => {
       });
     });
 
+    it('lets a command that needs an argument end only once it has one', async () => {
+      const start = await textsAt('FROM e | STATS ', callbacks);
+
+      expect(start).not.toContain('| ');
+      expect(start).not.toContain('\n');
+      expect(await textsAt('FROM e | STATS COUNT() ', callbacks)).toContain('| ');
+    });
+
+    it('offers the columns the items before define, where the command reads its own', async () => {
+      expect(await textsAt('FROM e | EVAL a = n + 1, ', callbacks)).toContain('a ');
+      expect(await textsAt('FROM e | EVAL a = n + 1, b = ROUND(', callbacks)).toContain('a');
+      expect(await textsAt('FROM e | STATS a = COUNT(), b = AVG(', callbacks)).not.toContain('a');
+    });
+
+    it('takes a column on its own as unfinished where the items are computed', async () => {
+      expect(await textsAt('FROM e | EVAL n ', callbacks)).not.toContain('| ');
+      expect(await textsAt('FROM e | EVAL a = n ', callbacks)).toContain('| ');
+      expect(await textsAt('FROM e | SORT n ', callbacks)).toContain('| ');
+    });
+
+    it('offers a new name also while a word is typed where an item starts', async () => {
+      expect(await textsAt('FROM e | EVAL ab', callbacks)).toContain('col0 = ');
+    });
+
+    describe('inside a function call', () => {
+      it('offers no aggregation inside an aggregation, nor the functions around the cursor', async () => {
+        const inAggregation = await textsAt('FROM e | STATS AVG(', callbacks);
+        const inScalar = await textsAt('FROM e | STATS ROUND(', callbacks);
+
+        expect(inAggregation).not.toContain('MAX($0)');
+        expect(inAggregation).toContain('ROUND($0)');
+        expect(inScalar).toContain('MAX($0)');
+        expect(inScalar).not.toContain('ROUND($0)');
+      });
+
+      it('offers no grouping function inside a grouping function', async () => {
+        const texts = await textsAt('FROM e | STATS COUNT() BY BUCKET(', callbacks);
+
+        expect(texts.filter((text) => text.startsWith('CATEGORIZE('))).toEqual([]);
+      });
+    });
+
     it('offers a column once in a list where its role says so, unless it is part of an item', async () => {
       expect(await textsAt('FROM e | SORT k, ', callbacks)).not.toContain('k ');
       expect(await textsAt('FROM e | SORT n + 1, ', callbacks)).toContain('n ');
