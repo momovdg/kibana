@@ -21,7 +21,14 @@ export const keepScenarios: ScenarioTable = {
     {
       name: 'suggests command and pipe after a field has been used in KEEP',
       query: 'FROM logs* | KEEP doubleField ',
+      status: 'replaced',
       expect: { exact: ['| ', ',', '\n'] },
+    },
+    {
+      name: 'suggests a pipe and a comma with a space after a field',
+      query: 'FROM logs* | KEEP doubleField ',
+      status: 'new',
+      expect: { exact: ['| ', ', ', '\n'] },
     },
   ],
 };

@@ -16,8 +16,12 @@ import {
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
+import {
+  buildUserDefinedColumnsDefinitions,
+  withAutoSuggest,
+} from '../../../commands/definitions/utils/autocomplete/helpers';
 import { buildConstantsDefinitions } from '../../../commands/definitions/utils/literals';
-import { getSuggestedValues } from '../presentation';
+import { getSuggestedValues, SUGGESTED_NAMES } from '../presentation';
 import type { SuggestionContext } from '../types';
 import { ASSIGNMENT, roleIdOf } from '../written';
 
@@ -53,18 +57,44 @@ export const provideColumns = async (
 };
 
 /**
+ * The name the editor suggests for the place, when it has one. A separator that has to
+ * follow the name, as the comma before a second name, comes with it.
+ */
+const provideSuggestedName = (
+  { id }: ResolvedRole,
+  { afterName }: SuggestionContext
+): ISuggestionItem[] => {
+  const name = id === undefined ? undefined : SUGGESTED_NAMES[id];
+  const { followers } = afterName;
+  const separator =
+    followers.length > 0 && followers.every((follower) => follower.class === 'separator')
+      ? `${followers[0].text} `
+      : '';
+
+  return name === undefined
+    ? []
+    : buildUserDefinedColumnsDefinitions([name]).map((item) =>
+        withAutoSuggest({ ...item, text: `${item.text}${separator}` })
+      );
+};
+
+/**
  * A name for a new column, where the grammar wants the name assigned: a name the query does
  * not use yet, followed by the assignment. Where any name can be typed freely, as after
  * RENAME's AS, nothing is offered.
  */
 export const provideNewName = (
   role: NewNameRole,
+  resolved: ResolvedRole,
   context: SuggestionContext
 ): ISuggestionItem[] => {
   const isAssigned = context.afterName.followers.some(({ text }) => text === ASSIGNMENT);
 
-  if (role.of !== 'column' || !isAssigned) {
+  if (role.of !== 'column') {
     return [];
+  }
+  if (!isAssigned) {
+    return provideSuggestedName(resolved, context);
   }
 
   let index = 0;
@@ -86,7 +116,7 @@ export const provideConstant = (
 
   // Values the editor suggests where the language allows any: the cursor moves on after one.
   if (!role.allowedValues && suggested) {
-    return buildConstantsDefinitions([...suggested], '', {
+    return buildConstantsDefinitions([...suggested.values], suggested.detail ?? '', {
       advanceCursorAndOpenSuggestions: true,
     });
   }

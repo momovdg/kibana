@@ -149,3 +149,18 @@ describeScenarios(table, [createFlow('first', items), createFlow('second', items
 
 // The row would fail on the old flow, so it passing here shows it only ran on the new one.
 describeScenarios(newRow, [createFlow('old', []), createFlow('new', items, true)]);
+
+const replacedRow: ScenarioTable = {
+  command: 'fake',
+  scenarios: [
+    {
+      name: 'is a behaviour the new flow no longer has',
+      query: 'FAKE ',
+      status: 'replaced',
+      expect: { exact: ['a ', 'b ', 'SNIPPET($0)'] },
+    },
+  ],
+};
+
+// The row would fail on the new flow, so it passing here shows it only ran on the old one.
+describeScenarios(replacedRow, [createFlow('old', items), createFlow('new', [], true)]);

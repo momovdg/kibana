@@ -57,6 +57,8 @@ describe('locate', () => {
       ['FROM a // c', 'inside_comment'],
       ['FROM a /* c', 'inside_comment'],
       ['FROM a | KEEP )', 'invalid'],
+      // The lexer reads no name after SHOW, so the word is in no token.
+      ['SHOW word ', 'invalid'],
     ])('%j is %s', (query, position) => {
       expect(at(query).position).toBe(position);
     });
