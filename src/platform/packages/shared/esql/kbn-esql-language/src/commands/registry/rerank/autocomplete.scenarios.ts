@@ -108,7 +108,13 @@ export const rerankScenarios: ScenarioTable = {
       'suggests field continuations after selecting a field',
       [`${ON}keywordField`],
       [...NEXT_ACTIONS, 'col0 = ', ...stringColumns, ...stringFunctions]
-    ),
+    ).map((row): Scenario => ({ ...row, status: 'replaced' })),
+    ...rows(
+      BASIC,
+      'suggests what follows a complete field, with the field',
+      [`${ON}keywordField`],
+      ['keywordField, ', 'keywordField WITH { $0 }', 'keywordField | ', '\n']
+    ).map((row): Scenario => ({ ...row, status: 'new' })),
     ...rows(
       BASIC,
       'suggests continuations after field with more trailing spaces',

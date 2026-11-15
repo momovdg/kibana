@@ -230,6 +230,8 @@ export type ExpressionPart =
 export interface CommandFacts {
   /** The grammar makes every argument optional, and at least one is needed. */
   requiresArgument?: boolean;
+  /** Arguments the grammar makes optional and Elasticsearch requires. */
+  requires?: readonly CallSiteId[];
   /** Repeated clauses whose alternatives may each be used only once. */
   singleUse?: readonly CallSiteId[];
   /** Each item of the command's list reads the columns the items before it define. */

@@ -30,7 +30,14 @@ export const ipLocationScenarios: ScenarioTable = {
     {
       name: 'suggests WITH and pipe after a complete expression',
       query: 'FROM a | IP_LOCATION geo = ipField',
+      status: 'replaced',
       expect: { contains: ['WITH { $0 }', '| '] },
+    },
+    {
+      name: 'suggests what follows a complete column, with the column',
+      query: 'FROM a | IP_LOCATION geo = ipField',
+      status: 'new',
+      expect: { exact: ['ipField WITH { $0 }', 'ipField | ', '\n'] },
     },
     {
       name: 'suggests map keys inside an empty options map',
