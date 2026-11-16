@@ -6,7 +6,15 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { isPromqlAcrossSeriesFunction } from '../../../commands/definitions/utils/promql';
+import type { PromQLSelector } from '@elastic/esql';
+import type { PromQLFunctionParamType } from '../../../commands/definitions/types';
+import type { PromqlDetailedPosition } from '../../../commands/definitions/utils/autocomplete/promql/types';
+import {
+  getPromqlBinaryOperatorParamTypes,
+  getPromqlFunctionDefinition,
+  getPromqlFunctionParamTypes,
+  isPromqlAcrossSeriesFunction,
+} from '../../../commands/definitions/utils/promql';
 import { getPromqlPart, type PromqlPart } from '../../../esql_js_sim/definitions';
 import { locatePromql, type PromqlCursor } from '../../../esql_js_sim/grammar';
 
@@ -38,9 +46,30 @@ export type PromqlPositionKind =
 export interface PromqlPosition {
   kind: PromqlPositionKind;
   cursor: PromqlCursor;
+  /** The types the function or the operator at the cursor takes there; none when unknown. */
+  signatureTypes: PromQLFunctionParamType[];
+  /** In a function: another argument can follow the one that is written. */
+  canAddArgument: boolean;
+  /** A label of a selector or of a list is whole: a separator can follow it. */
+  isCompleteLabel: boolean;
+  /** The cursor is at a selector: after its metric or its braces. */
+  isAtSelector: boolean;
+  /** The selector at the cursor has no range yet, and one can be written. */
+  canAddRange: boolean;
+  /** A grouping can be written here, as after an aggregation. */
+  canAddGrouping: boolean;
+  /** The name of an aggregation is written and its brackets are still to come. */
+  isAfterAggregationName: boolean;
 }
 
 const NUMBER = /^[+-]?\.?\d/;
+// The kinds of position where the argument of a function is what is being written.
+const TYPED_KINDS: readonly PromqlPositionKind[] = [
+  'inside_function_args',
+  'after_complete_arg',
+  'after_metric',
+  'after_label_selector',
+];
 const SELECTOR_END = '}';
 const QUOTES = /"/g;
 const SEPARATOR = ',';
@@ -55,7 +84,8 @@ export const describePromqlPosition = (text: string, offset: number): PromqlPosi
   const parts = new Set(rules.map(getPromqlPart).filter((part): part is PromqlPart => !!part));
   const canFollow = (token: string, rule: string): boolean =>
     followers.some((follower) => follower.text === token && follower.path.at(-1) === rule);
-  const isInCall = open.some((name) => name !== '');
+  const call = open.findLast(({ name }) => name !== '' && getPromqlFunctionDefinition(name));
+  const isInCall = open.some(({ name }) => name !== '');
   const kind = ((): PromqlPositionKind => {
     if (parts.has('label_value')) {
       return 'after_label_operator';
@@ -107,12 +137,80 @@ export const describePromqlPosition = (text: string, offset: number): PromqlPosi
       return isInCall ? 'after_metric' : 'inside_query';
     }
     // After the brackets of an aggregation a grouping can come, so the query goes on there.
-    if (closed !== undefined && isPromqlAcrossSeriesFunction(closed)) {
+    if (closed !== undefined && isPromqlAcrossSeriesFunction(closed.name)) {
       return 'inside_query';
     }
 
     return isInCall ? 'after_complete_arg' : 'inside_query';
   })();
 
-  return { kind, cursor };
+  // What the function at the cursor takes as the argument the cursor is in, and after an
+  // operator what the operator takes on its right.
+  const maxArguments = call
+    ? Math.max(
+        0,
+        ...(getPromqlFunctionDefinition(call.name)?.signatures ?? []).map(
+          ({ params }) => params.length
+        )
+      )
+    : 0;
+  const argument = call ? Math.min(call.argument, Math.max(0, maxArguments - 1)) : 0;
+  const typesOfCall = call ? getPromqlFunctionParamTypes(call.name, argument) : [];
+  const signatureTypes =
+    kind === 'after_operator' && previous
+      ? getPromqlBinaryOperatorParamTypes(previous, 1)
+      : TYPED_KINDS.includes(kind)
+      ? typesOfCall
+      : [];
+  const typedName = word && !NUMBER.test(word.text) ? word.text : undefined;
+  const aggregation = closed?.name ?? typedName ?? (canFollow('(', 'function') ? previous : '');
+  const isAggregation = aggregation ? isPromqlAcrossSeriesFunction(aggregation) : false;
+
+  return {
+    kind,
+    cursor,
+    signatureTypes,
+    canAddArgument: call !== undefined && call.argument < maxArguments - 1,
+    isCompleteLabel:
+      (kind === 'after_label_brace' && !parts.has('label_name')) ||
+      (kind === 'inside_grouping' && word !== undefined),
+    isAtSelector:
+      kind === 'after_metric' ||
+      kind === 'after_label_selector' ||
+      (typedName !== undefined && !getPromqlFunctionDefinition(typedName)),
+    // After the name of a metric no range is written yet. While the name is still being
+    // typed, the grammar is asked about the place before it, where no range can come.
+    canAddRange: kind === 'after_metric' ? word !== undefined : canFollow('[', 'selector'),
+    // After the brackets of an aggregation the grammar says whether a grouping can still come:
+    // not when one is written before the brackets.
+    canAddGrouping:
+      isAggregation &&
+      (closed === undefined
+        ? typedName !== undefined || canFollow('(', 'function')
+        : canFollow('by', 'grouping')),
+    isAfterAggregationName: isAggregation && closed === undefined,
+  };
+};
+
+/**
+ * The position in the shape the item builders of the PromQL engine take. They read whether a
+ * selector is at the cursor and whether it has a range, never the selector itself, so a
+ * stand-in says the two.
+ */
+export const toDetailedPosition = (position: PromqlPosition): PromqlDetailedPosition => {
+  const { kind, signatureTypes, canAddArgument, canAddRange, isAtSelector } = position;
+  const selector = isAtSelector
+    ? ({ ...(!canAddRange && { duration: {} }) } as unknown as PromQLSelector)
+    : undefined;
+
+  return {
+    type: kind,
+    signatureTypes,
+    ...(kind === 'after_complete_arg' && canAddArgument && { canSuggestCommaInFunctionArgs: true }),
+    ...(position.isCompleteLabel && { isCompleteLabel: true }),
+    ...(selector && { selector }),
+    ...(kind === 'after_label_selector' && canAddRange && { canSuggestRangeSelector: true }),
+    ...(position.canAddGrouping && { canAddGrouping: true }),
+    ...(position.isAfterAggregationName && { isAfterAggregationName: true }),
+  };
 };
