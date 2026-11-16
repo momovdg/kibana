@@ -9,12 +9,17 @@
 
 import type { ESQLCallbacks } from '@kbn/esql-types';
 import type { ISuggestionItem } from '../../commands/registry/types';
-import { type ArgumentRole, type ResolvedRole, type RoleKind } from '../../esql_js_sim/definitions';
+import {
+  resolveRole,
+  type ArgumentRole,
+  type ResolvedRole,
+  type RoleKind,
+} from '../../esql_js_sim/definitions';
 import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/grammar';
 import { createContext } from './context';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
 import { provideCommandNames } from './providers/command_names';
-import { isQualifierAlone, provideEntities } from './providers/entities';
+import { isEntity, isQualifierAlone, provideEntities } from './providers/entities';
 import { provideExpression, type ExpressionSuggestions } from './providers/expressions';
 import { provideExtras } from './providers/extras';
 import {
@@ -333,8 +338,16 @@ const provideFollowUps = async (
   const isColumn =
     word.kind === 'name' && (await context.getColumnMap()).has(word.argument?.text ?? word.text);
   const isValue = !isKeyword && (word.kind === 'number' || word.kind === 'string');
+  // A name is whole too when it is one of the entities expected there.
+  const entity = ir.arguments
+    .map(({ path, rule }) => resolveRole(path, rule)?.role)
+    .find((role) => role?.kind === 'entity');
+  const isEntityName =
+    word.kind === 'name' &&
+    entity?.kind === 'entity' &&
+    (await isEntity(word.argument?.text ?? word.text, entity, context));
 
-  if (!isKeyword && !isColumn && !isValue) {
+  if (!isKeyword && !isColumn && !isValue && !isEntityName) {
     return undefined;
   }
 

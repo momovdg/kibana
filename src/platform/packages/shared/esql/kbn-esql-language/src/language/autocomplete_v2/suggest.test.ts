@@ -479,6 +479,28 @@ describe('suggest (v2)', () => {
       });
     });
 
+    it('offers what the editor can do for the name being typed, a qualifier left out', async () => {
+      const create = async (query: string) =>
+        (await suggest(query, query.length, callbacks))
+          .filter(({ command }) => command?.id === 'esql.lookup_index.create')
+          .map(({ text }) => text);
+
+      expect(await create('FROM a | LOOKUP JOIN ')).toEqual(['']);
+      expect(await create('FROM a | LOOKUP JOIN fresh')).toEqual(['fresh']);
+      expect(await create('FROM a | LOOKUP JOIN _coordinator:fresh')).toEqual(['fresh']);
+      expect(await create('FROM a | LOOKUP JOIN join_ind')).toEqual(['join_ind']);
+    });
+
+    it('offers what follows a name that is whole, with the name', async () => {
+      expect(await textsAt('FROM a | LOOKUP JOIN join_index', callbacks)).toEqual([
+        'join_index ON ',
+      ]);
+    });
+
+    it('offers nothing at a place Elasticsearch does not support yet', async () => {
+      expect(await textsAt('FROM a | LOOKUP JOIN join_index ', callbacks)).toEqual(['ON ']);
+    });
+
     describe('a name that can be an entity or a new name', () => {
       it('is followed by the assignment only, when it is no entity of the scope', async () => {
         expect(await textsAt('FROM a | ENRICH policy ON b WITH fresh ', callbacks)).toEqual(['= ']);
@@ -748,6 +770,14 @@ describe('suggest (v2)', () => {
         expect(texts).toContain('ABS($0)');
         expect(texts).not.toContain('n ');
       });
+    });
+
+    it('offers the columns of the entity another argument names, next to those of the query', async () => {
+      const world = createCallbacks();
+      const texts = await textsAt('FROM index | LOOKUP JOIN join_index ON ', world);
+
+      expect(texts).toEqual(expect.arrayContaining(['keywordField ', 'joinIndexOnlyField ']));
+      expect(await textsAt('FROM index | WHERE ', world)).not.toContain('joinIndexOnlyField ');
     });
 
     it('lets a command end only once it has the arguments Elasticsearch requires', async () => {

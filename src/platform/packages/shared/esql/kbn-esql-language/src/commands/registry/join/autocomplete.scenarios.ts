@@ -43,6 +43,12 @@ const lookupIndices = [
   { text: 'join_index_alias_2 $0', label: 'join_index_alias_2', detail: 'Alias' },
 ];
 
+// An alias is followed by a space that reopens the suggestions, as an index is.
+const spacedLookupIndices = lookupIndices.map((item) => ({
+  ...item,
+  text: item.text.replace(' $0', ' '),
+}));
+
 export const joinScenarios: ScenarioTable = {
   command: 'join',
   scenarios: [
@@ -50,6 +56,7 @@ export const joinScenarios: ScenarioTable = {
       group: '<type> JOIN ...',
       name: 'suggests the command with its description and continuation',
       query: 'FROM index | LOOKUP J',
+      status: 'replaced',
       expect: {
         exact: [
           {
@@ -61,51 +68,115 @@ export const joinScenarios: ScenarioTable = {
         ],
       },
     },
+    {
+      group: '<type> JOIN ...',
+      name: 'suggests the rest of the name of the command',
+      query: 'FROM index | LOOKUP J',
+      status: 'new',
+      expect: { exact: ['JOIN '] },
+    },
 
     {
       group: INDEX,
       name: 'suggests lookup indices, aliases, and a create index command',
       query: 'FROM index | LEFT JOIN ',
+      status: 'replaced',
       expect: { exact: [createIndexItem(''), ...lookupIndices] },
+    },
+    {
+      group: INDEX,
+      name: 'suggests lookup indices, aliases with a space, and a create index command',
+      query: 'FROM index | LEFT JOIN ',
+      status: 'new',
+      expect: { exact: [createIndexItem(''), ...spacedLookupIndices] },
     },
     {
       group: INDEX,
       name: 'suggests indices based on a fragment',
       query: 'FROM index | LOOKUP JOIN join_',
+      status: 'replaced',
       expect: { exact: [createIndexItem('join_'), ...lookupIndices] },
+    },
+    {
+      group: INDEX,
+      name: 'suggests indices based on a fragment, aliases with a space',
+      query: 'FROM index | LOOKUP JOIN join_',
+      status: 'new',
+      expect: { exact: [createIndexItem('join_'), ...spacedLookupIndices] },
     },
     {
       group: INDEX,
       name: 'does not suggest the create index command when the index already exists',
       query: 'FROM index | LEFT JOIN join_index',
+      status: 'replaced',
       expect: { exact: [] },
+    },
+    {
+      group: INDEX,
+      name: 'suggests what follows an index that exists, with the index',
+      query: 'FROM index | LEFT JOIN join_index',
+      status: 'new',
+      expect: { exact: ['join_index ON '] },
     },
     {
       group: INDEX,
       name: 'does not suggest the create index command when the index already exists as an alias',
       query: 'FROM index | LEFT JOIN join_index_alias_1',
+      status: 'replaced',
       expect: { exact: [] },
+    },
+    {
+      group: INDEX,
+      name: 'suggests what follows an alias that exists, with the alias',
+      query: 'FROM index | LEFT JOIN join_index_alias_1',
+      status: 'new',
+      expect: { exact: ['join_index_alias_1 ON '] },
     },
     {
       group: INDEX,
       name: 'does not suggest the create index command without the required privileges',
       query: 'FROM index | LEFT JOIN ',
       world: { canCreateLookupIndex: false },
+      status: 'replaced',
       expect: { exact: lookupIndices },
+    },
+    {
+      group: INDEX,
+      name: 'suggests no create index command without the required privileges, aliases with a space',
+      query: 'FROM index | LEFT JOIN ',
+      world: { canCreateLookupIndex: false },
+      status: 'new',
+      expect: { exact: spacedLookupIndices },
     },
     {
       group: INDEX,
       name: 'suggests the create index command with the user input',
       query: 'FROM index | LEFT JOIN new_join_index',
+      status: 'replaced',
       expect: {
         exact: [createIndexItem('new_join_index', { start: 23, end: 37 }), ...lookupIndices],
       },
     },
     {
       group: INDEX,
+      name: 'suggests the create index command with the user input, aliases with a space',
+      query: 'FROM index | LEFT JOIN new_join_index',
+      status: 'new',
+      expect: { exact: [createIndexItem('new_join_index'), ...spacedLookupIndices] },
+    },
+    {
+      group: INDEX,
       name: 'strips the coordinator prefix from the create index command',
       query: 'FROM index | LOOKUP JOIN _coordinator:new_join_index',
+      status: 'replaced',
       expect: { exact: [createIndexItem('new_join_index'), ...lookupIndices] },
+    },
+    {
+      group: INDEX,
+      name: 'strips the coordinator prefix from the create index command, aliases with a space',
+      query: 'FROM index | LOOKUP JOIN _coordinator:new_join_index',
+      status: 'new',
+      expect: { exact: [createIndexItem('new_join_index'), ...spacedLookupIndices] },
     },
 
     {
@@ -169,8 +240,23 @@ export const joinScenarios: ScenarioTable = {
       group: ON,
       name: 'suggests all boolean operators after field',
       query: 'FROM index | LOOKUP JOIN join_index ON keywordField ',
+      status: 'replaced',
       expect: {
         exact: operators('comparison', 'match', 'patternMatch', 'in', 'nullCheck'),
+      },
+    },
+    {
+      group: ON,
+      name: 'suggests the operators and the end of the condition after any field',
+      query: 'FROM index | LOOKUP JOIN join_index ON keywordField ',
+      status: 'new',
+      expect: {
+        exact: [
+          ...operators('comparison', 'match', 'patternMatch', 'in', 'nullCheck'),
+          ', ',
+          '| ',
+          '\n',
+        ],
       },
     },
     {
