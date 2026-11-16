@@ -40,11 +40,11 @@ describe('suggest (v2)', () => {
     );
   });
 
-  describe('a command that provides its own suggestions', () => {
+  describe('a command that ends with a text in another language', () => {
     const callbacks = createCallbacks();
 
     it.each(['PROMQL ', 'PROMQL col0 = ', 'PROMQL step=5m rate(', 'PROMQL sum by ('])(
-      'is asked as a whole: %j gives what the current flow gives',
+      'is served from the grammar of that language: %j gives what the current flow gives',
       async (query) => {
         const current = (await currentSuggest(query, query.length, callbacks)).map(
           ({ text }) => text
@@ -79,13 +79,37 @@ describe('suggest (v2)', () => {
         expect(await textsAt('PROMQL index=metrics, ', withSources)).toEqual(['logs-tsdb']);
       });
 
-      it('are left to the command again once a value is written', async () => {
+      it('give way to the next option or the text once a value is written', async () => {
         const current = (await currentSuggest('PROMQL step=5m ', 15, callbacks)).map(
           ({ text }) => text
         );
 
         expect((await textsAt('PROMQL step=5m ', callbacks)).sort()).toEqual(current.sort());
       });
+    });
+
+    it('offers the options that can still be named, also counting those after the cursor', async () => {
+      const texts = await suggest('PROMQL index=a step=5m ', 'PROMQL index=a '.length, callbacks);
+
+      expect(texts.map(({ text }) => text)).not.toContain('step = ');
+      expect(texts.map(({ text }) => text)).toContain('scrape_interval = ');
+    });
+
+    it('says what each option is for', async () => {
+      const step = (await suggest('PROMQL ', 7, callbacks)).find(({ label }) => label === 'step');
+
+      expect(step?.detail).toBe('Query resolution step (e.g. 1m, 5m, 1h)');
+    });
+
+    it('offers the assignment after the name of an option', async () => {
+      expect(await textsAt('PROMQL step ', callbacks)).toEqual(['= ']);
+    });
+
+    it('offers only the end of the command once the brackets around the text are closed', async () => {
+      expect((await textsAt('PROMQL col0 = (rate(a[5m]))', callbacks)).sort()).toEqual([
+        '\n',
+        '| ',
+      ]);
     });
 
     it('is left once its end is written', async () => {

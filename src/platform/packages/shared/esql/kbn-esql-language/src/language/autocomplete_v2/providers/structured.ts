@@ -29,7 +29,7 @@ import { getCommandOutput } from '../../../commands/definitions/utils/columns';
 import { matchesWildcardPattern } from '../../../commands/definitions/utils/regex';
 import type { Commands } from '../../../commands/definitions/keywords';
 import { getRegisteredCommand } from '../command_metadata';
-import { getSuggestedParameterValues, OPENING_PARAMETERS } from '../presentation';
+import { getOptionDetails, getSuggestedParameterValues, OPENING_PARAMETERS } from '../presentation';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
@@ -274,14 +274,18 @@ export const provideOptionNames = (
           ([other, facts]) => isUsed(other) && facts.conflictsWith?.includes(name)
         )
     )
-    .map(([name]) =>
-      withAutoSuggest({
+    .map(([name]) => {
+      const detail =
+        resolved.id === undefined ? undefined : getOptionDetails()[resolved.id]?.[name];
+
+      return withAutoSuggest({
         label: name,
         text: `${name} = `,
         kind: 'Reference',
+        ...(detail && { detail }),
         category: SuggestionCategory.LANGUAGE_KEYWORD,
-      })
-    );
+      });
+    });
 };
 
 /** The name a value depends on, as it is written. */

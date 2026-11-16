@@ -157,6 +157,41 @@ export const getSuggestedParameterValues = (): Readonly<
 });
 
 /**
+ * What the editor says about an option, by the place of the names of the options and the
+ * name of the option.
+ */
+export const getOptionDetails = (): Readonly<
+  Record<CallSiteId, Readonly<Record<string, string>>>
+> => ({
+  'promqlParam.name': {
+    index: i18n.translate('esqlLanguage.esql.autocomplete.promql.indexParamDoc', {
+      defaultMessage: 'Index pattern to query',
+    }),
+    time: i18n.translate('esqlLanguage.esql.autocomplete.promql.timeParamDoc', {
+      defaultMessage: 'Instant query evaluation time',
+    }),
+    step: i18n.translate('esqlLanguage.esql.autocomplete.promql.stepParamDoc', {
+      defaultMessage: 'Query resolution step (e.g. 1m, 5m, 1h)',
+    }),
+    start: i18n.translate('esqlLanguage.esql.autocomplete.promql.startParamDoc', {
+      defaultMessage: 'Range query start time (requires end)',
+    }),
+    end: i18n.translate('esqlLanguage.esql.autocomplete.promql.endParamDoc', {
+      defaultMessage: 'Range query end time (requires start)',
+    }),
+    buckets: i18n.translate('esqlLanguage.esql.autocomplete.promql.bucketsParamDoc', {
+      defaultMessage: 'Number of time buckets (alternative to step)',
+    }),
+    scrape_interval: i18n.translate(
+      'esqlLanguage.esql.autocomplete.promql.scrape_intervalParamDoc',
+      {
+        defaultMessage: 'Scrape interval for implicit range selector window (e.g. 1m)',
+      }
+    ),
+  },
+});
+
+/**
  * Where the editor offers ready-made next steps of a query once the sources are written, by
  * the place of the list of sources. `with_templates`: the editor's own queries and the
  * static ones; `from_the_editor`: only the editor's, where the static ones do not apply.

@@ -67,7 +67,7 @@ describe('the position in a PromQL query, from the grammar', () => {
       if (call && expected) {
         const [, cursor, text] = call;
         // The current flow reads the position without the spaces before the cursor.
-        const before = text.slice(0, cursor);
+        const before = text.slice(0, cursor).trimEnd();
         const position = describePromqlPosition(before, before.length);
 
         compared++;

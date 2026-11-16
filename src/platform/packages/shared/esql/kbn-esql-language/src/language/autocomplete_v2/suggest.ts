@@ -17,7 +17,8 @@ import {
 } from '../../esql_js_sim/definitions';
 import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/grammar';
 import { createContext } from './context';
-import { atOptionValue } from './option_shell';
+import { atOptionValue, getForeignBody } from './option_shell';
+import { provideSublanguage } from './providers/sublanguage';
 import { present } from './present';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
 import { isOverridden, provideOverride } from './providers/command_override';
@@ -318,6 +319,14 @@ const collect = async (
   // A command that provides its own suggestions is asked as a whole.
   if (!atValue && isOverridden(context)) {
     return { ir, context, items: await provideOverride(context), continuations: [] };
+  }
+
+  // A command that ends with a text in another language: the text has its own grammar.
+  const foreignBody = atValue ? undefined : getForeignBody(ir, fullText, offset);
+  if (foreignBody) {
+    const items = await provideSublanguage(foreignBody, context);
+
+    return { ir, context, items, continuations: [] };
   }
 
   const expressions: ExpressionSuggestions[] = await Promise.all(
