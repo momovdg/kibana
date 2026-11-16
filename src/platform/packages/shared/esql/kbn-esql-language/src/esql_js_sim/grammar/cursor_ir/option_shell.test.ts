@@ -47,12 +47,35 @@ describe('readOptionShell', () => {
 
   it('takes a name by any case, and only the names it is given', () => {
     expect(summary('PROMQL STEP=5m ')).toEqual(['STEP=5m']);
-    expect(read('PROMQL other=5m ')).toEqual({ options: [], bodyStart: 7 });
+    expect(read('PROMQL other=5m ')).toMatchObject({ options: [], bodyStart: 7 });
   });
 
   it('says where the body starts: at the first thing that is no option', () => {
     expect(read('PROMQL step=5m rate(')).toMatchObject({ bodyStart: 15 });
     expect(read('PROMQL col0 = (')).toMatchObject({ options: [], bodyStart: 7 });
     expect(read('PROMQL step')).toMatchObject({ options: [], bodyStart: 7 });
+  });
+
+  it('ends a value in quotes at its closing quote', () => {
+    expect(summary('PROMQL start="2024-01-01"step')).toEqual(['start="2024-01-01"']);
+  });
+
+  describe('the body', () => {
+    it('can be given a name, and be put in brackets of the command', () => {
+      expect(read('PROMQL col0 = (rate(a')).toMatchObject({
+        result: { text: 'col0' },
+        wrapped: true,
+        textStart: 15,
+      });
+      expect(read('PROMQL rate(a')).toMatchObject({ wrapped: false, textStart: 7 });
+    });
+
+    it('ends where the brackets of the command close', () => {
+      expect(read('PROMQL (rate(a[5m]))')).toMatchObject({ wrapped: true, textEnd: 19 });
+    });
+
+    it('keeps a bracket that closes before its end: it belongs to the text', () => {
+      expect(read('PROMQL (a) + ')).toMatchObject({ wrapped: false, textStart: 7 });
+    });
   });
 });
