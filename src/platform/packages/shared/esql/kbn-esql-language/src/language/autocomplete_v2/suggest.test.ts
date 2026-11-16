@@ -40,6 +40,26 @@ describe('suggest (v2)', () => {
     );
   });
 
+  describe('a command that provides its own suggestions', () => {
+    const callbacks = createCallbacks();
+
+    it.each(['PROMQL ', 'PROMQL index=', 'PROMQL step=5m rate(', 'PROMQL sum by ('])(
+      'is asked as a whole: %j gives what the current flow gives',
+      async (query) => {
+        const current = (await currentSuggest(query, query.length, callbacks)).map(
+          ({ text }) => text
+        );
+
+        expect(current.length).toBeGreaterThan(0);
+        expect((await textsAt(query, callbacks)).sort()).toEqual(current.sort());
+      }
+    );
+
+    it('is left once its end is written', async () => {
+      expect(await textsAt('PROMQL rate(a[5m]) | ', callbacks)).toContain('WHERE ');
+    });
+  });
+
   describe('command names', () => {
     it('offers the commands that can start a query', async () => {
       expect(await textsAt('')).toEqual(expect.arrayContaining(['FROM ', 'ROW ', 'SHOW ', 'TS ']));

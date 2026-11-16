@@ -18,4 +18,13 @@ export interface ProviderOverride {
 }
 
 /** The provider overrides, by argument id. */
-export const PROVIDER_OVERRIDES: Readonly<Record<string, ProviderOverride>> = {};
+export const PROVIDER_OVERRIDES: Readonly<Record<string, ProviderOverride>> = {
+  // The query of the command is in another language, and its grammar rule takes any token: at
+  // the cursor a parameter of the command cannot be told from the start of the query.
+  'promqlCommand>promqlQueryPart': {
+    owner: '@elastic/kibana-esql',
+    issue: 'To be filed before the new flow is switched on (plan step E7)',
+    waitingFor:
+      'A grammar that separates the parameters of the command from its query, or a locator that keeps every reading of a token; then the sublanguage provider',
+  },
+};
