@@ -71,6 +71,7 @@ const TYPED_KINDS: readonly PromqlPositionKind[] = [
   'after_label_selector',
 ];
 const SELECTOR_END = '}';
+const RANGE_OPENER = '[';
 const QUOTES = /"/g;
 const SEPARATOR = ',';
 
@@ -78,7 +79,12 @@ const SEPARATOR = ',';
  * Describes the cursor in a PromQL query from what the PromQL grammar says about it: which
  * part of a query can start there, which tokens can come, and which brackets are open.
  */
-export const describePromqlPosition = (text: string, offset: number): PromqlPosition => {
+export const describePromqlPosition = (
+  text: string,
+  offset: number,
+  /** What is written after the cursor, when the text goes on there. */
+  textAfter: string = text.slice(offset)
+): PromqlPosition => {
   const cursor = locatePromql(text, offset);
   const { rules, followers, word, canEnd, open, closed, previous } = cursor;
   const parts = new Set(rules.map(getPromqlPart).filter((part): part is PromqlPart => !!part));
@@ -125,12 +131,15 @@ export const describePromqlPosition = (text: string, offset: number): PromqlPosi
       // The matching of the two sides can only be written right after an operator.
       return canFollow('on', 'modifier') ? 'after_operator' : 'inside_function_args';
     }
-    // A whole query, or text the grammar cannot go on with, as a bracket too many.
-    if (canEnd || (!rules.length && !followers.length)) {
+    if (canEnd) {
       return 'after_query';
     }
     if (previous === SELECTOR_END) {
       return 'after_label_selector';
+    }
+    // Text the grammar cannot go on with, as a bracket too many: the query is over.
+    if (!rules.length && !followers.length) {
+      return 'after_query';
     }
     // After a name: one that takes brackets is a function still to be opened.
     if (canFollow('(', 'function')) {
@@ -178,9 +187,13 @@ export const describePromqlPosition = (text: string, offset: number): PromqlPosi
       kind === 'after_metric' ||
       kind === 'after_label_selector' ||
       (typedName !== undefined && !getPromqlFunctionDefinition(typedName)),
-    // After the name of a metric no range is written yet. While the name is still being
-    // typed, the grammar is asked about the place before it, where no range can come.
-    canAddRange: kind === 'after_metric' ? word !== undefined : canFollow('[', 'selector'),
+    // After the name of a metric no range is written yet: one can come, unless one follows
+    // the cursor. After its braces the grammar says, and where the grammar cannot read the
+    // braces a range is still the likely next thing.
+    canAddRange:
+      kind === 'after_metric'
+        ? !textAfter.trimStart().startsWith(RANGE_OPENER)
+        : canFollow(RANGE_OPENER, 'selector') || followers.length === 0,
     // After the brackets of an aggregation the grammar says whether a grouping can still come:
     // not when one is written before the brackets.
     canAddGrouping:
