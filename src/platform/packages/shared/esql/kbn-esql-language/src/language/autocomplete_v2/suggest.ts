@@ -19,6 +19,7 @@ import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/
 import { createContext } from './context';
 import { present } from './present';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
+import { isOverridden, provideOverride } from './providers/command_override';
 import { provideControls } from './providers/controls';
 import { provideCommandNames } from './providers/command_names';
 import {
@@ -304,6 +305,11 @@ const collect = async (
     ({ kind }) => ir.position !== 'inside_string' || kind === 'argument' || kind === 'expression'
   );
   const context = await createContext(fullText, offset, ir, callbacks);
+
+  // A command that provides its own suggestions is asked as a whole.
+  if (isOverridden(context)) {
+    return { ir, context, items: await provideOverride(context), continuations: [] };
+  }
 
   const expressions: ExpressionSuggestions[] = await Promise.all(
     requests.flatMap((request) =>

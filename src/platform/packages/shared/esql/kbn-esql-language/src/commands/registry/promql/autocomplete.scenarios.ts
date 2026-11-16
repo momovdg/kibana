@@ -561,12 +561,25 @@ export const promqlScenarios: ScenarioTable = {
       'PROMQL index=metrics col0=(rate(http_requests[5m])) ',
       { contains: [PIPE], excludesLabels: [...paramNames, ...functionLabels] }
     ),
-    row(
-      AFTER_QUERY,
-      'suggests only pipe after complete query before pipe',
-      'PROMQL step="5m" (sum(avg(rate(bytes_counter[5m])))) |',
-      { contains: [PIPE], excludes: [BY] }
-    ),
+    {
+      ...row(
+        AFTER_QUERY,
+        'suggests only pipe after complete query before pipe',
+        'PROMQL step="5m" (sum(avg(rate(bytes_counter[5m])))) |',
+        { contains: [PIPE], excludes: [BY] }
+      ),
+      status: 'replaced',
+    },
+    // The pipe is written: the next command starts there, as after every other command.
+    {
+      ...row(
+        AFTER_QUERY,
+        'suggests the commands that can follow, right after the pipe',
+        'PROMQL step="5m" (sum(avg(rate(bytes_counter[5m])))) |',
+        { contains: ['WHERE ', 'LIMIT '], excludes: [BY, PIPE] }
+      ),
+      status: 'new',
+    },
     row(
       AFTER_QUERY,
       'does not suggest pipe after param that looks like query (step=5m)',
