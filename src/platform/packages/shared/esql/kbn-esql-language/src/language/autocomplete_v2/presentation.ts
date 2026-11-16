@@ -102,13 +102,17 @@ export const getQualifierDetail = (entityType: EntityType): string | undefined =
       })
     : undefined;
 
+/** Stands for the name of the command the place is in, where the editor suggests that. */
+export const NAMED_AFTER_COMMAND = Symbol('named after the command');
+
 /**
  * The name the editor offers for a new column where the language takes any name, by the
  * place of the name.
  */
-export const SUGGESTED_NAMES: Readonly<Record<CallSiteId, string>> = {
+export const SUGGESTED_NAMES: Readonly<Record<CallSiteId, string | typeof NAMED_AFTER_COMMAND>> = {
   'changePointCommand.targetType': 'changePointType',
   'changePointCommand.targetPvalue': 'pValue',
+  'userAgentCommand>qualifiedName': NAMED_AFTER_COMMAND,
 };
 
 /**
