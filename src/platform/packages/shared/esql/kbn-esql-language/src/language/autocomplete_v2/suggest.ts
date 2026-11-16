@@ -14,7 +14,7 @@ import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/
 import { createContext } from './context';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
 import { provideCommandNames } from './providers/command_names';
-import { provideEntities } from './providers/entities';
+import { isQualifierAlone, provideEntities } from './providers/entities';
 import { provideExpression, type ExpressionSuggestions } from './providers/expressions';
 import { provideExtras } from './providers/extras';
 import {
@@ -29,6 +29,7 @@ import { withAutoSuggest } from '../../commands/definitions/utils/autocomplete/h
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
   isAssignmentToken,
+  isUnknownName,
   opensSubquery,
   provideAssignment,
   provideEndOfCommand,
@@ -240,7 +241,7 @@ const collect = async (
 ): Promise<Collected> => {
   const ir = locate(fullText, offset);
 
-  if (NOTHING_APPLIES.includes(ir.position)) {
+  if (NOTHING_APPLIES.includes(ir.position) || isQualifierAlone(ir)) {
     return { ir, context: undefined, items: [], continuations: [] };
   }
 
@@ -279,9 +280,14 @@ const collect = async (
   );
   const isOpenerOfRole = (request: SuggestionRequest): boolean =>
     roleDecidesSubquery && request.kind === 'token' && opensSubquery(request.follower);
+  // A name that can only be new has nothing else to offer: not what follows an existing one.
+  const isOnlyNew = assignment !== undefined && (await isUnknownName(context));
+  const followsExisting = (request: SuggestionRequest): boolean =>
+    isOnlyNew && (request.kind === 'token' || request.kind === 'end_of_command');
   const provided = await Promise.all(
     requests
       .filter((request) => request !== assignment && !isNewName(request))
+      .filter((request) => !followsExisting(request))
       .filter((request) => !isOpenerOfRole(request))
       .filter((request) => !unfinished.length || !isOutside(request, unfinished))
       .map(async (request) => ({ request, items: await provide(request, context) }))

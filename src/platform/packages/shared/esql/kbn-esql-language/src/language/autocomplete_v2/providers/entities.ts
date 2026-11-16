@@ -13,6 +13,7 @@ import { esqlCommandRegistry } from '../../../commands/registry';
 import { buildSubqueryCompleteItems } from '../../../commands/registry/complete_items';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
+  ENTITY_FACTS,
   type EntityItem,
   type EntityRole,
   type EntityScope,
@@ -21,7 +22,9 @@ import {
 } from '../../../esql_js_sim/definitions';
 import { getRegisteredCommand } from '../command_metadata';
 import { ENTITIES } from '../entities/registry';
+import type { CursorIR } from '../../../esql_js_sim/grammar';
 import type { SuggestionContext } from '../types';
+import { getQualifierDetail } from '../presentation';
 import { unquoted, roleIdOf } from '../written';
 
 /** How an entity of each kind looks in the list. */
@@ -115,6 +118,62 @@ const provideSubqueries = ({ ir }: SuggestionContext): ISuggestionItem[] => {
   });
 };
 
+const QUALIFIER_JOINER = ':';
+
+/**
+ * The words that can come before a name of this kind, when the word being typed starts one
+ * of them. Each comes with what joins it to the name, the cursor where the name goes.
+ */
+const provideQualifiers = (
+  entityType: EntityType,
+  { ir: { word } }: SuggestionContext
+): ISuggestionItem[] => {
+  const typed = word?.text.toLowerCase();
+  const { qualifiers = [] } = ENTITY_FACTS[entityType];
+
+  return typed === undefined
+    ? []
+    : qualifiers
+        .filter((qualifier) => qualifier.startsWith(typed))
+        .map((qualifier) =>
+          withAutoSuggest({
+            label: qualifier,
+            text: `${qualifier}${QUALIFIER_JOINER}$0`,
+            asSnippet: true,
+            kind: 'Reference',
+            detail: getQualifierDetail(entityType),
+          })
+        );
+};
+
+/**
+ * Whether the last thing written is a qualifier left behind, as in `_any: `: the name it
+ * qualifies is missing. The parser reads no argument there, so the text is read.
+ */
+export const isQualifierAlone = ({ segment, word }: CursorIR): boolean => {
+  const last = segment.text.trimEnd().split(/\s+/).at(-1)?.toLowerCase();
+
+  // While the cursor is still at the qualifier, the name can be typed right after it.
+  return (
+    word === undefined &&
+    Object.values(ENTITY_FACTS).some(({ qualifiers = [] }) =>
+      qualifiers.some((qualifier) => last === `${qualifier}${QUALIFIER_JOINER}`)
+    )
+  );
+};
+
+/** Whether a name is one of the entities the role names, in the scope of the cursor. */
+export const isEntity = async (
+  name: string,
+  role: EntityRole,
+  context: SuggestionContext
+): Promise<boolean> => {
+  const { fetch, exists } = ENTITIES[role.entityType];
+  const items = await fetch(context.callbacks ?? {}, toScope(role, context));
+
+  return exists ? exists(name, items) : items.some((item) => item.name === name);
+};
+
 /**
  * The entities the role names, in the scope of the cursor. Hidden ones are left out, as are
  * the ones already listed where each is listed once. An alias is offered next to its entity.
@@ -124,6 +183,12 @@ export const provideEntities = async (
   resolved: ResolvedRole,
   context: SuggestionContext
 ): Promise<ISuggestionItem[]> => {
+  // A word that starts a qualifier is one: the names come after it.
+  const qualifiers = provideQualifiers(role.entityType, context);
+  if (qualifiers.length) {
+    return qualifiers;
+  }
+
   const items = await ENTITIES[role.entityType].fetch(
     context.callbacks ?? {},
     toScope(role, context)

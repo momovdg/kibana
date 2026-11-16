@@ -13,7 +13,7 @@ import {
   mmrQueryVectorSuggestion,
 } from '../../commands/registry/complete_items';
 import { UnmappedFieldsStrategy, type ISuggestionItem } from '../../commands/registry/types';
-import type { CallSiteId, ValueFormat } from '../../esql_js_sim/definitions';
+import type { CallSiteId, EntityType, ValueFormat } from '../../esql_js_sim/definitions';
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 
 /**
@@ -93,6 +93,14 @@ export const getStartingValues = (): Readonly<Record<CallSiteId, ISuggestionItem
 export const OPENING_PARAMETERS: Readonly<Record<CallSiteId, string>> = {
   'denseVectorCommand>commandNamedParameters': 'inference_id',
 };
+
+/** What the editor says about the words that can come before a name of a kind of entity. */
+export const getQualifierDetail = (entityType: EntityType): string | undefined =>
+  entityType === 'enrich_policy'
+    ? i18n.translate('esqlLanguage.esql.definitions.ccqMode', {
+        defaultMessage: 'Cross-cluster query mode',
+      })
+    : undefined;
 
 /**
  * The name the editor offers for a new column where the language takes any name, by the
