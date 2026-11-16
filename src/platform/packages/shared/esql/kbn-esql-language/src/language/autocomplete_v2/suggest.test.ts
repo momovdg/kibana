@@ -43,7 +43,7 @@ describe('suggest (v2)', () => {
   describe('a command that provides its own suggestions', () => {
     const callbacks = createCallbacks();
 
-    it.each(['PROMQL ', 'PROMQL index=', 'PROMQL step=5m rate(', 'PROMQL sum by ('])(
+    it.each(['PROMQL ', 'PROMQL col0 = ', 'PROMQL step=5m rate(', 'PROMQL sum by ('])(
       'is asked as a whole: %j gives what the current flow gives',
       async (query) => {
         const current = (await currentSuggest(query, query.length, callbacks)).map(
@@ -54,6 +54,39 @@ describe('suggest (v2)', () => {
         expect((await textsAt(query, callbacks)).sort()).toEqual(current.sort());
       }
     );
+
+    describe('the options written before its text', () => {
+      const withSources = createCallbacks({
+        timeseriesIndices: [
+          { name: 'metrics', mode: 'Timeseries', aliases: [] },
+          { name: 'logs-tsdb', mode: 'Timeseries', aliases: [] },
+        ],
+      });
+
+      it('get their values from the signature: by the name of the option', async () => {
+        expect(await textsAt('PROMQL step=', callbacks)).toEqual(['"${0:5m}"']);
+        expect(await textsAt('PROMQL buckets = ', callbacks)).toEqual(['${0:100}']);
+        expect(await textsAt('PROMQL start=', callbacks)).toEqual(
+          expect.arrayContaining(['?_tstart', '?_tend'])
+        );
+      });
+
+      it('get the entities their signature names, each listed once', async () => {
+        expect((await textsAt('PROMQL index=', withSources)).sort()).toEqual([
+          'logs-tsdb',
+          'metrics',
+        ]);
+        expect(await textsAt('PROMQL index=metrics, ', withSources)).toEqual(['logs-tsdb']);
+      });
+
+      it('are left to the command again once a value is written', async () => {
+        const current = (await currentSuggest('PROMQL step=5m ', 15, callbacks)).map(
+          ({ text }) => text
+        );
+
+        expect((await textsAt('PROMQL step=5m ', callbacks)).sort()).toEqual(current.sort());
+      });
+    });
 
     it('is left once its end is written', async () => {
       expect(await textsAt('PROMQL rate(a[5m]) | ', callbacks)).toContain('WHERE ');

@@ -13,6 +13,7 @@ import {
   defaultLimitValueSuggestions,
   mmrQueryVectorSuggestion,
   numOfRowsValueItems,
+  valuePlaceholderConstant,
 } from '../../commands/registry/complete_items';
 import { UnmappedFieldsStrategy, type ISuggestionItem } from '../../commands/registry/types';
 import type { CallSiteId, EntityType, ValueFormat } from '../../esql_js_sim/definitions';
@@ -117,13 +118,28 @@ export const SUGGESTED_NAMES: Readonly<Record<CallSiteId, string | typeof NAMED_
   'userAgentCommand>qualifiedName': NAMED_AFTER_COMMAND,
 };
 
+const toStartingValue = (label: string, text: string, detail: string): ISuggestionItem => ({
+  ...valuePlaceholderConstant,
+  label,
+  text,
+  detail,
+});
+
 /**
  * Values worth offering for the value of a name, by the place of the value and by the name:
  * the common values of a setting that takes any string.
  */
 export const getSuggestedValuesByName = (): Readonly<
-  Record<CallSiteId, Readonly<Record<string, readonly string[]>>>
+  Record<CallSiteId, Readonly<Record<string, ReadonlyArray<string | ISuggestionItem>>>>
 > => ({
+  // A value to start from, selected so that typing replaces it.
+  'promqlParam.value': {
+    step: [toStartingValue('Insert duration', '"${0:5m}"', 'Use units like s, m, h, d')],
+    scrape_interval: [toStartingValue('Insert duration', '"${0:1m}"', 'Use units like s, m, h, d')],
+    buckets: [
+      toStartingValue('Insert number of buckets', '${0:100}', 'Positive integer (default: 100)'),
+    ],
+  },
   'setField>constant': {
     project_routing: ['_alias:*', '_alias:_origin'],
     unmapped_fields: Object.values(UnmappedFieldsStrategy),
