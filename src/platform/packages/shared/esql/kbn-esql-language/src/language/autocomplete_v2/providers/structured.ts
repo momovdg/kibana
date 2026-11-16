@@ -165,7 +165,10 @@ export const provideMap = async (
 
     return Object.entries(parameters)
       .filter(([name, parameter]) => !used.includes(name) && applies(parameter, context))
-      .map(([name, parameter]) => buildMapKeySuggestion(name, keyType(parameter)));
+      .map(([name, parameter]) =>
+        // The key is typed with its opening quote, which the editor matches the items by.
+        buildMapKeySuggestion(name, keyType(parameter), undefined, { filterText: `"${name}` })
+      );
   }
 
   const key = keys.at(-1);
@@ -196,7 +199,11 @@ export const provideMap = async (
 
   return [...new Set(values)]
     .filter((value) => !listed.includes(value))
-    .map((value) => buildMapValueCompleteItem(isString(parameter) ? `"${value}"` : value, value));
+    .map((value) => {
+      const text = isString(parameter) ? `"${value}"` : value;
+
+      return buildMapValueCompleteItem(text, parameter.list ? text : value);
+    });
 };
 
 /** What stands for the value of a parameter in a ready-made map: its default when it has one. */
@@ -235,7 +242,7 @@ export const provideMapOpener = (
 
   return [
     withAutoSuggest({
-      label: opening ? `{ "${opening}": }` : '{ }',
+      label: opening ?? '{ }',
       text: `{ ${content} }`,
       asSnippet: true,
       kind: 'Value',
