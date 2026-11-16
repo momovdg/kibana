@@ -35,12 +35,14 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
 
   // The command can end here when the query can, or when the next command can start: the
   // editor then offers a new line, also inside a branch, which ends with a bracket.
-  // Where the grammar lets a command stand alone and it still needs an argument, the command
-  // cannot end right after its name.
+  // Where the grammar lets a command end and it still needs an argument, the command cannot
+  // end yet: right after its name, or before an argument Elasticsearch requires.
+  const facts = ir.command === undefined ? undefined : COMMAND_FACTS[ir.command];
+  const isWritten = (place: string): boolean =>
+    ir.written.some(({ id, ancestors }) => id === place || ancestors.some((a) => a.id === place));
   const lacksArgument =
-    ir.command !== undefined &&
-    COMMAND_FACTS[ir.command]?.requiresArgument === true &&
-    ir.written.length <= 1;
+    (facts?.requiresArgument === true && ir.written.length <= 1) ||
+    (facts?.requires ?? []).some((place) => !isWritten(place));
   const canEnd =
     !lacksArgument &&
     ir.followers.some(({ class: tokenClass }) => tokenClass === 'end' || tokenClass === 'pipe');

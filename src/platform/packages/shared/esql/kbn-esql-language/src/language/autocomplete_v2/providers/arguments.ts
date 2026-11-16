@@ -21,7 +21,7 @@ import {
   withAutoSuggest,
 } from '../../../commands/definitions/utils/autocomplete/helpers';
 import { buildConstantsDefinitions } from '../../../commands/definitions/utils/literals';
-import { getSuggestedValues, SUGGESTED_NAMES } from '../presentation';
+import { getSuggestedValues, getValueSnippet, SUGGESTED_NAMES } from '../presentation';
 import type { SuggestionContext } from '../types';
 import { ASSIGNMENT, roleIdOf } from '../written';
 
@@ -121,10 +121,18 @@ export const provideConstant = (
     });
   }
 
-  return (role.allowedValues ?? []).map((value) => ({
-    label: value,
-    text: `${value}${suffix}`,
-    kind: 'Value',
-    category: SuggestionCategory.VALUE,
-  }));
+  // A string with a known use gets a ready-made one, unless the quotes are already open.
+  const snippet = context.ir.position === 'inside_string' ? [] : getValueSnippet(role.format);
+
+  return [
+    ...snippet,
+    ...(role.allowedValues ?? []).map(
+      (value): ISuggestionItem => ({
+        label: value,
+        text: `${value}${suffix}`,
+        kind: 'Value',
+        category: SuggestionCategory.VALUE,
+      })
+    ),
+  ];
 };

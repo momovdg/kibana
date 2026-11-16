@@ -389,6 +389,15 @@ describe('suggest (v2)', () => {
       expect(await textsAt('FROM x | RENAME a AS ')).toEqual([]);
     });
 
+    it('offers the assignment after any name where nothing else can follow it', async () => {
+      const callbacks = createCallbacks({
+        columns: [{ name: 'taken', type: 'keyword', userDefined: false }],
+      });
+
+      expect(await textsAt('FROM names | RERANK taken ', callbacks)).toEqual(['= ']);
+      expect(await textsAt('FROM names | RENAME taken ', callbacks)).toEqual(['AS ']);
+    });
+
     it('picks a name the query does not use yet', async () => {
       expect(await textsAt('FROM x | RENAME col0 = a, ')).toContain('col1 = ');
     });
@@ -402,6 +411,14 @@ describe('suggest (v2)', () => {
   describe('constants', () => {
     it('offers the values a constant can take', async () => {
       expect(await textsAt('FROM x | FUSE ')).toEqual(expect.arrayContaining(['linear ', 'rrf ']));
+    });
+
+    it('offers a ready-made string where the value has a known use', async () => {
+      expect(await textsAt('FROM x | RERANK a = ')).toEqual(['"${0:Your search query}"']);
+      expect(await textsAt('FROM x | COMPLETION ')).toContain('"${0:Your prompt to the LLM.}"');
+      expect(await textsAt('FROM x | COMPLETION pro')).not.toContain(
+        '"${0:Your prompt to the LLM.}"'
+      );
     });
 
     it('offers the values the editor suggests where any value is valid', async () => {
@@ -517,6 +534,48 @@ describe('suggest (v2)', () => {
       ]);
       // The default world has no endpoint for reranking.
       expect(await sorted('FROM a | RERANK "q" ON b WITH { "inference_id": "')).toEqual([]);
+    });
+
+    it('leaves out of a list the values that are already in it', async () => {
+      const texts = await textsAt('FROM x | USER_AGENT a = b WITH { "properties": ["name", ');
+
+      expect(texts).toEqual(['"version"', '"os"', '"device"']);
+    });
+
+    it('offers the output columns a key selects from, for the variant another key names', async () => {
+      const city = await textsAt('FROM x | IP_LOCATION a = b WITH { "properties": [ ');
+      const country = await textsAt(
+        'FROM x | IP_LOCATION a = b WITH { "database_file": "GeoLite2-Country.mmdb", "properties": [ '
+      );
+
+      expect(city).toContain('"city_name"');
+      expect(country).toContain('"country_name"');
+      expect(country).not.toContain('"city_name"');
+    });
+
+    describe('where the map has to be opened', () => {
+      it('is opened with its only parameter, the cursor at its value', async () => {
+        expect(await textsAt('FROM x | COMPLETION "p" WITH ')).toEqual([
+          '{ "inference_id": "$0" }',
+        ]);
+        expect(await textsAt('FROM x | MMR ON a LIMIT 1 WITH ')).toEqual([
+          '{ "lambda": ${0:0.5} }',
+        ]);
+      });
+
+      it('is opened empty when it has several parameters', async () => {
+        expect(await textsAt('FROM x | USER_AGENT a = b WITH ')).toEqual(['{ $0 }']);
+      });
+
+      it('is opened with the parameter the editor names for it', async () => {
+        expect(await textsAt('FROM x | DENSE_VECTOR a WITH ')).toEqual([
+          '{ "inference_id": "$0" }',
+        ]);
+      });
+
+      it('is not offered again for the value of a parameter', async () => {
+        expect(await textsAt('FROM x | FUSE rrf WITH { "rank_constant": ')).not.toContain('{ $0 }');
+      });
     });
 
     it('offers nothing for a key the map does not have', async () => {
@@ -650,6 +709,13 @@ describe('suggest (v2)', () => {
         expect(texts).toContain('ABS($0)');
         expect(texts).not.toContain('n ');
       });
+    });
+
+    it('lets a command end only once it has the arguments Elasticsearch requires', async () => {
+      expect(await textsAt('FROM e | COMPLETION "p" ', callbacks)).toEqual(['WITH { $0 }']);
+      expect(
+        await textsAt('FROM e | COMPLETION "p" WITH { "inference_id": "i" } ', callbacks)
+      ).toContain('| ');
     });
 
     it('lets a command that needs an argument end only once it has one', async () => {

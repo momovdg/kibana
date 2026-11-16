@@ -26,7 +26,7 @@ import {
 import { esqlCommandRegistry } from '../../../commands/registry';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import type { SuggestionContext } from '../types';
-import { ASSIGNMENT, MAP_OPENER } from '../written';
+import { ASSIGNMENT, MAP_OPENER, unquoted } from '../written';
 
 const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggestionItem =>
   withAutoSuggest({
@@ -151,8 +151,11 @@ export const provideAssignment = async ({
   getColumnMap,
 }: SuggestionContext): Promise<ISuggestionItem[]> => {
   const name = ir.written.at(-1);
+  // Where nothing but the assignment can follow the name, the name is a new one whatever it
+  // is called.
+  const isNewName = ir.followers.length === 1;
   const isExisting =
-    name?.kind === 'rule' && (await getColumnMap()).has(name.text.replace(/`/g, ''));
+    !isNewName && name?.kind === 'rule' && (await getColumnMap()).has(unquoted(name.text));
 
   return isExisting ? [] : [assignCompletionItem];
 };
