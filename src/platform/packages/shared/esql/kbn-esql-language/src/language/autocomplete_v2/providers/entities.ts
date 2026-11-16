@@ -119,6 +119,8 @@ const provideSubqueries = ({ ir }: SuggestionContext): ISuggestionItem[] => {
 };
 
 const QUALIFIER_JOINER = ':';
+// Where a name starts or is being typed, a qualifier before it included.
+const NAME_POSITIONS: readonly string[] = ['start_of_argument', 'inside_argument'];
 
 /**
  * The words that can come before a name of this kind, when the word being typed starts one
@@ -201,10 +203,12 @@ export const provideEntities = async (
   const suffix = suffixAfterName(context);
   const visible = items.filter(({ hidden, name }) => !hidden && !used.includes(name));
   const scope = toScope(role, context);
-  // What the editor can do where a name starts, before any is typed.
-  const startsName = !context.ir.word && context.ir.position === 'start_of_argument';
+  // What the editor can do where a name is expected. A qualifier typed before the name is
+  // not part of it.
+  const startsName = NAME_POSITIONS.includes(context.ir.position);
+  const typed = context.ir.word?.text.split(QUALIFIER_JOINER).at(-1);
   const actions = startsName
-    ? (await ENTITIES[role.entityType].actions?.(context.callbacks ?? {}, scope)) ?? []
+    ? (await ENTITIES[role.entityType].actions?.(context.callbacks ?? {}, scope, typed)) ?? []
     : [];
 
   return [

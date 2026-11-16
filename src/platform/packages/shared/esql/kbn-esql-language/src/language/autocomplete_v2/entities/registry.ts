@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { getLookupIndexCreateSuggestion } from '../../../commands/definitions/utils/autocomplete/helpers';
 import { createIndicesBrowserSuggestion } from '../../../commands/registry/complete_items';
 import { buildResourceBrowserCommandArgs } from '../../autocomplete/autocomplete_utils';
 import { settings } from '../../../commands/definitions/generated/settings';
@@ -25,8 +26,12 @@ import type { EntityRegistry } from './types';
 export const ENTITIES: EntityRegistry = {
   source: {
     // The browser of data sources, outside a subquery and where the editor has one.
-    actions: async (callbacks, { indexMode, inSubquery }) => {
-      if (inSubquery || !((await callbacks.canSuggestResourceBrowser?.()) ?? false)) {
+    actions: async (callbacks, { indexMode, inSubquery }, typed) => {
+      // The browser is offered before a name is typed.
+      if (typed !== undefined || inSubquery) {
+        return [];
+      }
+      if (!((await callbacks.canSuggestResourceBrowser?.()) ?? false)) {
         return [];
       }
 
@@ -80,6 +85,16 @@ export const ENTITIES: EntityRegistry = {
   },
 
   lookup_index: {
+    // Creating the index that is being named, where the user may and it does not exist yet.
+    actions: async (callbacks, _scope, typed = '') => {
+      const { indices = [] } = (await callbacks.getJoinIndices?.()) ?? {};
+      const exists = indices.some(
+        ({ name, aliases }) => name === typed || aliases?.includes(typed)
+      );
+      const canCreate = (await callbacks.canCreateLookupIndex?.(typed)) ?? false;
+
+      return canCreate && !exists ? [getLookupIndexCreateSuggestion(typed)] : [];
+    },
     fetch: async (callbacks) => {
       const { indices = [] } = (await callbacks.getJoinIndices?.()) ?? {};
 
