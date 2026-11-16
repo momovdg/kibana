@@ -37,7 +37,12 @@ export interface EntityDefinition {
    * What the editor can do where an entity of this kind is expected, besides naming one: as
    * opening a browser of the sources. These are items of the editor, ready to show.
    */
-  actions?: (callbacks: EntityCallbacks, scope: EntityScope) => Promise<ISuggestionItem[]>;
+  actions?: (
+    callbacks: EntityCallbacks,
+    scope: EntityScope,
+    /** The name typed so far, when one is being typed. */
+    typed?: string
+  ) => Promise<ISuggestionItem[]>;
   /**
    * For an entity that defines what its value can be, as a setting does: the roles a value of
    * the named entity can have.
