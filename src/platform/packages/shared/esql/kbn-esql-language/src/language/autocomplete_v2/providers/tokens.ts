@@ -164,6 +164,10 @@ const isKnownName = async (context: SuggestionContext): Promise<boolean | undefi
   if (name?.kind !== 'rule' || ir.followers.length === 1) {
     return undefined;
   }
+  // A parameter stands for a name that is given later: there is nothing to look up.
+  if (ir.previous?.class !== 'value') {
+    return undefined;
+  }
 
   const entity = ir.arguments
     .filter(({ continues }) => continues)

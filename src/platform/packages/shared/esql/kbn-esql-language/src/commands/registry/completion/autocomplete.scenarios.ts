@@ -53,7 +53,16 @@ export const completionScenarios: ScenarioTable = {
       ['FROM a | COMPLETION textField '],
       [WITH]
     ),
-    ...rows('suggests WITH after a param as prompt', ['FROM a | COMPLETION ? '], [WITH]),
+    ...rows('suggests WITH after a param as prompt', ['FROM a | COMPLETION ? '], [WITH]).map(
+      (row): Scenario => ({ ...row, status: 'replaced' })
+    ),
+    // A param is a value like any other: the prompt can go on with an operator.
+    {
+      name: 'suggests WITH and operators after a param as prompt',
+      query: 'FROM a | COMPLETION ? ',
+      status: 'new',
+      expect: { contains: [WITH, '== $0', '+ $0'], excludes: ['| ', '\n'] },
+    },
     ...rows(
       'suggests WITH after the prompt',
       ['FROM a | COMPLETION "prompt" ', 'FROM a | COMPLETION "prompt" WIT'],

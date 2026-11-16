@@ -484,6 +484,10 @@ describe('suggest (v2)', () => {
         expect(await textsAt('FROM a | ENRICH policy ON b WITH fresh ', callbacks)).toEqual(['= ']);
       });
 
+      it('is not looked up when it is a parameter, so what follows a value stays', async () => {
+        expect(await textsAt('FROM a | COMPLETION ? ', callbacks)).toContain('WITH { $0 }');
+      });
+
       it('is followed by what follows an entity, when it is one', async () => {
         expect(await textsAt('FROM a | ENRICH policy ON b WITH otherField ', callbacks)).toEqual(
           expect.arrayContaining([', ', '| '])

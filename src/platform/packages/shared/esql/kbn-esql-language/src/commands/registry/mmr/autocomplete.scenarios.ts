@@ -38,7 +38,19 @@ export const mmrScenarios: ScenarioTable = {
         ...functions({ availableIn: 'mmr', returning: 'dense_vector', scalar: true }),
       ]
     ),
-    ...rows('suggests ON after query vector', ['FROM a | MMR [0.1, 0.2]::dense_vector '], ['ON ']),
+    ...rows(
+      'suggests ON after query vector',
+      ['FROM a | MMR [0.1, 0.2]::dense_vector '],
+      ['ON ']
+    ).map((row): Scenario => ({ ...row, status: 'replaced' })),
+    // The vector is a value like any other: it can go on with an operator.
+    {
+      name: 'suggests ON and operators after query vector',
+      query: 'FROM a | MMR [0.1, 0.2]::dense_vector ',
+      world: withDenseVector,
+      status: 'new',
+      expect: { contains: ['ON ', '== $0'], excludes: ['| ', '\n'] },
+    },
     ...rows(
       'suggests only dense vector fields after ON',
       ['FROM a | MMR ON ', 'FROM a | MMR [0.1, 0.2]::dense_vector ON '],
