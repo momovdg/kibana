@@ -440,7 +440,9 @@ const provideFollowUps = async (
   const { continuations } = await collect(spaced, offset + SEPARATOR_GAP.length, callbacks);
   const name = word.argument?.text ?? word.text;
 
-  if (isValue && !isEntityName) {
+  // A number can still go on, so only the end of its statement is offered with it. A string
+  // is closed by its quote: everything that can follow it is.
+  if (isValue && !isEntityName && word.kind !== 'string') {
     return continuations
       .filter(({ request }) => request.kind === 'token' && request.follower.class === 'terminator')
       .flatMap(({ items }) => items);
@@ -448,8 +450,10 @@ const provideFollowUps = async (
 
   return continuations.flatMap(({ request, items }) =>
     items.map((item) => {
-      // The next line is offered as it is; a separator follows the name with no gap.
-      if (request.kind === 'end_of_command') {
+      // The next line and the end of a statement are offered as they are; a separator
+      // follows the name with no gap.
+      const isTerminator = request.kind === 'token' && request.follower.class === 'terminator';
+      if (request.kind === 'end_of_command' || isTerminator) {
         return item;
       }
 

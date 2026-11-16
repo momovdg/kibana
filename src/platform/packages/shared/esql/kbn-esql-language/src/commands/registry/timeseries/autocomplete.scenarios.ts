@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { withSpacedComma } from '../../../__tests__/scenarios';
+import { withNameSpacing, withSpacedComma } from '../../../__tests__/scenarios';
 import type { Scenario, ScenarioTable, ScenarioWorld } from '../../../__tests__/scenarios';
 import { METADATA_FIELDS } from '../options/metadata';
 
@@ -56,100 +56,106 @@ const timeseriesIndices = [
 
 export const timeseriesScenarios: ScenarioTable = {
   command: 'ts',
-  scenarios: withSpacedComma([
-    {
-      group: SOURCES,
-      name: 'suggests Browse data sources in empty source slots when enabled',
-      query: 'TS ',
-      world: { supportsResourceBrowser: true },
-      expect: {
-        exact: [{ text: '', label: 'Browse data sources' }, ...timeseriesIndices],
+  // Where the new flow ends a name differently from the current flow.
+  scenarios: withNameSpacing(
+    withSpacedComma([
+      {
+        group: SOURCES,
+        name: 'suggests Browse data sources in empty source slots when enabled',
+        query: 'TS ',
+        world: { supportsResourceBrowser: true },
+        expect: {
+          exact: [{ text: '', label: 'Browse data sources' }, ...timeseriesIndices],
+        },
       },
-    },
-    {
-      group: SOURCES,
-      name: 'suggests timeseries indices and aliases, and tells them apart',
-      query: 'TS ',
-      expect: { exact: timeseriesIndices },
-    },
-    {
-      group: SOURCES,
-      name: 'can suggest timeseries after one already selected',
-      query: 'TS timeseries_index,  ',
-      status: 'replaced',
-      expect: { exact: ['timeseries_index_with_alias', 'time_series_index'] },
-    },
-    {
-      group: SOURCES,
-      name: 'suggests the other timeseries indices and the aliases after one already selected',
-      query: 'TS timeseries_index,  ',
-      status: 'new',
-      expect: {
-        exact: [
-          'timeseries_index_with_alias',
-          'time_series_index',
-          'timeseries_index_alias_1',
-          'timeseries_index_alias_2',
+      {
+        group: SOURCES,
+        name: 'suggests timeseries indices and aliases, and tells them apart',
+        query: 'TS ',
+        expect: { exact: timeseriesIndices },
+      },
+      {
+        group: SOURCES,
+        name: 'can suggest timeseries after one already selected',
+        query: 'TS timeseries_index,  ',
+        status: 'replaced',
+        expect: { exact: ['timeseries_index_with_alias', 'time_series_index'] },
+      },
+      {
+        group: SOURCES,
+        name: 'suggests the other timeseries indices and the aliases after one already selected',
+        query: 'TS timeseries_index,  ',
+        status: 'new',
+        expect: {
+          exact: [
+            'timeseries_index_with_alias',
+            'time_series_index',
+            'timeseries_index_alias_1',
+            'timeseries_index_alias_2',
+          ],
+        },
+      },
+
+      ...rows(
+        METADATA,
+        'suggests METADATA, comma, pipe and the recommended queries after a source',
+        ['ts time_series_index '],
+        [...AFTER_SOURCE, TIMESERIES_RATE_TEXT],
+        withTimeseriesRate
+      ),
+      ...rows(
+        METADATA,
+        'suggests all metadata fields after METADATA, with or without a prefix',
+        [
+          'ts time_series_index METADATA ',
+          'ts time_series_index METADATA _',
+          'ts time_series_index METADATA _sour',
         ],
-      },
-    },
+        METADATA_FIELDS
+      ),
+      ...rows(
+        METADATA,
+        'suggests comma and pipe after a metadata field',
+        ['ts time_series_index metadata _index ', 'ts time_series_index metadata _index, _source '],
+        ['\n', ',', '| ']
+      ),
+      ...rows(
+        METADATA,
+        'suggests only pipe after all the metadata fields',
+        [`ts time_series_index metadata ${METADATA_FIELDS.join(', ')} `],
+        ['\n', '| ']
+      ),
+      ...rows(
+        METADATA,
+        'filters out already used metadata fields',
+        ['ts time_series_index metadata _index, '],
+        METADATA_FIELDS.filter((field) => field !== '_index')
+      ),
 
-    ...rows(
-      METADATA,
-      'suggests METADATA, comma, pipe and the recommended queries after a source',
-      ['ts time_series_index '],
-      [...AFTER_SOURCE, TIMESERIES_RATE_TEXT],
-      withTimeseriesRate
-    ),
-    ...rows(
-      METADATA,
-      'suggests all metadata fields after METADATA, with or without a prefix',
-      [
-        'ts time_series_index METADATA ',
-        'ts time_series_index METADATA _',
-        'ts time_series_index METADATA _sour',
-      ],
-      METADATA_FIELDS
-    ),
-    ...rows(
-      METADATA,
-      'suggests comma and pipe after a metadata field',
-      ['ts time_series_index metadata _index ', 'ts time_series_index metadata _index, _source '],
-      ['\n', ',', '| ']
-    ),
-    ...rows(
-      METADATA,
-      'suggests only pipe after all the metadata fields',
-      [`ts time_series_index metadata ${METADATA_FIELDS.join(', ')} `],
-      ['\n', '| ']
-    ),
-    ...rows(
-      METADATA,
-      'filters out already used metadata fields',
-      ['ts time_series_index metadata _index, '],
-      METADATA_FIELDS.filter((field) => field !== '_index')
-    ),
-
-    {
-      group: STANDALONE,
-      name: 'standalone suggestion appears after space alongside other suggestions',
-      query: 'ts timeseries_index ',
-      world: withStandaloneQuery,
-      expect: {
-        exact: [
-          ...AFTER_SOURCE,
-          TIMESERIES_RATE_TEXT,
-          {
-            text: '',
-            label: 'Search all metrics',
-            command: {
-              id: 'esql.recommendedQuery.accept',
-              title: 'Accept recommended query',
-              arguments: [{ queryLabel: 'Search all metrics', queryText: 'TS metrics-*' }],
+      {
+        group: STANDALONE,
+        name: 'standalone suggestion appears after space alongside other suggestions',
+        query: 'ts timeseries_index ',
+        world: withStandaloneQuery,
+        expect: {
+          exact: [
+            ...AFTER_SOURCE,
+            TIMESERIES_RATE_TEXT,
+            {
+              text: '',
+              label: 'Search all metrics',
+              command: {
+                id: 'esql.recommendedQuery.accept',
+                title: 'Accept recommended query',
+                arguments: [{ queryLabel: 'Search all metrics', queryText: 'TS metrics-*' }],
+              },
             },
-          },
-        ],
+          ],
+        },
       },
-    },
-  ]),
+    ]),
+    {
+      'TS ': 'bare',
+    }
+  ),
 };

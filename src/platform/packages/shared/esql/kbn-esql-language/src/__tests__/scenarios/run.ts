@@ -167,6 +167,74 @@ export const withSpacedComma = (scenarios: readonly Scenario[]): Scenario[] =>
     ];
   });
 
+/** How the new flow ends the names it offers at a position, where the current flow differs. */
+export type NameSpacing =
+  /** With a space: an operator or a keyword usually follows, as after an operand. */
+  | 'spaced'
+  /** Without one: a separator usually follows, as after an item of a list. */
+  | 'bare'
+  /** Functions without one: their brackets are written, and what follows them is up to the user. */
+  | 'bare_calls';
+
+const SPACING_NOTES: Readonly<Record<NameSpacing, string>> = {
+  spaced: 'names with a space',
+  bare: 'names without a space',
+  bare_calls: 'functions without a space',
+};
+
+const BARE_NAME = /^[^\s(=]+$/;
+const SPACED_NAME = /^[^\s(=]+ (\$0)?$/;
+const SPACED_CALL = /^[^\s]+\(.*\) $/;
+
+const respace = (text: string, spacing: NameSpacing): string => {
+  if (spacing === 'spaced') {
+    return BARE_NAME.test(text) ? `${text} ` : text;
+  }
+
+  const isChanged = spacing === 'bare' ? SPACED_NAME.test(text) : SPACED_CALL.test(text);
+
+  return isChanged ? text.replace(/ (\$0)?$/, '') : text;
+};
+
+/**
+ * Splits the rows at the given positions in two: the row as it is for the current flow, and
+ * one for the new flow, where the names end the way the new flow's rule says. A position is
+ * the text before the cursor.
+ */
+export const withNameSpacing = (
+  scenarios: readonly Scenario[],
+  positions: Readonly<Record<string, NameSpacing>>
+): Scenario[] =>
+  scenarios.flatMap((scenario): Scenario[] => {
+    const spacing = positions[scenario.query];
+    const { exact, contains } = scenario.expect;
+
+    if (!spacing || scenario.status !== undefined) {
+      return [scenario];
+    }
+
+    const changed = (expected: readonly ExpectedSuggestion[]): ExpectedSuggestion[] =>
+      expected.map((item) =>
+        typeof item === 'string'
+          ? respace(item, spacing)
+          : { ...item, text: respace(item.text, spacing) }
+      );
+
+    return [
+      { ...scenario, status: 'replaced' },
+      {
+        ...scenario,
+        name: `${scenario.name} (${SPACING_NOTES[spacing]})`,
+        status: 'new',
+        expect: {
+          ...scenario.expect,
+          ...(exact && { exact: changed(exact) }),
+          ...(contains && { contains: changed(contains) }),
+        },
+      },
+    ];
+  });
+
 /** Declares one test per scenario and flow. */
 export const describeScenarios = (
   { command, scenarios }: ScenarioTable,
