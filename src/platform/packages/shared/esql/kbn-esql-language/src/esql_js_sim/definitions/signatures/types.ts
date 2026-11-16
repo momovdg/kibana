@@ -230,8 +230,11 @@ export type ExpressionPart =
 export interface CommandFacts {
   /** The grammar makes every argument optional, and at least one is needed. */
   requiresArgument?: boolean;
-  /** Arguments the grammar makes optional and Elasticsearch requires. */
-  requires?: readonly CallSiteId[];
+  /**
+   * Arguments the grammar makes optional and Elasticsearch requires. An entry that lists
+   * several places is met by any one of them.
+   */
+  requires?: ReadonlyArray<CallSiteId | readonly CallSiteId[]>;
   /** Repeated clauses whose alternatives may each be used only once. */
   singleUse?: readonly CallSiteId[];
   /** Places the grammar has and Elasticsearch does not support yet: nothing is offered there. */

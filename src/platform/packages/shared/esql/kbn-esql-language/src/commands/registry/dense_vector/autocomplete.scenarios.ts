@@ -18,6 +18,9 @@ const rows = (
   world?: Partial<ScenarioWorld>
 ): Scenario[] => queries.map((query) => ({ group, name, query, world, expect: { exact } }));
 
+const withStatus = (status: Scenario['status'], scenarios: Scenario[]): Scenario[] =>
+  scenarios.map((scenario) => ({ ...scenario, status }));
+
 const FIELD_LIST = 'field list';
 const TARGET = 'target = field form';
 const SUFFIX = 'suffix = "..." ON form';
@@ -57,12 +60,23 @@ export const denseVectorScenarios: ScenarioTable = {
       ['from a | dense_vector textField, '],
       stringColumns
     ),
-    ...rows(
-      FIELD_LIST,
-      'suggests continuations after a complete field',
-      ['from a | dense_vector keywordField'],
-      [WITH, ', ', ...END_OF_COMMAND, 'col0 = ', ...stringColumns]
+    ...withStatus(
+      'replaced',
+      rows(
+        FIELD_LIST,
+        'suggests continuations after a complete field',
+        ['from a | dense_vector keywordField'],
+        [WITH, ', ', ...END_OF_COMMAND, 'col0 = ', ...stringColumns]
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        FIELD_LIST,
+        'suggests what follows a complete field, with the field',
+        ['from a | dense_vector keywordField'],
+        ['\n', 'keywordField, ', `keywordField ${WITH}`, 'keywordField | ']
+      ),
+    ]),
 
     ...rows(
       TARGET,
@@ -70,29 +84,66 @@ export const denseVectorScenarios: ScenarioTable = {
       ['from a | dense_vector vec = '],
       stringColumns
     ),
-    ...rows(
-      TARGET,
-      'suggests continuations, but no comma, after the assigned field',
-      ['from a | dense_vector vec = textField '],
-      [WITH, ...END_OF_COMMAND]
+    ...withStatus(
+      'replaced',
+      rows(
+        TARGET,
+        'suggests continuations, but no comma, after the assigned field',
+        ['from a | dense_vector vec = textField '],
+        [WITH, ...END_OF_COMMAND]
+      )
     ),
-    ...rows(
-      TARGET,
-      'keeps the comma out while the assigned field is still being typed',
-      ['from a | dense_vector vec = textField'],
-      [WITH, ...END_OF_COMMAND, ...stringColumns]
+    ...withStatus('new', [
+      // The grammar takes a list of fields after a named target too.
+      ...rows(
+        TARGET,
+        'suggests continuations and a comma after the assigned field',
+        ['from a | dense_vector vec = textField ', 'from a | dense_vector `my,vec` = textField '],
+        [WITH, ', ', ...END_OF_COMMAND]
+      ),
+    ]),
+    ...withStatus(
+      'replaced',
+      rows(
+        TARGET,
+        'keeps the comma out while the assigned field is still being typed',
+        ['from a | dense_vector vec = textField'],
+        [WITH, ...END_OF_COMMAND, ...stringColumns]
+      )
     ),
-    ...rows(
-      TARGET,
-      'offers only pipe and newline after a manually typed comma following a named target',
-      ['from a | dense_vector vec = textField, '],
-      END_OF_COMMAND
+    ...withStatus('new', [
+      ...rows(
+        TARGET,
+        'suggests what follows the assigned field, with the field',
+        ['from a | dense_vector vec = textField'],
+        ['\n', 'textField, ', `textField ${WITH}`, 'textField | ']
+      ),
+    ]),
+    ...withStatus(
+      'replaced',
+      rows(
+        TARGET,
+        'offers only pipe and newline after a manually typed comma following a named target',
+        ['from a | dense_vector vec = textField, '],
+        END_OF_COMMAND
+      )
     ),
-    ...rows(
-      TARGET,
-      'still offers WITH after a target whose quoted name contains a comma',
-      ['from a | dense_vector `my,vec` = textField '],
-      [WITH, ...END_OF_COMMAND]
+    ...withStatus('new', [
+      {
+        group: TARGET,
+        name: 'suggests more fields after a comma following a named target',
+        query: 'from a | dense_vector vec = textField, ',
+        expect: { containsLabels: ['keywordField'], excludes: ['| ', '\n', WITH] },
+      },
+    ]),
+    ...withStatus(
+      'replaced',
+      rows(
+        TARGET,
+        'still offers WITH after a target whose quoted name contains a comma',
+        ['from a | dense_vector `my,vec` = textField '],
+        [WITH, ...END_OF_COMMAND]
+      )
     ),
 
     ...rows(
