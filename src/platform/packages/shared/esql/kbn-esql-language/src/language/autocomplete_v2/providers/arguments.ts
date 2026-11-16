@@ -74,7 +74,7 @@ export const provideColumns = async (
     ...(await context.getColumnsByType(
       role.types ? [...role.types] : 'any',
       role.unique ? listed : [],
-      { advanceCursor: moveOn, openSuggestions: moveOn }
+      { advanceCursor: moveOn, openSuggestions: true }
     )),
   ];
 };
