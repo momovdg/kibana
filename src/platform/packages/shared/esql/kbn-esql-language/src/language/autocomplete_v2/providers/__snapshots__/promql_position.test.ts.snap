@@ -1,0 +1,13 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`the position in a PromQL query, from the grammar agrees with the current flow on these rows 1`] = `
+Object {
+  "agree": 80,
+  "compared": 83,
+  "differences": Array [
+    "\\"sum(avg(quantile_over_time( 0,  bytes_normal_counter   {event.dataset \\\\\\"value\\\\\\"} \\": after_label_selector / after_query",
+    "\\"col0 = (\\": inside_function_args / after_query",
+    "\\"col0 =\\": inside_function_args / after_query",
+  ],
+}
+`;
