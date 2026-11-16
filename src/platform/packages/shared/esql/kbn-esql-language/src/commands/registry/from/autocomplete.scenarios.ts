@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { DEFAULT_WORLD } from '../../../__tests__/scenarios';
+import { DEFAULT_WORLD, withSpacedComma } from '../../../__tests__/scenarios';
 import type {
   ExpectedSuggestion,
   Scenario,
@@ -94,7 +94,7 @@ const standaloneQuery = {
 
 export const fromScenarios: ScenarioTable = {
   command: 'from',
-  scenarios: [
+  scenarios: withSpacedComma([
     ...rows(
       SOURCES,
       'suggests Browse data sources in empty source slots when enabled',
@@ -200,14 +200,30 @@ export const fromScenarios: ScenarioTable = {
       ['from a, b '],
       afterSource
     ),
-    ...rows(METADATA, 'partially-typed METADATA keyword', ['FROM index1 MET'], ['METADATA ']),
+    ...rows(METADATA, 'partially-typed METADATA keyword', ['FROM index1 MET'], ['METADATA ']).map(
+      (row): Scenario => ({ ...row, status: 'replaced' })
+    ),
+    // While a word is typed, what could be written there is offered: the editor narrows it down.
+    ...rows(
+      METADATA,
+      'suggests what can follow the sources while a keyword is typed',
+      ['FROM index1 MET'],
+      ['METADATA ', ', ', '| ', '\n']
+    ).map((row): Scenario => ({ ...row, status: 'new' })),
     ...rows(
       METADATA,
       'not before first index',
       ['FROM MET'],
       [...dataSourceNames, 'MET\n'],
       withIntegrations
-    ),
+    ).map((row): Scenario => ({ ...row, status: 'replaced' })),
+    ...rows(
+      METADATA,
+      'suggests sources and subqueries, and no keyword, while the first source is typed',
+      ['FROM MET'],
+      [...dataSourceNames, ...SUBQUERIES],
+      withIntegrations
+    ).map((row): Scenario => ({ ...row, status: 'new' })),
     ...rows(
       METADATA,
       'suggests all metadata fields after METADATA, with or without a prefix',
@@ -257,7 +273,20 @@ export const fromScenarios: ScenarioTable = {
       'FROM a, (FROM index ',
       afterSource
     ),
-    inSubquery('suggests METADATA keyword in subquery', 'FROM a, (FROM index MET', ['METADATA ']),
+    {
+      ...inSubquery('suggests METADATA keyword in subquery', 'FROM a, (FROM index MET', [
+        'METADATA ',
+      ]),
+      status: 'replaced',
+    },
+    {
+      ...inSubquery(
+        'suggests what can follow the sources of a subquery while a keyword is typed',
+        'FROM a, (FROM index MET',
+        ['METADATA ', ', ', '| ', '\n']
+      ),
+      status: 'new',
+    },
     inSubquery(
       'suggests pipe and comma after metadata field in subquery',
       'FROM a, (FROM index METADATA _id ',
@@ -286,5 +315,5 @@ export const fromScenarios: ScenarioTable = {
         ],
       },
     },
-  ],
+  ]),
 };
