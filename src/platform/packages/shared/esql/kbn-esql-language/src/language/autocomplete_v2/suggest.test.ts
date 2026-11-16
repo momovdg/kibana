@@ -523,6 +523,24 @@ describe('suggest (v2)', () => {
       expect(await create('FROM a | LOOKUP JOIN join_ind')).toEqual(['join_ind']);
     });
 
+    it('offers what follows a name in quotes that is whole, with the name as written', async () => {
+      expect(await textsAt('FROM index, "my-index"', callbacks)).toEqual(
+        expect.arrayContaining(['"my-index", ', '"my-index" | '])
+      );
+    });
+
+    it('offers no separator once every item of a list is listed', async () => {
+      const some = await textsAt('FROM a METADATA _index ', callbacks);
+      const all = await textsAt(
+        'FROM a METADATA _version, _id, _index, _source, _ignored, _index_mode, _score, _size, _slice, _name, _class ',
+        callbacks
+      );
+
+      expect(some).toContain(', ');
+      expect(all).toEqual(expect.arrayContaining(['| ']));
+      expect(all).not.toContain(', ');
+    });
+
     it('offers what follows a name that is whole, with the name', async () => {
       expect(await textsAt('FROM a | LOOKUP JOIN join_index', callbacks)).toEqual([
         'join_index ON ',

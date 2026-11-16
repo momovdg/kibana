@@ -8,7 +8,7 @@
  */
 
 import type { ISuggestionItem } from '../../commands/registry/types';
-import { describeScenarios, runScenario, SUGGEST_FLOWS } from './run';
+import { describeScenarios, runScenario, SUGGEST_FLOWS, withSpacedComma } from './run';
 import type { ScenarioTable, SuggestFlow } from './types';
 
 const item = (text: string, properties: Partial<ISuggestionItem> = {}): ISuggestionItem => ({
@@ -164,3 +164,16 @@ const replacedRow: ScenarioTable = {
 
 // The row would fail on the new flow, so it passing here shows it only ran on the old one.
 describeScenarios(replacedRow, [createFlow('old', items), createFlow('new', [], true)]);
+
+describe('withSpacedComma', () => {
+  it('splits a row that expects a bare comma into one row per flow', () => {
+    const [current, changed, untouched] = withSpacedComma([
+      { name: 'after an item', query: 'FAKE a ', expect: { exact: [',', '| '] } },
+      { name: 'at the start', query: 'FAKE ', expect: { exact: ['a'] } },
+    ]);
+
+    expect(current).toMatchObject({ status: 'replaced', expect: { exact: [',', '| '] } });
+    expect(changed).toMatchObject({ status: 'new', expect: { exact: [', ', '| '] } });
+    expect(untouched.status).toBeUndefined();
+  });
+});

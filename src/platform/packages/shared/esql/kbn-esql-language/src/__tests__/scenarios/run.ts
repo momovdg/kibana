@@ -131,6 +131,42 @@ export const passesOn = async (scenario: Scenario, flow: SuggestFlow): Promise<b
 export const isRowOf = ({ status }: Scenario, { runsNewRows }: SuggestFlow): boolean =>
   status === undefined || (status === 'new') === runsNewRows;
 
+const BARE_COMMA = ',';
+const SPACED_COMMA = ', ';
+
+/**
+ * Splits every row that expects a bare comma in two: the row as it is for the current flow,
+ * and one for the new flow, where the comma comes with a space so that the next item of the
+ * list can be typed at once.
+ */
+export const withSpacedComma = (scenarios: readonly Scenario[]): Scenario[] =>
+  scenarios.flatMap((scenario): Scenario[] => {
+    const { exact } = scenario.expect;
+    const hasBareComma = exact?.some((expected) => textOf(expected) === BARE_COMMA) ?? false;
+
+    if (!exact || !hasBareComma || scenario.status !== undefined) {
+      return [scenario];
+    }
+
+    const spaced = exact.map((expected): ExpectedSuggestion => {
+      if (textOf(expected) !== BARE_COMMA) {
+        return expected;
+      }
+
+      return typeof expected === 'string' ? SPACED_COMMA : { ...expected, text: SPACED_COMMA };
+    });
+
+    return [
+      { ...scenario, status: 'replaced' },
+      {
+        ...scenario,
+        name: `${scenario.name} (the comma with a space)`,
+        status: 'new',
+        expect: { ...scenario.expect, exact: spaced },
+      },
+    ];
+  });
+
 /** Declares one test per scenario and flow. */
 export const describeScenarios = (
   { command, scenarios }: ScenarioTable,
