@@ -297,6 +297,23 @@ const getDefinedColumns = (
   }));
 };
 
+/**
+ * The columns of the entity another argument names, as the index a join reads: the ones the
+ * query does not have already.
+ */
+const getEntityColumns = async (
+  place: CallSiteId,
+  { ir, callbacks }: SuggestionContext,
+  columns: Map<string, ESQLColumnData>
+): Promise<ESQLColumnData[]> => {
+  const entity = ir.written.find(({ id }) => id === place);
+  const fields = entity
+    ? (await callbacks?.getColumnsFor?.({ query: `FROM ${entity.text}` })) ?? []
+    : [];
+
+  return fields.filter(({ name }) => !columns.has(name));
+};
+
 const getCallbacks = (
   role: ExpressionRole,
   parameters: ESQLColumnData[],
@@ -386,9 +403,14 @@ export const provideExpression = async (
   const inScope = lambda?.kind === 'body' ? lambda.parameters.map(({ name }) => name) : [];
   const parameters = typed.filter(({ name }) => inScope.includes(name));
   const unmappedFieldsStrategy = getUnmappedFieldsStrategy(root.header);
-  const defined = role.namesOf
-    ? getDefinedColumns(role.namesOf, context, columns, unmappedFieldsStrategy)
-    : [];
+  // What the role reads beyond the columns of the query: the names another argument defines,
+  // and the columns of the entity another argument names.
+  const defined = [
+    ...(role.namesOf
+      ? getDefinedColumns(role.namesOf, context, columns, unmappedFieldsStrategy)
+      : []),
+    ...(role.columnsOf ? await getEntityColumns(role.columnsOf, context, columns) : []),
+  ];
   const commandContext: ICommandContext = {
     columns: new Map([
       ...columns,

@@ -51,8 +51,11 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
     requests.push({ kind: 'end_of_command' });
   }
 
+  const isUnsupported = (place: string | undefined): boolean =>
+    place !== undefined && (facts?.unsupported ?? []).includes(place);
+
   for (const follower of ir.followers) {
-    if (follower.startsCommand || follower.class === 'end') {
+    if (follower.startsCommand || follower.class === 'end' || isUnsupported(follower.id)) {
       continue;
     }
     if (follower.class === 'pipe' && lacksArgument) {
@@ -77,6 +80,10 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
   const isNew = (key: string): boolean => !seen.has(key) && Boolean(seen.add(key));
 
   for (const argument of [...ir.arguments, ...valueTokens]) {
+    if (argument.path.some(isUnsupported)) {
+      continue;
+    }
+
     const resolved = resolveRole(argument.path, argument.rule);
     const key = resolved?.id ?? `${argument.id}|${resolved?.role.kind}`;
 

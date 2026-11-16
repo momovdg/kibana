@@ -19,6 +19,9 @@ export const COMMAND_FACTS: Readonly<Record<string, CommandFacts>> = {
   rowCommand: { readsOwnColumns: true },
   // The grammar lets the `WITH` map out; the inference endpoint in it is needed.
   completionCommand: { requires: ['completionCommand>commandNamedParameters'] },
+  // `JOIN index AS? qualifier`: the grammar has a qualifier for the index, which is not
+  // supported yet.
+  joinCommand: { unsupported: ['joinTarget>AS', 'joinTarget>UNQUOTED_SOURCE'] },
   // `STATS aggFields? (BY fields)?`: at least an aggregation or a grouping is needed.
   statsCommand: { requiresArgument: true },
   // `(fuseConfiguration)*`: Elasticsearch rejects a second `SCORE BY`.
