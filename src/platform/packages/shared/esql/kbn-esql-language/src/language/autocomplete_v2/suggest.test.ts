@@ -459,6 +459,41 @@ describe('suggest (v2)', () => {
       expect(await textsAt('FROM a | LOOKUP JOIN ', callbacks)).toContain('join_index ');
     });
 
+    describe('a kind of entity whose names can be qualified', () => {
+      it('offers the qualifiers when the word typed starts one, the cursor where the name goes', async () => {
+        expect(await textsAt('FROM a | ENRICH _', callbacks)).toEqual([
+          '_any:$0',
+          '_coordinator:$0',
+          '_remote:$0',
+        ]);
+        expect(await textsAt('FROM a | ENRICH _re', callbacks)).toEqual(['_remote:$0']);
+      });
+
+      it('offers the names where nothing is typed, and after a qualifier', async () => {
+        expect(await textsAt('FROM a | ENRICH ', callbacks)).toEqual(['policy ', '`policy$` ']);
+        expect(await textsAt('FROM a | ENRICH _any:', callbacks)).toContain('policy ');
+      });
+
+      it('offers nothing after a qualifier that is left without a name', async () => {
+        expect(await textsAt('FROM a | ENRICH _any: ', callbacks)).toEqual([]);
+      });
+    });
+
+    describe('a name that can be an entity or a new name', () => {
+      it('is followed by the assignment only, when it is no entity of the scope', async () => {
+        expect(await textsAt('FROM a | ENRICH policy ON b WITH fresh ', callbacks)).toEqual(['= ']);
+      });
+
+      it('is followed by what follows an entity, when it is one', async () => {
+        expect(await textsAt('FROM a | ENRICH policy ON b WITH otherField ', callbacks)).toEqual(
+          expect.arrayContaining([', ', '| '])
+        );
+        expect(
+          await textsAt('FROM a | ENRICH policy ON b WITH otherField ', callbacks)
+        ).not.toContain('= ');
+      });
+    });
+
     it('offers the entities of the parent another argument names', async () => {
       expect(await textsAt('FROM a | ENRICH policy ON b WITH c = ', callbacks)).toEqual([
         'otherField',
