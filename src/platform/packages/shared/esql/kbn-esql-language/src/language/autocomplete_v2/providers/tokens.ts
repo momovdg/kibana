@@ -8,6 +8,7 @@
  */
 
 import { i18n } from '@kbn/i18n';
+import { ReplacementRangeStrategyKind } from '../../autocomplete/utils/prefix_range';
 import {
   assignCompletionItem,
   buildSubqueryCompleteItems,
@@ -229,7 +230,14 @@ export const provideToken = (follower: Follower): ISuggestionItem[] => {
       return [pipeCompleteItem];
     // A separator is followed by a space, so the next item of the list can be typed at once.
     case 'separator':
-      return [withAutoSuggest({ ...commaCompleteItem, text: `${text} ` })];
+      // After a space the separator takes the place of the space: `a, ` and not `a , `.
+      return [
+        withAutoSuggest({
+          ...commaCompleteItem,
+          text: `${text} `,
+          replacementRangeStrategy: { kind: ReplacementRangeStrategyKind.TRAILING_WHITESPACE },
+        }),
+      ];
     case 'keyword':
       return provideKeyword(follower);
     // The end of a header statement moves to the next line, where the next one starts.

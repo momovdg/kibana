@@ -8,10 +8,15 @@
  */
 
 import { EsqlQuery } from '@elastic/esql';
-import { getRecommendedQueriesSuggestions } from '../../../commands/registry/options/recommended_queries';
+import {
+  getRecommendedQueriesSuggestions,
+  getRecommendedQueriesSuggestionsFromStaticTemplates,
+} from '../../../commands/registry/options/recommended_queries';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import { resolveRole } from '../../../esql_js_sim/definitions';
+import { mapRecommendedQueriesFromExtensions } from '../../autocomplete/recommended_queries_helpers';
 import { getColumnsByTypeRetriever } from '../../shared/columns_retrieval_helpers';
+import { getFromCommandHelper } from '../../shared/resources_helpers';
 import { RECOMMENDED_QUERIES } from '../presentation';
 import type { SuggestionContext } from '../types';
 import { pathOf } from '../written';
@@ -55,4 +60,31 @@ export const provideExtras = async (context: SuggestionContext): Promise<ISugges
     extensions,
     queries === 'with_templates' ? getColumnsByType : undefined
   );
+};
+
+/**
+ * What the editor offers where a query starts and nothing is written: queries that are ready
+ * to run on the first source the editor knows.
+ */
+export const provideStartingQueries = async ({
+  ir,
+  callbacks,
+  text,
+}: SuggestionContext): Promise<ISuggestionItem[]> => {
+  if (ir.position !== 'start_of_query' || ir.enclosingCommands.length > 0) {
+    return [];
+  }
+
+  const source = await getFromCommandHelper(callbacks);
+  const extensions = (await callbacks?.getEditorExtensions?.(`${source} `)) ?? NO_EXTENSIONS;
+  const { getColumnsByType } = getColumnsByTypeRetriever(
+    EsqlQuery.fromSrc(source).ast,
+    text,
+    callbacks
+  );
+
+  return [
+    ...mapRecommendedQueriesFromExtensions(extensions.recommendedQueries),
+    ...(await getRecommendedQueriesSuggestionsFromStaticTemplates(getColumnsByType, source)),
+  ];
 };

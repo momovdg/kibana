@@ -17,7 +17,9 @@ import {
 } from '../../esql_js_sim/definitions';
 import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/grammar';
 import { createContext } from './context';
+import { present } from './present';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
+import { provideControls } from './providers/controls';
 import { provideCommandNames } from './providers/command_names';
 import {
   isEntity,
@@ -26,7 +28,9 @@ import {
   provideEntityNames,
 } from './providers/entities';
 import { provideExpression, type ExpressionSuggestions } from './providers/expressions';
-import { provideExtras } from './providers/extras';
+import { provideExtras, provideStartingQueries } from './providers/extras';
+import { esqlCommandRegistry } from '../../commands/registry';
+import { ReplacementRangeStrategyKind } from '../autocomplete/utils/prefix_range';
 import {
   dependentName,
   dependentRoles,
@@ -257,18 +261,21 @@ const isOutside = (request: SuggestionRequest, entries: string[]): boolean => {
   return !path.some((id) => entries.includes(id));
 };
 
-/** Keeps the first of the items that insert the same text. */
-const present = (items: ISuggestionItem[]): ISuggestionItem[] => {
-  const seen = new Set<string>();
+/**
+ * Where a query starts, what is chosen replaces the whole query, what is written after the
+ * cursor included: a source or a ready-made query starts over. A header statement does not,
+ * as the query comes after it.
+ */
+const replacesWholeQuery =
+  ({ position }: CursorIR) =>
+  (item: ISuggestionItem): ISuggestionItem => {
+    const isHeader =
+      esqlCommandRegistry.getCommandByName(item.label.toLowerCase())?.metadata.type === 'header';
 
-  return items.filter(({ text, label }) => {
-    const key = `${label}|${text}`;
-    const isNew = !seen.has(key);
-    seen.add(key);
-
-    return isNew;
-  });
-};
+    return position === 'start_of_query' && !isHeader
+      ? { ...item, replacementRangeStrategy: { kind: ReplacementRangeStrategyKind.ROOT_QUERY } }
+      : item;
+  };
 
 /** What is offered at a cursor, with the items that continue the command kept apart. */
 interface Collected {
@@ -352,7 +359,8 @@ const collect = async (
       ...assigned,
       ...provided.flatMap(({ items }) => items),
       ...(await provideExtras(context)),
-    ],
+      ...(await provideStartingQueries(context)),
+    ].map(replacesWholeQuery(ir)),
     continuations: provided.filter(
       ({ request }) => request.kind === 'token' || request.kind === 'end_of_command'
     ),
@@ -423,7 +431,12 @@ const provideFollowUps = async (
 
       const isSeparator = request.kind === 'token' && request.follower.class === 'separator';
 
-      return { ...item, text: `${name}${isSeparator ? '' : SEPARATOR_GAP}${item.text}` };
+      // The item replaces the word, so the editor matches it by the word and not by its label.
+      return {
+        ...item,
+        text: `${name}${isSeparator ? '' : SEPARATOR_GAP}${item.text}`,
+        filterText: name,
+      };
     })
   );
 };
@@ -477,12 +490,22 @@ export const suggest = async (
   callbacks?: ESQLCallbacks
 ): Promise<ISuggestionItem[]> => {
   const collected = await collect(fullText, offset, callbacks);
+  const presented = { fullText, offset, ir: collected.ir, context: collected.context };
+  // Right after the character that starts a control, only the controls are offered.
+  const controls = NOTHING_APPLIES.includes(collected.ir.position)
+    ? undefined
+    : provideControls(fullText, offset, callbacks);
+
+  if (controls) {
+    return present(controls, { ...presented, ir: { ...collected.ir, command: undefined } });
+  }
+
   const keywordStart = getLongerKeywordStart(collected.ir, fullText, offset);
 
   if (keywordStart !== undefined) {
     const without = `${fullText.slice(0, keywordStart)}${fullText.slice(offset)}`;
 
-    return present((await collect(without, keywordStart, callbacks)).items);
+    return present((await collect(without, keywordStart, callbacks)).items, presented);
   }
 
   const followUps = await provideFollowUps(fullText, offset, collected, callbacks);
@@ -492,5 +515,5 @@ export const suggest = async (
   const isWholeValue =
     followUps !== undefined && followUps.length === 0 && collected.ir.word?.kind !== 'name';
 
-  return present(followUps?.length || isWholeValue ? followUps ?? [] : collected.items);
+  return present(followUps?.length || isWholeValue ? followUps ?? [] : collected.items, presented);
 };
