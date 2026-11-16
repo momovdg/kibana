@@ -36,6 +36,15 @@ export interface PromqlCursor {
   word?: { text: string; start: number };
   /** The text is a whole query at the cursor. */
   canEnd: boolean;
+  /**
+   * The brackets that are open at the cursor, outermost first, each by the word before it:
+   * the name of a function, a keyword as `by`, or nothing for brackets around an expression.
+   */
+  open: string[];
+  /** The same for the bracket that closes right before the cursor. */
+  closed?: string;
+  /** The text of the last token before the cursor or the word being typed. */
+  previous?: string;
 }
 
 // The rules reported as a whole: the leaves of the grammar a query is made of. What they
@@ -51,6 +60,9 @@ const REPORTED_RULES: readonly string[] = [
 ];
 
 const WORD_END = /[\w.:]$/;
+const WORD = /^[A-Za-z_][\w.:]*$/;
+const OPENER = '(';
+const CLOSER = ')';
 
 type GeneratedParser = InstanceType<typeof PromQLParser>['parser'];
 
@@ -86,6 +98,21 @@ export const locatePromql = (text: string, offset: number): PromqlCursor => {
   core.preferredRules = new Set(REPORTED_RULES.map((rule) => ruleNames.indexOf(rule)));
 
   const candidates = core.collectCandidates(caret.tokenIndex);
+  const written = visible.filter(
+    ({ type, tokenIndex }) => type !== Token.EOF && tokenIndex < caret.tokenIndex
+  );
+  const open: string[] = [];
+  let closed: string | undefined;
+
+  written.forEach(({ text: tokenText }, index) => {
+    closed = undefined;
+    if (tokenText === OPENER) {
+      const name = written[index - 1]?.text ?? '';
+      open.push(WORD.test(name) ? name : '');
+    } else if (tokenText === CLOSER) {
+      closed = open.pop();
+    }
+  });
   const namesOf = (stack: Array<{ ruleIndex: number }>): string[] =>
     stack.map(({ ruleIndex }) => ruleNames[ruleIndex]);
 
@@ -110,5 +137,8 @@ export const locatePromql = (text: string, offset: number): PromqlCursor => {
     ...(isTypingWord && { word: { text: last.text, start: last.start } }),
     // A whole query is one the grammar lets end here.
     canEnd: candidates.tokens.has(Token.EOF),
+    open,
+    ...(closed !== undefined && { closed }),
+    ...(written.length > 0 && { previous: written[written.length - 1].text }),
   };
 };
