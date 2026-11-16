@@ -11,6 +11,8 @@
 export { describeCommands } from './cursor_ir/describe_commands';
 export { getValuePlaceholder, locate, readToEndOfCommand } from './cursor_ir/locate';
 export type { CommandReading } from './cursor_ir/locate';
+export { readOptionShell } from './cursor_ir/option_shell';
+export type { OptionShell, WrittenOption } from './cursor_ir/option_shell';
 export type {
   CallSiteId,
   CursorIR,

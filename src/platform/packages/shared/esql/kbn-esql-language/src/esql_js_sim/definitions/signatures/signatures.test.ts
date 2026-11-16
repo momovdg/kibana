@@ -34,6 +34,8 @@ const referencesOf = (role: ArgumentRole): CallSiteId[] => {
       return [role.on, ...Object.values(role.roles ?? {}).flatMap(referencesOf)];
     case 'map':
       return Object.values(role.parameters).flatMap(({ when }) => Object.keys(when ?? {}));
+    case 'sublanguage':
+      return role.options ? [role.options.names, role.options.values] : [];
     default:
       return [];
   }
