@@ -41,3 +41,5 @@ export { GRAMMAR_LABELS } from './grammar_labels/grammar_labels.generated';
 export { getCalledRules, getCallSites } from './grammar_labels/call_sites';
 export { RULE_END, RULE_START } from './grammar_labels/types';
 export type { CallSite, GrammarLabel } from './grammar_labels/types';
+export { locatePromql } from './promql/locate_promql';
+export type { PromqlCursor, PromqlExpectedRule, PromqlFollower } from './promql/locate_promql';

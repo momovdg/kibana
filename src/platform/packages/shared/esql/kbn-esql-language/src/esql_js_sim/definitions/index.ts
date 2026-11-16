@@ -49,3 +49,5 @@ export type {
   SublanguageRole,
   ValueFormat,
 } from './signatures/types';
+export { getPromqlPart, PROMQL_PARTS } from './promql/promql_parts';
+export type { PromqlPart } from './promql/promql_parts';
