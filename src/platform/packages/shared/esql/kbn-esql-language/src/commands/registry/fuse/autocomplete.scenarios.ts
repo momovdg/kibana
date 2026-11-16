@@ -13,6 +13,9 @@ import type { Scenario, ScenarioTable } from '../../../__tests__/scenarios';
 const rows = (group: string, name: string, queries: string[], exact: string[]): Scenario[] =>
   queries.map((query) => ({ group, name, query, expect: { exact } }));
 
+const withStatus = (status: Scenario['status'], scenarios: Scenario[]): Scenario[] =>
+  scenarios.map((scenario) => ({ ...scenario, status }));
+
 const ARGUMENTS = 'FUSE arguments';
 const SCORE_BY = 'SCORE BY';
 const GROUP_BY = 'GROUP BY';
@@ -41,12 +44,23 @@ export const fuseScenarios: ScenarioTable = {
       ['FROM a | FUSE linear '],
       ['SCORE BY ', 'KEY BY ', 'GROUP BY ', WITH_MAP, ...END_OF_COMMAND]
     ),
-    ...rows(
-      ARGUMENTS,
-      'does not suggest already used arguments',
-      ['FROM a | FUSE linear SCORE BY x KEY BY y '],
-      ['GROUP BY ', WITH_MAP, ...END_OF_COMMAND]
+    ...withStatus(
+      'replaced',
+      rows(
+        ARGUMENTS,
+        'does not suggest already used arguments',
+        ['FROM a | FUSE linear SCORE BY x KEY BY y '],
+        ['GROUP BY ', WITH_MAP, ...END_OF_COMMAND]
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        ARGUMENTS,
+        'does not suggest already used arguments, and a comma for the list of keys',
+        ['FROM a | FUSE linear SCORE BY x KEY BY y '],
+        ['GROUP BY ', WITH_MAP, ', ', ...END_OF_COMMAND]
+      ),
+    ]),
     ...rows(
       ARGUMENTS,
       'does not suggest FUSE type if another argument has been added',
@@ -89,25 +103,54 @@ export const fuseScenarios: ScenarioTable = {
       ['FROM a | FUSE KEY BY keywordField, textField, '],
       stringColumnsExcept('keywordField', 'textField')
     ),
-    ...rows(
-      KEY_BY,
-      'suggests other config arguments after KEY BY fields',
-      ['FROM a | FUSE KEY BY keywordField, textField '],
-      ['SCORE BY ', 'GROUP BY ', WITH_MAP, ...END_OF_COMMAND]
+    ...withStatus(
+      'replaced',
+      rows(
+        KEY_BY,
+        'suggests other config arguments after KEY BY fields',
+        ['FROM a | FUSE KEY BY keywordField, textField '],
+        ['SCORE BY ', 'GROUP BY ', WITH_MAP, ...END_OF_COMMAND]
+      )
     ),
-    ...rows(
-      KEY_BY,
-      'suggests other config arguments and a comma immediately after a field',
-      ['FROM a | FUSE KEY BY keywordField, textField'],
-      [
-        'textField \n',
-        'textField GROUP BY ',
-        'textField SCORE BY ',
-        'textField WITH { $0 }',
-        'textField | ',
-        'textField, ',
-      ]
+    ...withStatus('new', [
+      ...rows(
+        KEY_BY,
+        'suggests other config arguments and a comma after KEY BY fields',
+        ['FROM a | FUSE KEY BY keywordField, textField '],
+        ['SCORE BY ', 'GROUP BY ', WITH_MAP, ', ', ...END_OF_COMMAND]
+      ),
+    ]),
+    ...withStatus(
+      'replaced',
+      rows(
+        KEY_BY,
+        'suggests other config arguments and a comma immediately after a field',
+        ['FROM a | FUSE KEY BY keywordField, textField'],
+        [
+          'textField \n',
+          'textField GROUP BY ',
+          'textField SCORE BY ',
+          'textField WITH { $0 }',
+          'textField | ',
+          'textField, ',
+        ]
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        KEY_BY,
+        'suggests other config arguments and a comma immediately after a field, the new line as it is',
+        ['FROM a | FUSE KEY BY keywordField, textField'],
+        [
+          '\n',
+          'textField GROUP BY ',
+          'textField SCORE BY ',
+          'textField WITH { $0 }',
+          'textField | ',
+          'textField, ',
+        ]
+      ),
+    ]),
     ...rows(
       KEY_BY,
       'suggests no fields when KEY BY follows the WITH map',

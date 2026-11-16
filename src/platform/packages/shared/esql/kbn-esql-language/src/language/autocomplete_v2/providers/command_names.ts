@@ -8,6 +8,8 @@
  */
 
 import type { LicenseType } from '@kbn/licensing-types';
+import { COMMAND_FACTS } from '../../../esql_js_sim/definitions';
+import { getNesting } from '../pipeline';
 import { getCommandAutocompleteDefinitions } from '../../../commands/registry/complete_items';
 import type { ICommand } from '../../../commands/registry/registry';
 import type { ISuggestionItem } from '../../../commands/registry/types';
@@ -60,8 +62,10 @@ export const provideCommandNames = (
   commandRules: string[],
   context: SuggestionContext
 ): ISuggestionItem[] => {
+  const nesting = getNesting(context.ir);
   const names = new Set(
     commandRules
+      .filter((rule) => !(COMMAND_FACTS[rule]?.notInItself && nesting.includes(rule)))
       .map(getRegisteredCommand)
       .filter((command): command is ICommand => command !== undefined)
       .filter((command) => isAvailable(command, context))

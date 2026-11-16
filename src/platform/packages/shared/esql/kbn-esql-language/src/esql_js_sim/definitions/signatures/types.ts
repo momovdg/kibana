@@ -239,6 +239,8 @@ export interface CommandFacts {
   singleUse?: readonly CallSiteId[];
   /** Places the grammar has and Elasticsearch does not support yet: nothing is offered there. */
   unsupported?: readonly CallSiteId[];
+  /** The command cannot be used inside one of its own branches. */
+  notInItself?: boolean;
   /** Each item of the command's list reads the columns the items before it define. */
   readsOwnColumns?: boolean;
 }
