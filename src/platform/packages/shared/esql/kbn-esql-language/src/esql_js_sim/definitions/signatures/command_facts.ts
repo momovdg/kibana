@@ -26,6 +26,8 @@ export const COMMAND_FACTS: Readonly<Record<string, CommandFacts>> = {
   denseVectorCommand: {
     requires: [['denseVectorCommand>qualifiedNames', 'denseVectorNaming.literalInput']],
   },
+  // The grammar lets a branch hold any command; Elasticsearch rejects a FORK inside a FORK.
+  forkCommand: { notInItself: true },
   // `STATS aggFields? (BY fields)?`: at least an aggregation or a grouping is needed.
   statsCommand: { requiresArgument: true },
   // `(fuseConfiguration)*`: Elasticsearch rejects a second `SCORE BY`.

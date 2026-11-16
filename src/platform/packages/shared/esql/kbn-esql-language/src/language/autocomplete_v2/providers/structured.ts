@@ -29,7 +29,7 @@ import { getCommandOutput } from '../../../commands/definitions/utils/columns';
 import { matchesWildcardPattern } from '../../../commands/definitions/utils/regex';
 import type { Commands } from '../../../commands/definitions/keywords';
 import { getRegisteredCommand } from '../command_metadata';
-import { OPENING_PARAMETERS } from '../presentation';
+import { getSuggestedParameterValues, OPENING_PARAMETERS } from '../presentation';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
@@ -148,7 +148,9 @@ const selectableOutputs = (
 export const provideMap = async (
   { parameters }: MapRole,
   argument: ExpectedArgument,
-  context: SuggestionContext
+  context: SuggestionContext,
+  /** The name the map is the value of, when it is one, as the name of a setting. */
+  owner?: string
 ): Promise<ISuggestionItem[]> => {
   if (mapDepth(argument.path) > 1) {
     return [];
@@ -174,6 +176,12 @@ export const provideMap = async (
   }
 
   const name = unquoted(key.text);
+  // The editor's own values for the parameter come first: they are items with a description.
+  const suggested = owner === undefined ? undefined : getSuggestedParameterValues()[owner]?.[name];
+  if (suggested) {
+    return [...suggested];
+  }
+
   const values = [
     ...(await valuesOf(parameter, context)),
     ...selectableOutputs(name, parameters, context),

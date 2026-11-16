@@ -15,6 +15,9 @@ import { getCommandAutocompleteDefinitions } from '../complete_items';
 const rows = (group: string, name: string, queries: string[], exact: string[]): Scenario[] =>
   queries.map((query) => ({ group, name, query, expect: { exact } }));
 
+const withStatus = (status: Scenario['status'], scenarios: Scenario[]): Scenario[] =>
+  scenarios.map((scenario) => ({ ...scenario, status }));
+
 const BRANCHES = 'FORK ...';
 const SUBCOMMANDS = '(COMMAND ... | COMMAND ...)';
 const DELEGATION = 'delegation to subcommands';
@@ -40,6 +43,14 @@ const newColumn = 'col0 = ';
 const processingCommands = esqlCommandRegistry.getProcessingCommandNames();
 const forkSubcommands = getCommandAutocompleteDefinitions(
   processingCommands.filter((name) => name !== 'fork')
+).map(({ text }) => text);
+// The commands that read a time-series source are offered only in a query that has one.
+const forkSubcommandsOfQuery = getCommandAutocompleteDefinitions(
+  processingCommands.filter(
+    (name) =>
+      name !== 'fork' &&
+      esqlCommandRegistry.getCommandByName(name)?.metadata?.requiresTimeseriesSource !== true
+  )
 ).map(({ text }) => text);
 const commandTexts = (names: string[]): string[] => names.map((name) => `${name.toUpperCase()} `);
 const hiddenCommands = processingCommands.filter(
@@ -80,21 +91,47 @@ export const forkScenarios: ScenarioTable = {
       [NEW_BRANCH, ...END_OF_COMMAND]
     ),
 
-    ...rows(
-      SUBCOMMANDS,
-      'suggests FORK sub commands in an open branch',
-      ['FROM a | FORK (', 'FROM a | FORK (WHERE 1) ('],
-      forkSubcommands
+    ...withStatus(
+      'replaced',
+      rows(
+        SUBCOMMANDS,
+        'suggests FORK sub commands in an open branch',
+        ['FROM a | FORK (', 'FROM a | FORK (WHERE 1) ('],
+        forkSubcommands
+      )
     ),
-    ...rows(
-      SUBCOMMANDS,
-      'suggests FORK subcommands after in-branch pipe',
-      [
-        'FROM a | FORK (WHERE keywordField IS NULL | LIMIT 1234 | ',
-        'FROM a | FORK (SORT longField ASC NULLS LAST) (WHERE keywordField IS NULL | LIMIT 1234 | ',
-      ],
-      forkSubcommands
+    ...withStatus('new', [
+      // The commands that need a time-series source are left out of a query that has none.
+      ...rows(
+        SUBCOMMANDS,
+        'suggests FORK sub commands in an open branch, by the source of the query',
+        ['FROM a | FORK (', 'FROM a | FORK (WHERE 1) ('],
+        forkSubcommandsOfQuery
+      ),
+    ]),
+    ...withStatus(
+      'replaced',
+      rows(
+        SUBCOMMANDS,
+        'suggests FORK subcommands after in-branch pipe',
+        [
+          'FROM a | FORK (WHERE keywordField IS NULL | LIMIT 1234 | ',
+          'FROM a | FORK (SORT longField ASC NULLS LAST) (WHERE keywordField IS NULL | LIMIT 1234 | ',
+        ],
+        forkSubcommands
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        SUBCOMMANDS,
+        'suggests FORK subcommands after in-branch pipe, by the source of the query',
+        [
+          'FROM a | FORK (WHERE keywordField IS NULL | LIMIT 1234 | ',
+          'FROM a | FORK (SORT longField ASC NULLS LAST) (WHERE keywordField IS NULL | LIMIT 1234 | ',
+        ],
+        forkSubcommandsOfQuery
+      ),
+    ]),
     ...[
       'FROM a | FORK (WHERE keywordField IS NOT NULL ',
       'FROM a | FORK (LIMIT 1234 ',
@@ -166,12 +203,23 @@ export const forkScenarios: ScenarioTable = {
       ['FROM a | FORK (KEEP ', 'FROM a | FORK (DROP '],
       allColumns
     ),
-    ...rows(
-      DELEGATION,
-      'keep and drop: after a field',
-      ['FROM a | FORK (KEEP integerField ', 'FROM a | FORK (DROP integerField '],
-      [',', ...END_OF_COMMAND]
+    ...withStatus(
+      'replaced',
+      rows(
+        DELEGATION,
+        'keep and drop: after a field',
+        ['FROM a | FORK (KEEP integerField ', 'FROM a | FORK (DROP integerField '],
+        [',', ...END_OF_COMMAND]
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        DELEGATION,
+        'keep and drop: after a field, the comma with a space',
+        ['FROM a | FORK (KEEP integerField ', 'FROM a | FORK (DROP integerField '],
+        [', ', ...END_OF_COMMAND]
+      ),
+    ]),
     ...rows(DELEGATION, 'mv_expand: fields', ['FROM a | FORK (MV_EXPAND '], spacedColumns),
     ...rows(
       DELEGATION,
@@ -225,20 +273,38 @@ export const forkScenarios: ScenarioTable = {
       ['FROM a | FORK (CHANGE_POINT value on '],
       spacedColumns
     ),
-    ...rows(
-      DELEGATION,
-      'lookup join after command name',
-      ['FROM a | FORK (LOOKUP JOIN '],
-      [
-        // The text of the "Create lookup index" item when no index name is typed.
-        '',
-        'join_index ',
-        'join_index_with_alias ',
-        'lookup_index ',
-        'join_index_alias_1 $0',
-        'join_index_alias_2 $0',
-      ]
+    ...withStatus(
+      'replaced',
+      rows(
+        DELEGATION,
+        'lookup join after command name',
+        ['FROM a | FORK (LOOKUP JOIN '],
+        [
+          // The text of the "Create lookup index" item when no index name is typed.
+          '',
+          'join_index ',
+          'join_index_with_alias ',
+          'lookup_index ',
+          'join_index_alias_1 $0',
+          'join_index_alias_2 $0',
+        ]
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        DELEGATION,
+        'lookup join after command name, aliases with a space',
+        ['FROM a | FORK (LOOKUP JOIN '],
+        [
+          '',
+          'join_index ',
+          'join_index_with_alias ',
+          'lookup_index ',
+          'join_index_alias_1 ',
+          'join_index_alias_2 ',
+        ]
+      ),
+    ]),
     {
       group: DELEGATION,
       name: 'lookup join after ON keyword',
@@ -309,12 +375,25 @@ export const forkScenarios: ScenarioTable = {
         }),
       ]
     ),
-    ...rows(
-      DELEGATION,
-      'eval: empty expression',
-      ['FROM a | FORK (EVAL ', 'FROM a | FORK (EVAL ACOS(integerField), '],
-      evalExpression
+    ...withStatus(
+      'replaced',
+      rows(
+        DELEGATION,
+        'eval: empty expression',
+        ['FROM a | FORK (EVAL ', 'FROM a | FORK (EVAL ACOS(integerField), '],
+        evalExpression
+      )
     ),
+    ...withStatus('new', [
+      ...rows(DELEGATION, 'eval: empty expression', ['FROM a | FORK (EVAL '], evalExpression),
+      // A value without a name is a column named by its text, in a branch as outside one.
+      ...rows(
+        DELEGATION,
+        'eval: after a value without a name',
+        ['FROM a | FORK (EVAL ACOS(integerField), '],
+        [...evalExpression, '`ACOS(integerField)` ']
+      ),
+    ]),
     ...rows(
       DELEGATION,
       'eval: within a function',

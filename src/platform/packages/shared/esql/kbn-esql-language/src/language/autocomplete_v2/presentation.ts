@@ -9,8 +9,10 @@
 
 import { i18n } from '@kbn/i18n';
 import {
+  confidenceLevelValueItems,
   defaultLimitValueSuggestions,
   mmrQueryVectorSuggestion,
+  numOfRowsValueItems,
 } from '../../commands/registry/complete_items';
 import { UnmappedFieldsStrategy, type ISuggestionItem } from '../../commands/registry/types';
 import type { CallSiteId, EntityType, ValueFormat } from '../../esql_js_sim/definitions';
@@ -126,6 +128,16 @@ export const getSuggestedValuesByName = (): Readonly<
     project_routing: ['_alias:*', '_alias:_origin'],
     unmapped_fields: Object.values(UnmappedFieldsStrategy),
   },
+});
+
+/**
+ * Values worth offering for a parameter of a map, by the name the map is the value of and the
+ * name of the parameter: the common values of a setting's parameter that takes any number.
+ */
+export const getSuggestedParameterValues = (): Readonly<
+  Record<string, Readonly<Record<string, readonly ISuggestionItem[]>>>
+> => ({
+  approximation: { rows: numOfRowsValueItems, confidence_level: confidenceLevelValueItems },
 });
 
 /**

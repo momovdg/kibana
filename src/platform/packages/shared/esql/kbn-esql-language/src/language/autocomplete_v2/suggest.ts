@@ -35,7 +35,9 @@ import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
   isAssignmentToken,
   isUnknownName,
+  opensBranch,
   opensSubquery,
+  provideBranchOpener,
   provideAssignment,
   provideEndOfCommand,
   provideSubqueryOpener,
@@ -74,8 +76,13 @@ const provideForRole = async (
       const isInMap = partOf(argument) !== undefined;
       const candidates = dependentRoles(role, context);
       const roles = candidates.filter((candidate) => (candidate.kind === 'map') === isInMap);
+      const owner = dependentName(role, context)?.toLowerCase();
       const items = await Promise.all(
-        roles.map((candidate) => provideForRole(candidate, argument, resolved, context))
+        roles.map((candidate) =>
+          candidate.kind === 'map'
+            ? provideMap(candidate, argument, context, owner)
+            : provideForRole(candidate, argument, resolved, context)
+        )
       );
 
       return [
@@ -175,6 +182,9 @@ const provide = async (
         return [];
       }
 
+      if (opensBranch(request.follower)) {
+        return provideBranchOpener();
+      }
       if (opensSubquery(request.follower)) {
         return provideSubqueryOpener(context);
       }
@@ -314,6 +324,8 @@ const collect = async (
 };
 
 const SEPARATOR_GAP = ' ';
+// The words that are values and not names.
+const LITERAL_WORDS: readonly string[] = ['true', 'false', 'null'];
 
 /**
  * What can follow the word being typed when the word is already whole: the items the flow
@@ -337,7 +349,11 @@ const provideFollowUps = async (
   const isKeyword = word.keyword !== undefined;
   const isColumn =
     word.kind === 'name' && (await context.getColumnMap()).has(word.argument?.text ?? word.text);
-  const isValue = !isKeyword && (word.kind === 'number' || word.kind === 'string');
+  const isValue =
+    !isKeyword &&
+    (word.kind === 'number' ||
+      word.kind === 'string' ||
+      LITERAL_WORDS.includes(word.text.toLowerCase()));
   // A name is whole too when it is one of the entities expected there.
   const entity = ir.arguments
     .map(({ path, rule }) => resolveRole(path, rule)?.role)
@@ -434,6 +450,9 @@ export const suggest = async (
 
   const followUps = await provideFollowUps(fullText, offset, collected, callbacks);
 
-  // A word that is already whole is offered with what follows it, and not as itself again.
-  return present(followUps?.length ? followUps : collected.items);
+  // A word that is already whole is offered with what follows it, and not as itself again. A
+  // value that is whole has nothing else to offer, also when nothing follows it.
+  const isWholeValue = followUps !== undefined && collected.ir.word?.kind !== 'name';
+
+  return present(followUps?.length || isWholeValue ? followUps ?? [] : collected.items);
 };
