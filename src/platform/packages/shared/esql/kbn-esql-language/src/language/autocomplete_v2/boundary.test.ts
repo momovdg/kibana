@@ -15,7 +15,7 @@ import { PROVIDER_OVERRIDES } from './overrides';
 const REGISTRY_DIR = resolve(__dirname, '../../commands/registry');
 
 // The arguments allowed to have a provider override. Adding one needs an owner and an issue.
-const ALLOWED_OVERRIDES: readonly string[] = [];
+const ALLOWED_OVERRIDES: readonly string[] = ['promqlCommand>promqlQueryPart'];
 
 const IMPORT = /(?:from|require\(|import\()\s*['"]([^'"]+)['"]/g;
 const STRING_LITERAL = /(['"`])((?:\\.|(?!\1).)*)\1/g;
