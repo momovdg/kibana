@@ -28,6 +28,17 @@ export interface PromqlFollower {
   path: string[];
 }
 
+/** A pair of round brackets in a query. */
+export interface PromqlBracket {
+  /**
+   * The word before the bracket: the name of a function, a keyword as `by`, or nothing for
+   * brackets around an expression.
+   */
+  name: string;
+  /** How many separators are written directly in it: the index of the item at the cursor. */
+  argument: number;
+}
+
 /** What the PromQL grammar says about a cursor in a PromQL text. */
 export interface PromqlCursor {
   rules: PromqlExpectedRule[];
@@ -36,13 +47,10 @@ export interface PromqlCursor {
   word?: { text: string; start: number };
   /** The text is a whole query at the cursor. */
   canEnd: boolean;
-  /**
-   * The brackets that are open at the cursor, outermost first, each by the word before it:
-   * the name of a function, a keyword as `by`, or nothing for brackets around an expression.
-   */
-  open: string[];
-  /** The same for the bracket that closes right before the cursor. */
-  closed?: string;
+  /** The brackets that are open at the cursor, outermost first. */
+  open: PromqlBracket[];
+  /** The bracket that closes right before the cursor. */
+  closed?: PromqlBracket;
   /** The text of the last token before the cursor or the word being typed. */
   previous?: string;
 }
@@ -61,8 +69,16 @@ const REPORTED_RULES: readonly string[] = [
 
 const WORD_END = /[\w.:]$/;
 const WORD = /^[A-Za-z_][\w.:]*$/;
+// The keywords a list of labels in brackets follows.
+const LABEL_LIST_KEYWORDS: readonly string[] = ['by', 'without', 'on', 'ignoring'];
+
+const isFunctionName = ({ name }: { name: string }): boolean =>
+  name !== '' && !LABEL_LIST_KEYWORDS.includes(name.toLowerCase());
 const OPENER = '(';
 const CLOSER = ')';
+const SEPARATOR = ',';
+const OTHER_OPENERS: readonly string[] = ['{', '['];
+const OTHER_CLOSERS: readonly string[] = ['}', ']'];
 
 type GeneratedParser = InstanceType<typeof PromQLParser>['parser'];
 
@@ -101,16 +117,37 @@ export const locatePromql = (text: string, offset: number): PromqlCursor => {
   const written = visible.filter(
     ({ type, tokenIndex }) => type !== Token.EOF && tokenIndex < caret.tokenIndex
   );
-  const open: string[] = [];
-  let closed: string | undefined;
+  const open: PromqlBracket[] = [];
+  let closed: PromqlBracket | undefined;
+  // Braces and square brackets have separators of their own.
+  let nested = 0;
+
+  // Where each open bracket starts, to find the word a list of labels follows.
+  const starts: number[] = [];
+  let closedStart: number | undefined;
 
   written.forEach(({ text: tokenText }, index) => {
+    const justClosed = closed;
     closed = undefined;
     if (tokenText === OPENER) {
-      const name = written[index - 1]?.text ?? '';
-      open.push(WORD.test(name) ? name : '');
+      const leading = written[index - 1]?.text ?? '';
+      // The brackets of a function can come after its list of labels: `sum by (a) (`.
+      const owner =
+        leading === CLOSER && justClosed && closedStart !== undefined && !isFunctionName(justClosed)
+          ? written[closedStart - 2]?.text ?? ''
+          : leading;
+
+      open.push({ name: WORD.test(owner) ? owner : '', argument: 0 });
+      starts.push(index);
     } else if (tokenText === CLOSER) {
       closed = open.pop();
+      closedStart = starts.pop();
+    } else if (OTHER_OPENERS.includes(tokenText)) {
+      nested++;
+    } else if (OTHER_CLOSERS.includes(tokenText)) {
+      nested = Math.max(0, nested - 1);
+    } else if (tokenText === SEPARATOR && nested === 0 && open.length > 0) {
+      open[open.length - 1].argument++;
     }
   });
   const namesOf = (stack: Array<{ ruleIndex: number }>): string[] =>
