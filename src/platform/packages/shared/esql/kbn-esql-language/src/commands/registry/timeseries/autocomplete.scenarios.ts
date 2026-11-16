@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { withSpacedComma } from '../../../__tests__/scenarios';
 import type { Scenario, ScenarioTable, ScenarioWorld } from '../../../__tests__/scenarios';
 import { METADATA_FIELDS } from '../options/metadata';
 
@@ -55,7 +56,7 @@ const timeseriesIndices = [
 
 export const timeseriesScenarios: ScenarioTable = {
   command: 'ts',
-  scenarios: [
+  scenarios: withSpacedComma([
     {
       group: SOURCES,
       name: 'suggests Browse data sources in empty source slots when enabled',
@@ -75,7 +76,22 @@ export const timeseriesScenarios: ScenarioTable = {
       group: SOURCES,
       name: 'can suggest timeseries after one already selected',
       query: 'TS timeseries_index,  ',
+      status: 'replaced',
       expect: { exact: ['timeseries_index_with_alias', 'time_series_index'] },
+    },
+    {
+      group: SOURCES,
+      name: 'suggests the other timeseries indices and the aliases after one already selected',
+      query: 'TS timeseries_index,  ',
+      status: 'new',
+      expect: {
+        exact: [
+          'timeseries_index_with_alias',
+          'time_series_index',
+          'timeseries_index_alias_1',
+          'timeseries_index_alias_2',
+        ],
+      },
     },
 
     ...rows(
@@ -135,5 +151,5 @@ export const timeseriesScenarios: ScenarioTable = {
         ],
       },
     },
-  ],
+  ]),
 };

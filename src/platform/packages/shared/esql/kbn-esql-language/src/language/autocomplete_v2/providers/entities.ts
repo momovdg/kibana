@@ -177,6 +177,37 @@ export const isEntity = async (
 };
 
 /**
+ * The names of the entities the role names, in the scope of the cursor: hidden ones left out,
+ * as are the ones already listed where each is listed once. An alias comes next to its entity.
+ */
+export const provideEntityNames = async (
+  role: EntityRole,
+  resolved: ResolvedRole,
+  context: SuggestionContext
+): Promise<ISuggestionItem[]> => {
+  const items = await ENTITIES[role.entityType].fetch(
+    context.callbacks ?? {},
+    toScope(role, context)
+  );
+  const used = role.unique
+    ? context.ir.written
+        .filter((argument) => !argument.open && roleIdOf(argument) === resolved.id)
+        .map(({ text }) => unquoted(text))
+    : [];
+  const suffix = suffixAfterName(context);
+  const visible = items.filter(({ hidden, name }) => !hidden && !used.includes(name));
+
+  return [
+    ...visible.map((item) => toSuggestion(item.name, item, role.entityType, suffix)),
+    ...visible.flatMap((item) =>
+      (item.aliases ?? [])
+        .filter((alias) => !used.includes(alias))
+        .map((alias) => toSuggestion(alias, item, role.entityType, suffix, 'Alias'))
+    ),
+  ];
+};
+
+/**
  * The entities the role names, in the scope of the cursor. Hidden ones are left out, as are
  * the ones already listed where each is listed once. An alias is offered next to its entity.
  */
@@ -191,17 +222,6 @@ export const provideEntities = async (
     return qualifiers;
   }
 
-  const items = await ENTITIES[role.entityType].fetch(
-    context.callbacks ?? {},
-    toScope(role, context)
-  );
-  const used = role.unique
-    ? context.ir.written
-        .filter((argument) => !argument.open && roleIdOf(argument) === resolved.id)
-        .map(({ text }) => unquoted(text))
-    : [];
-  const suffix = suffixAfterName(context);
-  const visible = items.filter(({ hidden, name }) => !hidden && !used.includes(name));
   const scope = toScope(role, context);
   // What the editor can do where a name is expected. A qualifier typed before the name is
   // not part of it.
@@ -215,11 +235,6 @@ export const provideEntities = async (
     ...actions,
     // Where a subquery can stand for the entity: one per command a subquery can start with.
     ...(role.subqueries && !scope.inSubquery ? provideSubqueries(context) : []),
-    ...visible.map((item) => toSuggestion(item.name, item, role.entityType, suffix)),
-    ...visible.flatMap((item) =>
-      (item.aliases ?? [])
-        .filter((alias) => !used.includes(alias))
-        .map((alias) => toSuggestion(alias, item, role.entityType, suffix, 'Alias'))
-    ),
+    ...(await provideEntityNames(role, resolved, context)),
   ];
 };

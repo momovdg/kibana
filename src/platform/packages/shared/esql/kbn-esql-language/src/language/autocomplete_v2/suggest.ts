@@ -19,7 +19,12 @@ import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/
 import { createContext } from './context';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
 import { provideCommandNames } from './providers/command_names';
-import { isEntity, isQualifierAlone, provideEntities } from './providers/entities';
+import {
+  isEntity,
+  isQualifierAlone,
+  provideEntities,
+  provideEntityNames,
+} from './providers/entities';
 import { provideExpression, type ExpressionSuggestions } from './providers/expressions';
 import { provideExtras } from './providers/extras';
 import {
@@ -46,7 +51,7 @@ import {
 } from './providers/tokens';
 import { isOfExpression, resolve } from './resolve';
 import type { SuggestionContext, SuggestionRequest } from './types';
-import { MAP_OPENER, partOf, pathOf } from './written';
+import { MAP_OPENER, partOf, pathOf, unquoted } from './written';
 
 const NOTHING_APPLIES: readonly string[] = ['inside_comment', 'invalid'];
 
@@ -205,6 +210,32 @@ const provide = async (
   }
 };
 
+/**
+ * Whether the last thing written is an item of a list whose items are listed once, and every
+ * one is listed now: nothing is left to go on with, so the list's separator is not offered.
+ */
+const hasNothingLeftToList = async (context: SuggestionContext): Promise<boolean> => {
+  const last = context.ir.written.at(-1);
+  // An item is a rule argument, or a value the grammar takes as a token.
+  const isItem =
+    last !== undefined && !last.open && (last.kind === 'rule' || last.class === 'value');
+  const resolved = last && isItem ? resolveRole(pathOf(last)) : undefined;
+  const role = resolved?.role;
+
+  if (!resolved || !last || !(role?.kind === 'entity' || role?.kind === 'column') || !role.unique) {
+    return false;
+  }
+
+  const count = async (unique: boolean): Promise<number> =>
+    (role.kind === 'entity'
+      ? await provideEntityNames({ ...role, unique }, resolved, context)
+      : await provideColumns({ ...role, unique }, resolved, context)
+    ).length;
+
+  // Where nothing is known to list, as without an editor to ask, nothing is known to be left out.
+  return (await count(true)) === 0 && (await count(false)) > 0;
+};
+
 /** Whether the request is for something of the command itself, outside these expressions. */
 const isOutside = (request: SuggestionRequest, entries: string[]): boolean => {
   // What is written can still be the name of an assignment and not an expression at all.
@@ -299,9 +330,14 @@ const collect = async (
   const isOnlyNew = assignment !== undefined && (await isUnknownName(context));
   const followsExisting = (request: SuggestionRequest): boolean =>
     isOnlyNew && (request.kind === 'token' || request.kind === 'end_of_command');
+  const isListExhausted = await hasNothingLeftToList(context);
   const provided = await Promise.all(
     requests
       .filter((request) => request !== assignment && !isNewName(request))
+      .filter(
+        (request) =>
+          !(isListExhausted && request.kind === 'token' && request.follower.class === 'separator')
+      )
       .filter((request) => !followsExisting(request))
       .filter((request) => !isOpenerOfRole(request))
       .filter((request) => !unfinished.length || !isOutside(request, unfinished))
@@ -358,10 +394,11 @@ const provideFollowUps = async (
   const entity = ir.arguments
     .map(({ path, rule }) => resolveRole(path, rule)?.role)
     .find((role) => role?.kind === 'entity');
+  // A name in quotes is one too: the quotes are how it is written, not part of it.
   const isEntityName =
-    word.kind === 'name' &&
+    (word.kind === 'name' || word.kind === 'string') &&
     entity?.kind === 'entity' &&
-    (await isEntity(word.argument?.text ?? word.text, entity, context));
+    (await isEntity(unquoted(word.argument?.text ?? word.text), entity, context));
 
   if (!isKeyword && !isColumn && !isValue && !isEntityName) {
     return undefined;
@@ -371,7 +408,7 @@ const provideFollowUps = async (
   const { continuations } = await collect(spaced, offset + SEPARATOR_GAP.length, callbacks);
   const name = word.argument?.text ?? word.text;
 
-  if (isValue) {
+  if (isValue && !isEntityName) {
     return continuations
       .filter(({ request }) => request.kind === 'token' && request.follower.class === 'terminator')
       .flatMap(({ items }) => items);
@@ -452,7 +489,8 @@ export const suggest = async (
 
   // A word that is already whole is offered with what follows it, and not as itself again. A
   // value that is whole has nothing else to offer, also when nothing follows it.
-  const isWholeValue = followUps !== undefined && collected.ir.word?.kind !== 'name';
+  const isWholeValue =
+    followUps !== undefined && followUps.length === 0 && collected.ir.word?.kind !== 'name';
 
   return present(followUps?.length || isWholeValue ? followUps ?? [] : collected.items);
 };
