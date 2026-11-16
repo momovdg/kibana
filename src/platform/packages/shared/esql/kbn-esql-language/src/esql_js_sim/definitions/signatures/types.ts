@@ -190,6 +190,12 @@ export interface ParameterRole {
 export interface SublanguageRole {
   kind: 'sublanguage';
   language: 'promql';
+  /**
+   * The options that can be written before the text, as `name = value`: the place of their
+   * names and the place of their values. The rule of the text takes any token, so the grammar
+   * alone cannot tell an option from the start of the text.
+   */
+  options?: { names: CallSiteId; values: CallSiteId };
 }
 
 /**

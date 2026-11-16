@@ -20,7 +20,10 @@ import {
   buildUserDefinedColumnsDefinitions,
   withAutoSuggest,
 } from '../../../commands/definitions/utils/autocomplete/helpers';
-import { buildConstantsDefinitions } from '../../../commands/definitions/utils/literals';
+import {
+  buildConstantsDefinitions,
+  getDateLiterals,
+} from '../../../commands/definitions/utils/literals';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
 import { getRegisteredCommand } from '../command_metadata';
 import {
@@ -163,6 +166,12 @@ export const provideConstant = (
     return buildConstantsDefinitions([...suggested.values], suggested.detail ?? '', {
       advanceCursorAndOpenSuggestions: true,
     });
+  }
+
+  // A date is a point in time: the ones the editor knows, as the start and the end of its
+  // time range.
+  if (role.valueType === 'date' && !role.allowedValues) {
+    return getDateLiterals();
   }
 
   // A string with a known use gets a ready-made one, and one with a default gets the default,

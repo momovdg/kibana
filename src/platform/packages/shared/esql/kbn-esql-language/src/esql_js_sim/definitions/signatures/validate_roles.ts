@@ -180,7 +180,10 @@ const ROLE_SHAPES: Record<RoleKind, Shape> = {
     optional: { roles: recordOf(role), definedBy: entityType },
   },
   parameter: { required: {}, optional: {} },
-  sublanguage: { required: { language: oneOf(['promql']) }, optional: {} },
+  sublanguage: {
+    required: { language: oneOf(['promql']) },
+    optional: { options: shaped({ required: { names: string, values: string }, optional: {} }) },
+  },
 };
 
 const checkRole = (value: unknown, path: string): string[] => {
