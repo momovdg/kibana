@@ -13,6 +13,9 @@ import type { Scenario, ScenarioTable } from '../../../__tests__/scenarios';
 const rows = (group: string, name: string, queries: string[], exact: string[]): Scenario[] =>
   queries.map((query) => ({ group, name, query, expect: { exact } }));
 
+const withStatus = (status: Scenario['status'], scenarios: Scenario[]): Scenario[] =>
+  scenarios.map((scenario) => ({ ...scenario, status }));
+
 const BASIC = 'Basic command structure';
 const WITH_CLAUSE = 'WITH clause functionality';
 
@@ -43,12 +46,24 @@ const PARAMETER_KEYS = [
 export const highlightScenarios: ScenarioTable = {
   command: 'highlight',
   scenarios: [
-    ...rows(
-      BASIC,
-      'suggests the query snippet, the prefix modifier, full-text functions, ON, WITH and the end of the command, but no bare fields, after HIGHLIGHT',
-      ['from a | highlight '],
-      [QUERY_LITERAL, PREFIX_MODIFIER, ...FULL_TEXT_FUNCTIONS, ...AFTER_QUERY]
+    ...withStatus(
+      'replaced',
+      rows(
+        BASIC,
+        'suggests the query snippet, the prefix modifier, full-text functions, ON, WITH and the end of the command, but no bare fields, after HIGHLIGHT',
+        ['from a | highlight '],
+        [QUERY_LITERAL, PREFIX_MODIFIER, ...FULL_TEXT_FUNCTIONS, ...AFTER_QUERY]
+      )
     ),
+    ...withStatus('new', [
+      // The prefix is named first; its value comes with the next suggestions.
+      ...rows(
+        BASIC,
+        'suggests the query snippet, the prefix name, full-text functions, ON, WITH and the end of the command after HIGHLIGHT',
+        ['from a | highlight '],
+        [QUERY_LITERAL, 'prefix = ', ...FULL_TEXT_FUNCTIONS, ...AFTER_QUERY]
+      ),
+    ]),
     ...rows(
       BASIC,
       'suggests the same without the prefix modifier, and no bare fields, after a prefix',
@@ -70,36 +85,77 @@ export const highlightScenarios: ScenarioTable = {
       query: 'from a | highlight "fo',
       expect: { excludes: [PREFIX_MODIFIER] },
     },
-    ...rows(
-      BASIC,
-      'suggests ON, WITH and the end of the command after a complete query',
-      ['from a | highlight "search query" ', 'from a | highlight MATCH(textField, "ring") '],
-      AFTER_QUERY
+    ...withStatus(
+      'replaced',
+      rows(
+        BASIC,
+        'suggests ON, WITH and the end of the command after a complete query',
+        ['from a | highlight "search query" ', 'from a | highlight MATCH(textField, "ring") '],
+        AFTER_QUERY
+      )
     ),
+    ...withStatus('new', [
+      // A complete query is a value like any other: it can go on with an operator.
+      {
+        group: BASIC,
+        name: 'suggests ON, WITH, the end of the command and operators after a complete query',
+        query: 'from a | highlight MATCH(textField, "ring") ',
+        expect: { exact: [...AFTER_QUERY, ': $0', 'AND $0', 'OR $0', 'NOT'] },
+      },
+      {
+        group: BASIC,
+        name: 'suggests ON, WITH, the end of the command and the match operator after a query string',
+        query: 'from a | highlight "search query" ',
+        expect: { exact: [...AFTER_QUERY, ': $0'] },
+      },
+    ]),
     ...rows(
       BASIC,
       'suggests a lone * and text and keyword fields, but no new column, after ON',
       ['from a | highlight "search query" ON ', 'from a | highlight ON '],
       ['*', ...stringColumns]
     ),
-    ...rows(
-      BASIC,
-      'suggests field continuations after a complete field',
-      [`${ON}keywordField`],
-      [WITH, ', ', ...END_OF_COMMAND, '*', ...stringColumns]
+    ...withStatus(
+      'replaced',
+      rows(
+        BASIC,
+        'suggests field continuations after a complete field',
+        [`${ON}keywordField`],
+        [WITH, ', ', ...END_OF_COMMAND, '*', ...stringColumns]
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        BASIC,
+        'suggests what follows a complete field, with the field',
+        [`${ON}keywordField`],
+        ['\n', 'keywordField, ', `keywordField ${WITH}`, 'keywordField | ']
+      ),
+    ]),
     ...rows(
       BASIC,
       'suggests more fields, but no *, after a comma in the ON list',
       [`${ON}textField, `, `${ON}textField,`, `${ON}textField,key`],
       stringColumns
     ),
-    ...rows(
-      BASIC,
-      'only suggests WITH or the end of the command after *',
-      [`${ON}* `],
-      [WITH, ...END_OF_COMMAND]
+    ...withStatus(
+      'replaced',
+      rows(
+        BASIC,
+        'only suggests WITH or the end of the command after *',
+        [`${ON}* `],
+        [WITH, ...END_OF_COMMAND]
+      )
     ),
+    ...withStatus('new', [
+      // The grammar takes a list after the lone `*` too.
+      ...rows(
+        BASIC,
+        'suggests WITH, a comma and the end of the command after a lone *',
+        [`${ON}* `],
+        [WITH, ', ', ...END_OF_COMMAND]
+      ),
+    ]),
 
     ...rows(
       'Prefix modifier',
