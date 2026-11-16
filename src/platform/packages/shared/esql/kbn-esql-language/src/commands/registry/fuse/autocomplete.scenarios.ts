@@ -151,11 +151,24 @@ export const fuseScenarios: ScenarioTable = {
         ]
       ),
     ]),
-    ...rows(
-      KEY_BY,
-      'suggests no fields when KEY BY follows the WITH map',
-      ['FROM a | FUSE linear SCORE BY keywordField GROUP BY keywordField WITH {} KEY BY '],
-      ['KEY BY ', ...END_OF_COMMAND]
+    ...withStatus(
+      'replaced',
+      rows(
+        KEY_BY,
+        'suggests no fields when KEY BY follows the WITH map',
+        ['FROM a | FUSE linear SCORE BY keywordField GROUP BY keywordField WITH {} KEY BY '],
+        ['KEY BY ', ...END_OF_COMMAND]
+      )
+    ),
+    // The parser rejects a clause after the WITH map, so there is nothing to offer in one.
+    ...withStatus(
+      'new',
+      rows(
+        KEY_BY,
+        'suggests nothing in a clause written after the WITH map',
+        ['FROM a | FUSE linear SCORE BY keywordField GROUP BY keywordField WITH {} KEY BY '],
+        []
+      )
     ),
 
     ...rows(

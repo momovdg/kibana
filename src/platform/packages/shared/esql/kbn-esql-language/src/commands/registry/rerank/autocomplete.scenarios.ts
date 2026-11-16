@@ -166,7 +166,14 @@ export const rerankScenarios: ScenarioTable = {
       'handles empty IN list as incomplete expression',
       [`${ON}textField = keywordField IN () `],
       [...stringColumns, ...stringFunctions]
-    ),
+    ).map((row): Scenario => ({ ...row, status: 'replaced' })),
+    // The parser rejects an empty list, so nothing can be told about what follows it.
+    ...rows(
+      TERMINAL,
+      'suggests nothing after an empty IN list',
+      [`${ON}textField = keywordField IN () `],
+      []
+    ).map((row): Scenario => ({ ...row, status: 'new' })),
 
     ...rows(
       WITH_CLAUSE,
