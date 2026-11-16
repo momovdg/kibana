@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { i18n } from '@kbn/i18n';
 import {
   assignCompletionItem,
   buildSubqueryCompleteItems,
@@ -27,6 +28,7 @@ import { esqlCommandRegistry } from '../../../commands/registry';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import type { SuggestionContext } from '../types';
 import { resolveRole } from '../../../esql_js_sim/definitions';
+import { getRegisteredCommand } from '../command_metadata';
 import { ASSIGNMENT, MAP_OPENER, unquoted } from '../written';
 import { isEntity } from './entities';
 
@@ -108,6 +110,37 @@ export const opensSubquery = ({ class: tokenClass, token, id }: Follower): boole
 
   return next.length > 0 && next.every((successor) => getStartTokens().has(successor.token));
 };
+
+/**
+ * The bracket opens a branch of the command and not a subquery: none of the commands that can
+ * follow it is a source, so what is inside goes on with the rows the command has.
+ */
+export const opensBranch = (follower: Follower): boolean => {
+  const rule = ruleOf(follower.id);
+  const next = rule ? getTokenSuccessors(rule, follower.token).tokens : [];
+  const sources = new Set(
+    Object.entries(getCommandStarts())
+      .filter(([commandRule]) => getRegisteredCommand(commandRule)?.metadata.type === 'source')
+      .flatMap(([, starts]) => starts.map(({ token }) => token))
+  );
+
+  return opensSubquery(follower) && !next.some(({ token }) => sources.has(token));
+};
+
+/** The brackets of a branch, the cursor inside. */
+export const provideBranchOpener = (): ISuggestionItem[] => [
+  withAutoSuggest({
+    label: i18n.translate('esqlLanguage.esql.suggestions.newBranchLabel', {
+      defaultMessage: 'New branch',
+    }),
+    detail: i18n.translate('esqlLanguage.esql.suggestions.newBranchDetail', {
+      defaultMessage: 'Add a new branch to the fork',
+    }),
+    text: '($0)',
+    asSnippet: true,
+    kind: 'Issue',
+  }),
+];
 
 /**
  * The openings of a subquery, one per command a subquery can start with. When the subquery

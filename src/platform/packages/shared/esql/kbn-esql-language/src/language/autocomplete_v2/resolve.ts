@@ -64,6 +64,15 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
     requests.push({ kind: 'end_of_command' });
   }
 
+  // A clause that may be used once is not offered again: its keyword is already written at
+  // the place that repeats the clauses.
+  const isUsedUp = ({ id, class: tokenClass, path: [place] }: Follower): boolean =>
+    tokenClass === 'keyword' &&
+    place !== undefined &&
+    (facts?.singleUse ?? []).includes(place) &&
+    ir.written.some(
+      (written) => written.id === id && written.ancestors.some((ancestor) => ancestor.id === place)
+    );
   const isUnsupported = (place: string | undefined): boolean =>
     place !== undefined && (facts?.unsupported ?? []).includes(place);
 
@@ -72,6 +81,9 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
       continue;
     }
     if ((follower.class === 'pipe' && lacksArgument) || comesLater(follower)) {
+      continue;
+    }
+    if (isUsedUp(follower)) {
       continue;
     }
     if (follower.text !== undefined && !isOfExpression(follower.path)) {
