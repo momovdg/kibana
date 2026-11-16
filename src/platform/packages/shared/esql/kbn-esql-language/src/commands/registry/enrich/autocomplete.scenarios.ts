@@ -95,11 +95,14 @@ export const enrichScenarios: ScenarioTable = {
         'WITH'
       ),
     ]),
-    ...rows(
-      'suggests the assignment after a name that is not an enrich field',
-      ['from a | enrich policy on b with col0 '],
-      ['= $0'],
-      'WITH'
+    ...withStatus(
+      'replaced',
+      rows(
+        'suggests the assignment after a name that is not an enrich field',
+        ['from a | enrich policy on b with col0 '],
+        ['= $0'],
+        'WITH'
+      )
     ),
     ...withStatus(
       'replaced',
@@ -145,11 +148,27 @@ export const enrichScenarios: ScenarioTable = {
         'WITH'
       )
     ),
-    ...rows(
-      'suggests the assignment after a second new column name',
-      ['from a | enrich policy on b with col0 = otherField, col1 '],
-      ['= $0'],
-      'WITH'
+    ...withStatus(
+      'replaced',
+      rows(
+        'suggests the assignment after a second new column name',
+        ['from a | enrich policy on b with col0 = otherField, col1 '],
+        ['= $0'],
+        'WITH'
+      )
+    ),
+    // The assignment is followed by a space and reopens the suggestions, as everywhere else.
+    ...withStatus(
+      'new',
+      rows(
+        'suggests the assignment with a space after a new column name',
+        [
+          'from a | enrich policy on b with col0 ',
+          'from a | enrich policy on b with col0 = otherField, col1 ',
+        ],
+        ['= '],
+        'WITH'
+      )
     ),
   ],
 };
