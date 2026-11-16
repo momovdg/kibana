@@ -270,7 +270,7 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
     default: 'rrf',
   },
   'fuseConfiguration.score': { kind: 'column', types: ['double'] },
-  'fuseConfiguration.key': stringColumn,
+  'fuseConfiguration.key': { kind: 'column', types: STRING_TYPES, unique: true },
   'fuseConfiguration.group': stringColumn,
   'fuseConfiguration.options': {
     kind: 'map',

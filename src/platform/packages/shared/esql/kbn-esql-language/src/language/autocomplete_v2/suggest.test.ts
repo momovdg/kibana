@@ -53,6 +53,13 @@ describe('suggest (v2)', () => {
       expect((await textsAt('FROM a | ', callbacks)).sort()).toEqual(current.sort());
     });
 
+    it('offers no command inside itself where Elasticsearch rejects that', async () => {
+      const texts = await textsAt('FROM a | FORK (', license('platinum'));
+
+      expect(texts).toContain('WHERE ');
+      expect(texts).not.toContain('FORK ');
+    });
+
     it('offers a command that starts in several ways once per way Kibana registered', async () => {
       const texts = await textsAt('FROM a | ');
 
@@ -191,6 +198,18 @@ describe('suggest (v2)', () => {
       });
     });
 
+    it('offers a clause that may be used once only while it is not written', async () => {
+      const texts = await textsAt('FROM a | FUSE SCORE BY x ');
+
+      expect(texts).toEqual(expect.arrayContaining(['KEY BY ', 'GROUP BY ']));
+      expect(texts).not.toContain('SCORE BY ');
+    });
+
+    it('opens a branch with its brackets, and a subquery with the commands it can start with', async () => {
+      expect(await textsAt('FROM a | FORK ')).toEqual(['($0)']);
+      expect(await textsAt('FROM a | WHERE b IN ')).toEqual(expect.arrayContaining(['(FROM $0)']));
+    });
+
     it('offers each item once', async () => {
       const texts = await textsAt('FROM a | SORT 1 ');
 
@@ -277,6 +296,11 @@ describe('suggest (v2)', () => {
     });
 
     describe('a word that is already whole', () => {
+      it('offers only what ends the statement after a whole value, also when nothing does', async () => {
+        expect(await textsAt('SET project_routing = true')).toEqual([';\n']);
+        expect(await suggest('SET project_routing = 123;', 25)).toEqual([]);
+      });
+
       const callbacks = createCallbacks({
         columns: [{ name: 'host', type: 'keyword', userDefined: false }],
       });
@@ -645,6 +669,14 @@ describe('suggest (v2)', () => {
       it('is not offered again for the value of a parameter', async () => {
         expect(await textsAt('FROM x | FUSE rrf WITH { "rank_constant": ')).not.toContain('{ $0 }');
       });
+    });
+
+    it('offers the values the editor has for a parameter of the map a name is given', async () => {
+      expect(await textsAt('SET approximation = { "rows": ')).toEqual([
+        '100000',
+        '500000',
+        '1000000',
+      ]);
     });
 
     it('offers nothing for a key the map does not have', async () => {
