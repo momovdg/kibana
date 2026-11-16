@@ -13,8 +13,10 @@ export {
   passesOn,
   runScenario,
   SUGGEST_FLOWS,
+  withNameSpacing,
   withSpacedComma,
 } from './run';
+export type { NameSpacing } from './run';
 export { createCallbacks, DEFAULT_WORLD } from './world';
 export { counterRateTestFunction } from './test_functions';
 export {

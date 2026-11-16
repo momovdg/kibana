@@ -197,10 +197,12 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
 
   // Inference.
   'completionCommand.targetField': newColumn,
+  // The prompt is a string, or a value whose type is known only when the query runs, as the
+  // result of a CASE.
   'completionCommand.prompt': {
     kind: 'expression',
     mode: 'scalar',
-    types: STRING_TYPES,
+    types: [...STRING_TYPES, 'unknown'],
     format: 'llm_prompt',
   },
   'completionCommand>commandNamedParameters': {

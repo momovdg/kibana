@@ -373,6 +373,13 @@ describe('suggest (v2)', () => {
     });
 
     describe('a word that is already whole', () => {
+      it('offers everything that follows a string once its quote is closed, with the string', async () => {
+        expect(await textsAt('FROM a | DISSECT b "%{c}"')).toEqual(
+          expect.arrayContaining(['"%{c}" | '])
+        );
+        expect(await textsAt('SET project_routing = "x"')).toEqual([';\n']);
+      });
+
       it('offers only what ends the statement after a whole value, also when nothing does', async () => {
         expect(await textsAt('SET project_routing = true')).toEqual([';\n']);
         expect(await suggest('SET project_routing = 123;', 25)).toEqual([]);

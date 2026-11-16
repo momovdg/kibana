@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { columns } from '../../../__tests__/scenarios';
+import { columns, withNameSpacing } from '../../../__tests__/scenarios';
 import type { Scenario, ScenarioTable } from '../../../__tests__/scenarios';
 
 const rows = (name: string, queries: string[], exact: string[]): Scenario[] =>
@@ -19,43 +19,49 @@ const newColumn = 'col0 = ';
 
 export const renameScenarios: ScenarioTable = {
   command: 'rename',
-  scenarios: [
-    ...rows(
-      'suggests fields',
-      [
-        'from a | rename ',
-        'from a | rename fie',
-        'from a | rename field AS foo,',
-        'from a | rename field = foo, ',
-        'from a | rename field AS foo, fie',
-        'from a | rename field = foo, fie',
-      ],
-      [newColumn, ...existingColumns]
-    ),
-    ...rows(
-      'suggests AS after an existing field',
-      [
-        'from a | rename textField ',
-        'from a | rename keywordField AS foo, textField ',
-        'from a | rename keywordField as foo , textField ',
-      ],
-      ['AS ']
-    ),
-    ...rows(
-      'suggests = after a field that does not exist',
-      [
-        'from a | rename field ',
-        'from a | rename keywordField AS foo, field ',
-        'from a | rename keywordField as foo , field ',
-      ],
-      ['= ']
-    ),
-    ...rows('suggests nothing after AS', ['from a | rename keywordField AS '], []),
-    ...rows('suggests fields after =', ['from a | rename field = '], existingColumns),
-    ...rows(
-      'suggests pipe and comma after complete expression',
-      ['from a | rename field AS foo '],
-      ['| ', ', ', '\n']
-    ),
-  ],
+  // Where the new flow ends a name differently from the current flow.
+  scenarios: withNameSpacing(
+    [
+      ...rows(
+        'suggests fields',
+        [
+          'from a | rename ',
+          'from a | rename fie',
+          'from a | rename field AS foo,',
+          'from a | rename field = foo, ',
+          'from a | rename field AS foo, fie',
+          'from a | rename field = foo, fie',
+        ],
+        [newColumn, ...existingColumns]
+      ),
+      ...rows(
+        'suggests AS after an existing field',
+        [
+          'from a | rename textField ',
+          'from a | rename keywordField AS foo, textField ',
+          'from a | rename keywordField as foo , textField ',
+        ],
+        ['AS ']
+      ),
+      ...rows(
+        'suggests = after a field that does not exist',
+        [
+          'from a | rename field ',
+          'from a | rename keywordField AS foo, field ',
+          'from a | rename keywordField as foo , field ',
+        ],
+        ['= ']
+      ),
+      ...rows('suggests nothing after AS', ['from a | rename keywordField AS '], []),
+      ...rows('suggests fields after =', ['from a | rename field = '], existingColumns),
+      ...rows(
+        'suggests pipe and comma after complete expression',
+        ['from a | rename field AS foo '],
+        ['| ', ', ', '\n']
+      ),
+    ],
+    {
+      'from a | rename field = ': 'bare',
+    }
+  ),
 };
