@@ -11,3 +11,11 @@ Object {
   ],
 }
 `;
+
+exports[`the position in a PromQL query, from the grammar agrees with the current flow on these rows: the details the items are built from 1`] = `
+Object {
+  "agree": 80,
+  "compared": 80,
+  "differences": Array [],
+}
+`;
