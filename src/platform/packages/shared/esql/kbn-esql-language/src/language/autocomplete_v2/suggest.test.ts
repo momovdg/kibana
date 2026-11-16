@@ -398,6 +398,10 @@ describe('suggest (v2)', () => {
       expect(await textsAt('FROM names | RENAME taken ', callbacks)).toEqual(['AS ']);
     });
 
+    it('offers the name the editor suggests for an assigned name, selected for renaming', async () => {
+      expect(await textsAt('FROM x | USER_AGENT ')).toEqual(['${1:user_agent} = ']);
+    });
+
     it('picks a name the query does not use yet', async () => {
       expect(await textsAt('FROM x | RENAME col0 = a, ')).toContain('col1 = ');
     });
@@ -419,6 +423,10 @@ describe('suggest (v2)', () => {
       expect(await textsAt('FROM x | COMPLETION pro')).not.toContain(
         '"${0:Your prompt to the LLM.}"'
       );
+    });
+
+    it('offers the default of a string, selected so that typing replaces it', async () => {
+      expect(await textsAt('FROM x | HIGHLIGHT prefix = ')).toEqual(['"${0:highlight_}"']);
     });
 
     it('offers the values the editor suggests where any value is valid', async () => {
@@ -778,6 +786,21 @@ describe('suggest (v2)', () => {
 
       expect(texts).toEqual(expect.arrayContaining(['keywordField ', 'joinIndexOnlyField ']));
       expect(await textsAt('FROM index | WHERE ', world)).not.toContain('joinIndexOnlyField ');
+    });
+
+    it('offers before a required argument no keyword that comes after it', async () => {
+      const start = await textsAt('FROM e | DENSE_VECTOR ', callbacks);
+
+      expect(start).not.toContain('WITH { $0 }');
+      expect(start).not.toContain('| ');
+      expect(await textsAt('FROM e | DENSE_VECTOR k ', callbacks)).toEqual(
+        expect.arrayContaining(['WITH { $0 }', '| '])
+      );
+    });
+
+    it('offers a lone * for every column where the role takes one, while no column is listed', async () => {
+      expect(await textsAt('FROM e | HIGHLIGHT "q" ON ', callbacks)).toContain('*');
+      expect(await textsAt('FROM e | HIGHLIGHT "q" ON k, ', callbacks)).not.toContain('*');
     });
 
     it('lets a command end only once it has the arguments Elasticsearch requires', async () => {

@@ -22,6 +22,10 @@ export const COMMAND_FACTS: Readonly<Record<string, CommandFacts>> = {
   // `JOIN index AS? qualifier`: the grammar has a qualifier for the index, which is not
   // supported yet.
   joinCommand: { unsupported: ['joinTarget>AS', 'joinTarget>UNQUOTED_SOURCE'] },
+  // The grammar lets the input out: the columns to embed, or a text given in their place.
+  denseVectorCommand: {
+    requires: [['denseVectorCommand>qualifiedNames', 'denseVectorNaming.literalInput']],
+  },
   // `STATS aggFields? (BY fields)?`: at least an aggregation or a grouping is needed.
   statsCommand: { requiresArgument: true },
   // `(fuseConfiguration)*`: Elasticsearch rejects a second `SCORE BY`.

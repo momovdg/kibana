@@ -8,7 +8,7 @@
  */
 
 import { COMMAND_FACTS, getExpressionEntry, resolveRole } from '../../esql_js_sim/definitions';
-import type { CursorIR, ExpectedArgument } from '../../esql_js_sim/grammar';
+import type { CursorIR, ExpectedArgument, Follower } from '../../esql_js_sim/grammar';
 import type { SuggestionRequest } from './types';
 
 /** A place inside an expression: its tokens are offered with it, as its operators and brackets. */
@@ -40,9 +40,22 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
   const facts = ir.command === undefined ? undefined : COMMAND_FACTS[ir.command];
   const isWritten = (place: string): boolean =>
     ir.written.some(({ id, ancestors }) => id === place || ancestors.some((a) => a.id === place));
+  // The places that are still required: of the places that meet a requirement, none is written.
+  const missing = (facts?.requires ?? [])
+    .map((places) => [places].flat())
+    .filter((places) => !places.some(isWritten))
+    .flat();
   const lacksArgument =
-    (facts?.requiresArgument === true && ir.written.length <= 1) ||
-    (facts?.requires ?? []).some((place) => !isWritten(place));
+    (facts?.requiresArgument === true && ir.written.length <= 1) || missing.length > 0;
+  // Before a required argument, a keyword is offered only when it leads to that argument or
+  // goes on with what is being written: not one that comes after the argument.
+  const current = ir.written.at(-1)?.ancestors[0]?.id;
+  const comesLater = ({ class: tokenClass, path: [place] }: Follower): boolean =>
+    missing.length > 0 &&
+    tokenClass === 'keyword' &&
+    place !== undefined &&
+    place !== current &&
+    !missing.includes(place);
   const canEnd =
     !lacksArgument &&
     ir.followers.some(({ class: tokenClass }) => tokenClass === 'end' || tokenClass === 'pipe');
@@ -58,7 +71,7 @@ export const resolve = (ir: CursorIR): SuggestionRequest[] => {
     if (follower.startsCommand || follower.class === 'end' || isUnsupported(follower.id)) {
       continue;
     }
-    if (follower.class === 'pipe' && lacksArgument) {
+    if ((follower.class === 'pipe' && lacksArgument) || comesLater(follower)) {
       continue;
     }
     if (follower.text !== undefined && !isOfExpression(follower.path)) {
