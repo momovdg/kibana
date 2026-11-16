@@ -17,6 +17,7 @@ import {
 } from '../../esql_js_sim/definitions';
 import { locate, type CursorIR, type ExpectedArgument } from '../../esql_js_sim/grammar';
 import { createContext } from './context';
+import { atOptionValue } from './option_shell';
 import { present } from './present';
 import { provideColumns, provideConstant, provideNewName } from './providers/arguments';
 import { isOverridden, provideOverride } from './providers/command_override';
@@ -131,12 +132,17 @@ const provideSuggestedValues = (
     (id !== undefined && name !== undefined && getSuggestedValuesByName()[id]?.[name]) || [];
   const isInString = context.ir.position === 'inside_string';
 
-  return values.map((value) => ({
-    label: value,
-    text: isInString ? value : `"${value}"`,
-    kind: 'Value',
-    category: SuggestionCategory.CONSTANT_VALUE,
-  }));
+  return values.map(
+    (value): ISuggestionItem =>
+      typeof value === 'string'
+        ? {
+            label: value,
+            text: isInString ? value : `"${value}"`,
+            kind: 'Value',
+            category: SuggestionCategory.CONSTANT_VALUE,
+          }
+        : value
+  );
 };
 
 // The roles whose value can be a string, and so can be offered inside an open one.
@@ -293,7 +299,10 @@ const collect = async (
   offset: number,
   callbacks?: ESQLCallbacks
 ): Promise<Collected> => {
-  const ir = locate(fullText, offset);
+  const located = locate(fullText, offset);
+  // An option written before a text in another language is read from the tokens.
+  const atValue = atOptionValue(located, fullText, offset);
+  const ir = atValue ?? located;
 
   if (NOTHING_APPLIES.includes(ir.position) || isQualifierAlone(ir)) {
     return { ir, context: undefined, items: [], continuations: [] };
@@ -307,7 +316,7 @@ const collect = async (
   const context = await createContext(fullText, offset, ir, callbacks);
 
   // A command that provides its own suggestions is asked as a whole.
-  if (isOverridden(context)) {
+  if (!atValue && isOverridden(context)) {
     return { ir, context, items: await provideOverride(context), continuations: [] };
   }
 

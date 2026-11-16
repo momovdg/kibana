@@ -34,6 +34,7 @@ const POLICY: CallSiteId = 'enrichCommand.policyName';
 const FUSE_TYPE: CallSiteId = 'fuseCommand.fuseType';
 const SETTING: CallSiteId = 'setField>identifier';
 const PROMQL_PARAM: CallSiteId = 'promqlParam.name';
+const PROMQL_PARAM_VALUE: CallSiteId = 'promqlParam.value';
 
 /**
  * The role of each command argument, by the call site that takes it. A role on a call site
@@ -298,11 +299,11 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
       scrape_interval: {},
     },
   },
-  'promqlParam.value': {
+  [PROMQL_PARAM_VALUE]: {
     kind: 'dependent_value',
     on: PROMQL_PARAM,
     roles: {
-      index: { kind: 'entity', entityType: 'source', indexMode: 'time_series' },
+      index: { kind: 'entity', entityType: 'source', indexMode: 'time_series', unique: true },
       time: { kind: 'constant', valueType: 'date' },
       start: { kind: 'constant', valueType: 'date' },
       end: { kind: 'constant', valueType: 'date' },
@@ -312,7 +313,11 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
     },
   },
   'promqlCommand>valueName': newColumn,
-  'promqlCommand>promqlQueryPart': { kind: 'sublanguage', language: 'promql' },
+  'promqlCommand>promqlQueryPart': {
+    kind: 'sublanguage',
+    language: 'promql',
+    options: { names: PROMQL_PARAM, values: PROMQL_PARAM_VALUE },
+  },
   // The whole query given as a parameter.
   'promqlCommand>NAMED_OR_POSITIONAL_PARAM': { kind: 'parameter' },
 };
