@@ -95,6 +95,12 @@ describe('suggest (v2)', () => {
       expect(texts.map(({ text }) => text)).toContain('scrape_interval = ');
     });
 
+    it('says what each option is for', async () => {
+      const step = (await suggest('PROMQL ', 7, callbacks)).find(({ label }) => label === 'step');
+
+      expect(step?.detail).toBe('Query resolution step (e.g. 1m, 5m, 1h)');
+    });
+
     it('offers the assignment after the name of an option', async () => {
       expect(await textsAt('PROMQL step ', callbacks)).toEqual(['= ']);
     });
