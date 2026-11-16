@@ -13,6 +13,9 @@ import type { Scenario, ScenarioTable } from '../../../__tests__/scenarios';
 const rows = (name: string, queries: string[], exact: string[], group?: string): Scenario[] =>
   queries.map((query) => ({ group, name, query, expect: { exact } }));
 
+const withStatus = (status: Scenario['status'], scenarios: Scenario[]): Scenario[] =>
+  scenarios.map((scenario) => ({ ...scenario, status }));
+
 const MODES = ['any', 'coordinator', 'remote'];
 const POLICIES = ['policy ', '`policy$` '];
 const ENRICH_FIELDS = ['otherField', 'yetAnotherField'];
@@ -68,23 +71,44 @@ export const enrichScenarios: ScenarioTable = {
       ['col1 = ', ...ENRICH_FIELDS],
       'WITH'
     ),
-    ...rows(
-      'waits to suggest fields until space',
-      ['from a | enrich policy on b with col0 = otherField,', 'from a | enrich policy on b with'],
-      [],
-      'WITH'
+    ...withStatus(
+      'replaced',
+      rows(
+        'waits to suggest fields until space',
+        ['from a | enrich policy on b with col0 = otherField,', 'from a | enrich policy on b with'],
+        [],
+        'WITH'
+      )
     ),
+    ...withStatus('new', [
+      ...rows(
+        'suggests fields right after the comma',
+        ['from a | enrich policy on b with col0 = otherField,'],
+        ['col1 = ', ...ENRICH_FIELDS],
+        'WITH'
+      ),
+      // The editor narrows these down to the keyword that is being typed.
+      ...rows(
+        'suggests what the keyword is one of while it is typed',
+        ['from a | enrich policy on b with'],
+        ['WITH ', '| ', '\n'],
+        'WITH'
+      ),
+    ]),
     ...rows(
       'suggests the assignment after a name that is not an enrich field',
       ['from a | enrich policy on b with col0 '],
       ['= $0'],
       'WITH'
     ),
-    ...rows(
-      'suggests the end of the clause after an enrich field',
-      ['from a | enrich policy on b with otherField '],
-      END_OF_CLAUSE,
-      'WITH'
+    ...withStatus(
+      'replaced',
+      rows(
+        'suggests the end of the clause after an enrich field',
+        ['from a | enrich policy on b with otherField '],
+        END_OF_CLAUSE,
+        'WITH'
+      )
     ),
     ...rows(
       'suggests enrich fields after open assignment',
@@ -96,14 +120,30 @@ export const enrichScenarios: ScenarioTable = {
       ENRICH_FIELDS,
       'WITH'
     ),
-    ...rows(
-      'suggests the end of the clause after a complete clause',
-      [
-        'from a | enrich policy on b with col0 = `otherField` ',
-        'from a | enrich policy on b with col0=otherField ',
-      ],
-      END_OF_CLAUSE,
-      'WITH'
+    ...withStatus(
+      'replaced',
+      rows(
+        'suggests the end of the clause after a complete clause',
+        [
+          'from a | enrich policy on b with col0 = `otherField` ',
+          'from a | enrich policy on b with col0=otherField ',
+        ],
+        END_OF_CLAUSE,
+        'WITH'
+      )
+    ),
+    ...withStatus(
+      'new',
+      rows(
+        'suggests the end of the clause, the comma with a space',
+        [
+          'from a | enrich policy on b with otherField ',
+          'from a | enrich policy on b with col0 = `otherField` ',
+          'from a | enrich policy on b with col0=otherField ',
+        ],
+        ['\n', ', ', '| '],
+        'WITH'
+      )
     ),
     ...rows(
       'suggests the assignment after a second new column name',

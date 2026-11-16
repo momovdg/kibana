@@ -26,7 +26,9 @@ import {
 import { esqlCommandRegistry } from '../../../commands/registry';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import type { SuggestionContext } from '../types';
+import { resolveRole } from '../../../esql_js_sim/definitions';
 import { ASSIGNMENT, MAP_OPENER, unquoted } from '../written';
+import { isEntity } from './entities';
 
 const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggestionItem =>
   withAutoSuggest({
@@ -146,19 +148,40 @@ export const isAssignmentToken = ({ class: tokenClass, text }: Follower): boolea
  * The assignment after a name. A name that is an existing column is read as that column, so
  * only a name the query does not have yet can be assigned.
  */
-export const provideAssignment = async ({
-  ir,
-  getColumnMap,
-}: SuggestionContext): Promise<ISuggestionItem[]> => {
+export const provideAssignment = async (context: SuggestionContext): Promise<ISuggestionItem[]> =>
+  (await isKnownName(context)) ? [] : [assignCompletionItem];
+
+/**
+ * Whether the name before the cursor is known to exist as what its other reading is: an
+ * entity or a column. Undefined where the grammar has no other reading to check.
+ */
+const isKnownName = async (context: SuggestionContext): Promise<boolean | undefined> => {
+  const { ir, getColumnMap } = context;
   const name = ir.written.at(-1);
+
   // Where nothing but the assignment can follow the name, the name is a new one whatever it
   // is called.
-  const isNewName = ir.followers.length === 1;
-  const isExisting =
-    !isNewName && name?.kind === 'rule' && (await getColumnMap()).has(unquoted(name.text));
+  if (name?.kind !== 'rule' || ir.followers.length === 1) {
+    return undefined;
+  }
 
-  return isExisting ? [] : [assignCompletionItem];
+  const entity = ir.arguments
+    .filter(({ continues }) => continues)
+    .map(({ path, rule }) => resolveRole(path, rule)?.role)
+    .find((role) => role?.kind === 'entity');
+  const text = unquoted(name.text);
+
+  return entity?.kind === 'entity'
+    ? isEntity(text, entity, context)
+    : (await getColumnMap()).has(text);
 };
+
+/**
+ * Whether the name before the cursor was looked up and is not there: it can only be a new
+ * name, so nothing that follows an existing one applies.
+ */
+export const isUnknownName = async (context: SuggestionContext): Promise<boolean> =>
+  (await isKnownName(context)) === false;
 
 /** The item for a token with a fixed text, by the class of the token alone. */
 export const provideToken = (follower: Follower): ISuggestionItem[] => {

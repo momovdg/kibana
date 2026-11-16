@@ -17,7 +17,8 @@ import type { EntityFacts } from './types';
 export const ENTITY_FACTS: Readonly<Record<EntityType, EntityFacts>> = {
   source: { origin: 'cluster' },
   lookup_index: { origin: 'cluster' },
-  enrich_policy: { origin: 'cluster' },
+  // The mode says on which cluster of a cross-cluster query the enrichment runs.
+  enrich_policy: { origin: 'cluster', qualifiers: ['_any', '_coordinator', '_remote'] },
   inference_endpoint: { origin: 'cluster' },
   enrich_field: { origin: 'parent', parent: 'enrich_policy' },
   metadata_field: { origin: 'language' },

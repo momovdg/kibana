@@ -23,6 +23,8 @@ export interface EntityFacts {
   origin: EntityOrigin;
   /** For a `parent` origin: the entity that has the values. */
   parent?: EntityType;
+  /** Words that may come before a name, joined to it by a colon, as `_any:policy`. */
+  qualifiers?: readonly string[];
 }
 
 /**
