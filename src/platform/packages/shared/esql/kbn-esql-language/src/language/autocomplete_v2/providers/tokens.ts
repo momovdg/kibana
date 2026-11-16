@@ -62,7 +62,7 @@ export const startsLongerKeyword = ({ id, token }: { id?: string; token: string 
 /**
  * The items for a keyword, by what the grammar allows right after it:
  *
- * - nothing has to follow it (`ASC`): the keyword alone;
+ * - nothing has to follow it (`ASC`): the keyword alone, or with a space when a value can;
  * - only other keywords can (`NULLS`, then `FIRST` or `LAST`): the keywords together, as the
  *   first one alone says nothing;
  * - only a map can (`WITH`): the keyword with the braces of the map, the cursor inside;
@@ -75,8 +75,11 @@ const provideKeyword = ({ text = '', token, id }: Follower): ISuggestionItem[] =
     ? getTokenSuccessors(rule, token)
     : { tokens: [], canEnd: false };
 
+  // Alone when nothing has to follow it, unless a value can: then the space opens it.
   if (canEnd) {
-    return [toKeywordItem(label, label)];
+    const takesValue = next.some((successor) => successor.class === 'value');
+
+    return [toKeywordItem(label, takesValue ? `${label} ` : label)];
   }
   if (next.length === 1 && next[0].text === MAP_OPENER) {
     return [toKeywordItem(label, `${label} ${MAP_OPENER} $0 }`, true)];

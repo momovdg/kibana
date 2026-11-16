@@ -8,7 +8,13 @@
  */
 
 import type { ISuggestionItem } from '../../commands/registry/types';
-import { describeScenarios, runScenario, SUGGEST_FLOWS, withSpacedComma } from './run';
+import {
+  describeScenarios,
+  runScenario,
+  SUGGEST_FLOWS,
+  withNameSpacing,
+  withSpacedComma,
+} from './run';
 import type { ScenarioTable, SuggestFlow } from './types';
 
 const item = (text: string, properties: Partial<ISuggestionItem> = {}): ISuggestionItem => ({
@@ -175,5 +181,35 @@ describe('withSpacedComma', () => {
     expect(current).toMatchObject({ status: 'replaced', expect: { exact: [',', '| '] } });
     expect(changed).toMatchObject({ status: 'new', expect: { exact: [', ', '| '] } });
     expect(untouched.status).toBeUndefined();
+  });
+});
+
+describe('withNameSpacing', () => {
+  const row = {
+    name: 'offers names',
+    query: 'FAKE ',
+    expect: { exact: ['a', 'b ', 'FN($0) ', 'c = '] },
+  };
+
+  it('splits the rows at the given positions into one row per flow', () => {
+    const [current, changed] = withNameSpacing([row], { 'FAKE ': 'spaced' });
+
+    expect(current).toMatchObject({ status: 'replaced', expect: row.expect });
+    expect(changed).toMatchObject({
+      status: 'new',
+      expect: { exact: ['a ', 'b ', 'FN($0) ', 'c = '] },
+    });
+  });
+
+  it('takes the space off names, or off functions only', () => {
+    const [, bare] = withNameSpacing([row], { 'FAKE ': 'bare' });
+    const [, bareCalls] = withNameSpacing([row], { 'FAKE ': 'bare_calls' });
+
+    expect(bare.expect.exact).toEqual(['a', 'b', 'FN($0) ', 'c = ']);
+    expect(bareCalls.expect.exact).toEqual(['a', 'b ', 'FN($0)', 'c = ']);
+  });
+
+  it('leaves the rows at other positions as they are', () => {
+    expect(withNameSpacing([row], { 'OTHER ': 'bare' })).toEqual([row]);
   });
 });
