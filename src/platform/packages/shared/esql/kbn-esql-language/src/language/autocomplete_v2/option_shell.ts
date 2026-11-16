@@ -10,6 +10,7 @@ import { ARGUMENT_ROLES, type SublanguageRole } from '../../esql_js_sim/definiti
 import {
   readOptionShell,
   type CursorIR,
+  type OptionShell,
   type WrittenArgument,
   type WrittenOption,
 } from '../../esql_js_sim/grammar';
@@ -24,11 +25,60 @@ const getSublanguageRole = ({ command }: CursorIR): SublanguageRole | undefined 
     .map(([, role]) => role)
     .find((role): role is SublanguageRole => role.kind === 'sublanguage');
 
+/**
+ * The name of the command at the cursor as the first thing written in it. The parser may
+ * read nothing of an unfinished text in another language, so the command is found by where
+ * it starts, not by what was read of it.
+ */
+const commandName = (ir: CursorIR): WrittenArgument[] =>
+  (ir.commands.at(-1)?.arguments ?? ir.written).slice(0, 1);
+
 const toWritten = (
   id: string,
   { text, start, end }: { text: string; start: number; end: number },
   kind: WrittenArgument['kind'] = 'rule'
 ): WrittenArgument => ({ id, kind, text, start, end, index: 0, ancestors: [], complete: true });
+
+/** A text in another language at the end of the command at the cursor, with what is before it. */
+export interface ForeignBody {
+  role: SublanguageRole;
+  shell: OptionShell;
+  /** The options that are written, as the arguments the engine reads. */
+  written: WrittenArgument[];
+}
+
+/**
+ * The text in another language the command at the cursor ends with, and the options written
+ * before it, read from the tokens. Undefined for a command that has no such text.
+ */
+export const getForeignBody = (
+  ir: CursorIR,
+  text: string,
+  offset: number
+): ForeignBody | undefined => {
+  const role = getSublanguageRole(ir);
+  const names = role?.options && ARGUMENT_ROLES[role.options.names];
+
+  if (!role?.options || names?.kind !== 'option_name') {
+    return undefined;
+  }
+
+  const { options } = role;
+  const shell = readOptionShell(text, offset, ir.segment.start, Object.keys(names.options));
+
+  return {
+    role,
+    shell,
+    written: [
+      ...commandName(ir),
+      ...shell.options.flatMap(({ name: optionName, assign, values }) => [
+        toWritten(options.names, optionName),
+        toWritten(`${commandOf(options.names)}>ASSIGN`, assign, 'token'),
+        ...values.map((value) => toWritten(options.values, value)),
+      ]),
+    ],
+  };
+};
 
 /**
  * The cursor as it is at the value of an option written before a text in another language.
@@ -40,13 +90,12 @@ const toWritten = (
 export const atOptionValue = (ir: CursorIR, text: string, offset: number): CursorIR | undefined => {
   const options = getSublanguageRole(ir)?.options;
   const names = options && ARGUMENT_ROLES[options.names];
-  const [name] = ir.commands.at(-1)?.arguments ?? ir.written;
 
-  if (!options || names?.kind !== 'option_name' || !name) {
+  if (!options || names?.kind !== 'option_name') {
     return undefined;
   }
 
-  const shell = readOptionShell(text, offset, name.start, Object.keys(names.options));
+  const shell = readOptionShell(text, offset, ir.segment.start, Object.keys(names.options));
   const current = shell.options.at(-1);
 
   if (shell.bodyStart !== undefined || !current?.open) {
@@ -77,6 +126,6 @@ export const atOptionValue = (ir: CursorIR, text: string, offset: number): Curso
     followers: [],
     onlyFollower: undefined,
     word: word && { text: word.text, start: word.start, kind: 'name', complete: true },
-    written: [name, ...shell.options.flatMap(asWritten)],
+    written: [...commandName(ir), ...shell.options.flatMap(asWritten)],
   };
 };

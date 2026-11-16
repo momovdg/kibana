@@ -2,10 +2,9 @@
 
 exports[`the position in a PromQL query, from the grammar agrees with the current flow on these rows 1`] = `
 Object {
-  "agree": 80,
+  "agree": 81,
   "compared": 83,
   "differences": Array [
-    "\\"sum(avg(quantile_over_time( 0,  bytes_normal_counter   {event.dataset \\\\\\"value\\\\\\"} \\": after_label_selector / after_query",
     "\\"col0 = (\\": inside_function_args / after_query",
     "\\"col0 =\\": inside_function_args / after_query",
   ],
@@ -14,8 +13,11 @@ Object {
 
 exports[`the position in a PromQL query, from the grammar agrees with the current flow on these rows: the details the items are built from 1`] = `
 Object {
-  "agree": 80,
-  "compared": 80,
-  "differences": Array [],
+  "agree": 79,
+  "compared": 81,
+  "differences": Array [
+    "\\"sum(avg(quantile_over_time(0, bytes{event.dataset=\\\\\\"value\\\\\\"} [5\\" (after_label_selector): types=range_vector / types=range_vector canRange",
+    "\\"sum(avg(rate(bytes_counter\\" (after_metric): types=range_vector range / types=range_vector",
+  ],
 }
 `;

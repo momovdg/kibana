@@ -30,10 +30,23 @@ export interface OptionShell {
   options: WrittenOption[];
   /** Where the body starts, when something that is no option is written before the cursor. */
   bodyStart?: number;
+  /** The name the body is given, when it starts with `name =`. */
+  result?: Span;
+  /** The body is in brackets of the command, as in `name = ( ... )`. */
+  wrapped?: boolean;
+  /** Where the text in the other language starts: after the name and the bracket. */
+  textStart?: number;
+  /** Where the text ends, when the bracket of the command around it is closed. */
+  textEnd?: number;
+  /** How many tokens the body has before the cursor, the name and the bracket included. */
+  bodyTokens?: number;
 }
 
 const ASSIGN = '=';
 const SEPARATOR = ',';
+const OPENER = '(';
+const CLOSER = ')';
+const QUOTE = '"';
 
 /**
  * Reads the options written between the name of a command and its body, where the body is
@@ -62,7 +75,33 @@ export const readOptionShell = (
     const [name, assign] = [tokens[index], tokens[index + 1]];
 
     if (!known.includes(name.text.toLowerCase()) || assign?.text !== ASSIGN) {
-      return { options, bodyStart: name.start };
+      // The body: an optional name with its assignment, an optional bracket, then the text.
+      const rest = tokens.slice(index);
+      const result = assign?.text === ASSIGN ? name : undefined;
+      const afterResult = result ? rest.slice(2) : rest;
+      // A bracket at the start is the command's when it holds the whole text: still open at
+      // the cursor, or closed by the last token. One that closes earlier belongs to the text.
+      let depth = 0;
+      const closing = afterResult.findIndex(({ text: tokenText }) => {
+        depth += tokenText === OPENER ? 1 : tokenText === CLOSER ? -1 : 0;
+
+        return depth === 0;
+      });
+      const wrapped =
+        afterResult[0]?.text === OPENER && (closing === -1 || closing === afterResult.length - 1);
+      const [first] = wrapped ? afterResult.slice(1) : afterResult;
+      const previous = wrapped ? afterResult[0] : assign;
+
+      return {
+        options,
+        bodyStart: name.start,
+        ...(result && { result }),
+        wrapped,
+        textStart: first?.start ?? (result || wrapped ? previous?.end ?? offset : name.start),
+        // The bracket that closes the command's own is not part of the text.
+        ...(wrapped && closing !== -1 && { textEnd: afterResult[closing].start }),
+        bodyTokens: rest.length,
+      };
     }
 
     const values: Span[] = [];
@@ -81,7 +120,10 @@ export const readOptionShell = (
         // What is glued to the item belongs to it, as the unit of `5m` or a dash in a name.
         let end = item.end;
         index++;
+        // A value in quotes ends with its closing quote.
+        const isQuoted = item.text.startsWith(QUOTE);
         while (
+          !isQuoted &&
           index < tokens.length &&
           tokens[index].start === end &&
           tokens[index].text !== SEPARATOR
