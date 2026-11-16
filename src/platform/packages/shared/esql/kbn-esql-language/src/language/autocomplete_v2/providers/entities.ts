@@ -34,7 +34,7 @@ const ENTITY_KINDS: Readonly<Record<EntityType, ISuggestionItem['kind']>> = {
   enrich_policy: 'Class',
   enrich_field: 'Variable',
   inference_endpoint: 'Reference',
-  metadata_field: 'Constant',
+  metadata_field: 'Variable',
   setting: 'Reference',
 };
 
@@ -100,7 +100,8 @@ const toSuggestion = (
     detail: detail ?? description,
   };
 
-  return suffix ? withAutoSuggest(item) : item;
+  // A name reopens the suggestions: what follows it comes next, also in a list.
+  return withAutoSuggest(item);
 };
 
 /**

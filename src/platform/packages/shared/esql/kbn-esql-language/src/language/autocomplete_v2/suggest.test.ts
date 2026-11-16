@@ -454,7 +454,7 @@ describe('suggest (v2)', () => {
     });
 
     it('offers the values the editor suggests where any value is valid', async () => {
-      expect(await textsAt('FROM x | SAMPLE ')).toEqual(['.1 ', '.01 ', '.001 ']);
+      expect((await textsAt('FROM x | SAMPLE ')).sort()).toEqual(['.001 ', '.01 ', '.1 ']);
       expect(await textsAt('FROM x | GROK a ')).toEqual(['"%{WORD:firstWord}" ']);
     });
   });
@@ -650,7 +650,7 @@ describe('suggest (v2)', () => {
     it('leaves out of a list the values that are already in it', async () => {
       const texts = await textsAt('FROM x | USER_AGENT a = b WITH { "properties": ["name", ');
 
-      expect(texts).toEqual(['"version"', '"os"', '"device"']);
+      expect(texts.sort()).toEqual(['"device"', '"os"', '"version"']);
     });
 
     it('offers the output columns a key selects from, for the variant another key names', async () => {

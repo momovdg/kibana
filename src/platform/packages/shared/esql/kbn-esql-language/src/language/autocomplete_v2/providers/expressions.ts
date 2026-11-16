@@ -7,12 +7,14 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { i18n } from '@kbn/i18n';
 import { isFunctionExpression, Parser, Walker } from '@elastic/esql';
 import type {
   ESQLAstAllCommands,
   ESQLAstQueryExpression,
   ESQLSingleAstItem,
 } from '@elastic/esql/types';
+import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { FULL_TEXT_SEARCH_DEFINITIONS } from '../../../commands/definitions/constants';
 import {
   buildFieldsDefinitionsWithMetadata,
@@ -297,27 +299,40 @@ const getDefinedColumns = (
   }));
 };
 
-/**
- * The columns of the entity another argument names, as the index a join reads: the ones the
- * query does not have already.
- */
+/** The columns of the entity another argument names, as the index a join reads. */
 const getEntityColumns = async (
   place: CallSiteId,
-  { ir, callbacks }: SuggestionContext,
-  columns: Map<string, ESQLColumnData>
+  { ir, callbacks }: SuggestionContext
 ): Promise<ESQLColumnData[]> => {
   const entity = ir.written.find(({ id }) => id === place);
-  const fields = entity
-    ? (await callbacks?.getColumnsFor?.({ query: `FROM ${entity.text}` })) ?? []
-    : [];
 
-  return fields.filter(({ name }) => !columns.has(name));
+  return entity ? (await callbacks?.getColumnsFor?.({ query: `FROM ${entity.text}` })) ?? [] : [];
 };
+
+/** A column the query and the named entity both have is marked as such, and listed first. */
+const asShared = (item: ISuggestionItem): ISuggestionItem => ({
+  ...item,
+  detail: [
+    item.detail,
+    i18n.translate('esqlLanguage.esql.autocomplete.join.commonFieldNote', {
+      defaultMessage: '(common field)',
+    }),
+  ]
+    .filter(Boolean)
+    .join(' '),
+  category: SuggestionCategory.LOOKUP_COMMON_FIELD,
+  documentation: {
+    value: i18n.translate('esqlLanguage.esql.autocomplete.join.sharedField', {
+      defaultMessage: 'Field shared between the source and the lookup index',
+    }),
+  },
+});
 
 const getCallbacks = (
   role: ExpressionRole,
   parameters: ESQLColumnData[],
   defined: ESQLColumnData[],
+  shared: Set<string>,
   context: SuggestionContext
 ): ICommandCallbacks | undefined => {
   const { callbacks, hasLicense, getColumnsByType, usedNames } = context;
@@ -335,9 +350,9 @@ const getCallbacks = (
       [],
       options
     ),
-    ...(await getColumnsByType(type, ignored, options)).filter(
-      ({ label }) => !redefined.has(label)
-    ),
+    ...(await getColumnsByType(type, ignored, options))
+      .filter(({ label }) => !redefined.has(label))
+      .map((item) => (shared.has(item.label) ? asShared(item) : item)),
   ];
 
   return {
@@ -403,14 +418,18 @@ export const provideExpression = async (
   const inScope = lambda?.kind === 'body' ? lambda.parameters.map(({ name }) => name) : [];
   const parameters = typed.filter(({ name }) => inScope.includes(name));
   const unmappedFieldsStrategy = getUnmappedFieldsStrategy(root.header);
+  const entityColumns = role.columnsOf ? await getEntityColumns(role.columnsOf, context) : [];
   // What the role reads beyond the columns of the query: the names another argument defines,
   // and the columns of the entity another argument names.
   const defined = [
     ...(role.namesOf
       ? getDefinedColumns(role.namesOf, context, columns, unmappedFieldsStrategy)
       : []),
-    ...(role.columnsOf ? await getEntityColumns(role.columnsOf, context, columns) : []),
+    ...entityColumns.filter(({ name }) => !columns.has(name)),
   ];
+  const shared = new Set(
+    entityColumns.filter(({ name }) => columns.has(name)).map(({ name }) => name)
+  );
   const commandContext: ICommandContext = {
     columns: new Map([
       ...columns,
@@ -434,7 +453,7 @@ export const provideExpression = async (
     cursorPosition: offset,
     location: locationOf(role, resolved, context),
     context: fullContext,
-    callbacks: getCallbacks(role, parameters, defined, context),
+    callbacks: getCallbacks(role, parameters, defined, shared, context),
     options: {
       ...(role.types && { preferredExpressionType: [...role.types] }),
       ...(role.subqueries && { allowSubquery: true }),
