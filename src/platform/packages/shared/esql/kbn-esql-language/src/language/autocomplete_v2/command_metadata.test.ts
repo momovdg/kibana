@@ -68,9 +68,11 @@ describe('the positions of the grammar', () => {
     expect(notRegistered).toMatchInlineSnapshot(`
       Array [
         "describeCommand",
+        "eqlCommand",
         "explainCommand",
         "externalCommand",
         "fillNullCommand",
+        "intoCommand",
         "lookupCommand",
         "tsCollapseCommand",
       ]

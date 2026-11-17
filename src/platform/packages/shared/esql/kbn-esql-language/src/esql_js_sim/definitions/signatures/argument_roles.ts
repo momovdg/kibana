@@ -136,14 +136,16 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   },
 
   // JOIN.
-  'joinTarget.index': { kind: 'entity', entityType: 'lookup_index' },
-  'joinTarget>UNQUOTED_SOURCE': { kind: 'new_name', of: 'qualifier' },
+  'lookupJoinTarget.index': { kind: 'entity', entityType: 'lookup_index' },
+  'lookupJoinTarget>UNQUOTED_SOURCE': { kind: 'new_name', of: 'qualifier' },
+  // The target of the joins that take any source: an index pattern, or a subquery in its place.
+  'subqueryJoinTarget>indexPattern': { kind: 'entity', entityType: 'source', subqueries: true },
   // A JOIN condition reads the columns of the input and of the lookup index.
   'joinCondition>booleanExpression': {
     kind: 'expression',
     mode: 'filter',
     types: ['boolean'],
-    columnsOf: 'joinTarget.index',
+    columnsOf: 'lookupJoinTarget.index',
   },
 
   // Extraction.
