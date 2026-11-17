@@ -13,7 +13,7 @@ import { runScenario, SUGGEST_FLOWS } from '../../../__tests__/scenarios';
 import type { ScenarioTable } from '../../../__tests__/scenarios';
 import { getExpressionEntry, resolveRole } from '../../../esql_js_sim/definitions';
 import { locate } from '../../../esql_js_sim/grammar';
-import { describeExpressionPosition, type ExpressionPosition } from './expression_position';
+import { describeExpressionPosition, type ExpressionPosition } from './position';
 
 /** What the expression engine of the current flow worked out, at the innermost level. */
 interface EngineFacts {

@@ -58,20 +58,24 @@ What the engine offers today:
 Inside an open string only a value is offered: the value of a map key or a constant.
 
 An expression is one request, whatever the cursor is nested in: its operands, its operators,
-its brackets and the arguments of its functions are offered together
-(`providers/expressions.ts`). The items come from the expression engine the commands of the
-current flow share. The provider tells that engine what the role and the grammar know:
+its brackets and the arguments of its functions are offered together. The provider
+(`providers/expressions.ts`) runs four steps, each one file in `expressions/`:
 
-- which functions and operators apply, from the mode of the role (and the roles around it: a
-  filter inside an aggregation);
-- the types the role accepts, whether subqueries may appear, where full-text functions may;
-- what is written of the expression: the grammar gives where it starts, and the node of the
-  syntax tree that starts there is handed over.
+| Step | File | What it does |
+|---|---|---|
+| Position | `position.ts` | Where the cursor is inside the expression, from the grammar position alone: the start of an operand, after an operand, after an operator, after `NOT` or a cast, in a string or a map, and the function call and argument it is in |
+| Types | `environment.ts` | The types of what is written, and what the functions written take. The only reader of the syntax tree (`tree.ts`): the type lookup works on its nodes |
+| Offer | `offer.ts`, `operator_forms.ts` | The rule for the position: which operands, which operators, whether the comma. It returns data (`Offer` in `types.ts`) and builds no item |
+| Build | `build.ts` | The items of an offer, from the item builders the commands share. The only file that knows them |
+
+Next to them: `functions.ts` says which functions and operators apply, from the mode of the
+role (and the roles around it: a filter inside an aggregation); `columns.ts` gathers the names
+an expression reads beyond the columns of the query.
 
 While something is written that is not yet a whole expression of the type its role asks for,
 the command cannot go on: no pipe, no keyword and no separator of the command is offered.
 
-A lambda (`v -> v > 1`) is part of an expression (`providers/expression_lambdas.ts`). The grammar allows
+A lambda (`v -> v > 1`) is part of an expression (`expressions/lambdas.ts`). The grammar allows
 one as any argument of any function; which argument takes one is a fact of the function
 (`FUNCTION_LAMBDAS` in the definitions, empty until a function Kibana knows declares one):
 
@@ -85,17 +89,13 @@ one as any argument of any function; which argument takes one is a fact of the f
 
 What to offer inside an expression is decided in this flow. The expression engine of the
 current flow (`suggestForExpression`), which works the position out from the syntax tree and
-the text, is not used.
+the text, is not used (`expressions/no_old_engine.test.ts`). Three tests hold the rules:
 
-- `providers/expression_position.ts` says where the cursor is inside the expression from the
-  grammar position alone: the start of an operand, after an operand, after an operator, after
-  `NOT` or a cast, in a string or a map, and the function call and argument the cursor is in.
-  `expression_position.test.ts` keeps, in a snapshot, how this agrees with what the current
-  engine works out, on every scenario row.
-- `providers/expression_decisions.ts` decides the items for each position, and
-  `providers/expression_special_operators.ts` those of `NOT`, `IS`, `LIKE` and `IN`. The
-  operands of an operator come from the written tree, so precedence is the grammar's.
-- `expression_current_flow.test.ts` compares, item by item with the current flow, the
+- `expressions/position.test.ts` keeps, in a snapshot, how the position agrees with what the
+  current engine works out, on every scenario row.
+- `expressions/offer.test.ts` checks the rules as data: a query, the types of what is written,
+  and the offer that comes out. No editor, no columns, no items.
+- `expressions/current_flow.test.ts` compares, item by item with the current flow, the
   positions no scenario table has a row for.
 
 What is shared with the current flow, by design:
@@ -238,14 +238,14 @@ become one request, keyed by the expression entry:
 
 **Provide.** The expression provider (`providers/expressions.ts`):
 
-- reads the expression position from the written arguments
-  (`providers/expression_position.ts`): `after_operator`, with `>` as the last operator and
-  `doubleField` as its left operand;
+- reads the expression position from the written arguments (`expressions/position.ts`):
+  `after_operator`, with `>` as the last operator and `doubleField` as its left operand;
 - asks for the type of that operand (`double`), from the columns and the syntax tree of the
-  command;
-- decides (`providers/expression_decisions.ts`): the right operand of `>` after a `double`
-  is a number, so the numeric columns and the functions that return a number, as allowed in
-  a `filter`.
+  command (`expressions/environment.ts`);
+- gets the offer (`expressions/offer.ts`): the right operand of `>` after a `double` is a
+  number, so `{ operands: { types: [numbers], columns: true, literals: 'exact' } }`;
+- builds its items (`expressions/build.ts`): the numeric columns and the functions that
+  return a number, as allowed in a `filter`.
 
 It also reports that the expression is unfinished (`doubleField >` is not a boolean yet), so
 nothing of the command outside the expression would be offered.
