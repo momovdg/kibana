@@ -240,16 +240,19 @@ export const provideMapOpener = (
     (names.length === 1 ? names[0] : undefined);
   const content = opening ? `"${opening}": ${valuePlaceholder(parameters[opening])}` : '$0';
 
-  return [
-    withAutoSuggest({
-      label: opening ?? '{ }',
-      text: `{ ${content} }`,
-      asSnippet: true,
-      kind: 'Value',
-      category: SuggestionCategory.CONSTANT_VALUE,
-    }),
-  ];
+  return provideMapBraces(content, opening);
 };
+
+/** The braces of a map as one item, the cursor inside: empty, or with what is given. */
+export const provideMapBraces = (content = '$0', label = '{ }'): ISuggestionItem[] => [
+  withAutoSuggest({
+    label,
+    text: `{ ${content} }`,
+    asSnippet: true,
+    kind: 'Value',
+    category: SuggestionCategory.CONSTANT_VALUE,
+  }),
+];
 
 /**
  * The options that can still be named: not used yet, and not in conflict with one that is.

@@ -14,17 +14,30 @@ cursor and from the command signatures in `../../esql_js_sim`. Rules, enforced b
   it is listed in `overrides.ts`, and the list may grow only with an owner and an issue. The
   list is empty and no provider is wired to it: one is written with the first entry.
 
-## The four steps
+## The steps
 
 `suggest(fullText, offset, callbacks)` has the signature of the current flow's `suggest`.
+`suggest.ts` is the whole flow in a few lines; each step is one file.
 
-1. **Locate** (`esql_js_sim/grammar`): where the cursor is in the grammar.
-2. **Resolve** (`resolve.ts`): what has to be offered there, as a list of requests. A request
-   is a kind of thing: the names of commands, a token, the end of the command, an argument
-   with its role, an expression with its role. It is pure: nothing is fetched.
-3. **Provide** (`providers/`): the items for each request. A provider is chosen by the kind of
-   the request and knows the editor only through the context (`context.ts`).
-4. **Present** (in `suggest.ts` for now): the final list.
+| Step | File | What it does |
+|---|---|---|
+| Locate | `esql_js_sim/grammar` | Where the cursor is in the grammar: the Cursor IR. |
+| Resolve | `resolve.ts` | What has to be offered there, as a list of requests. A request is a kind of thing: the names of commands, a token, the end of the command, an argument with its role, an expression with its role. Pure: nothing is fetched. |
+| Prune | `prune.ts` | The requests the written text rules out, one named rule each: a name that does not exist can only be assigned, an exhausted list has no separator, an unfinished expression comes first. |
+| Provide | `providers/index.ts` | The items for each request. A provider is chosen by the kind of the request and knows the editor only through the context (`context.ts`). |
+| Present | `present.ts` | The final list: each item once, the text it replaces, its place in the list. |
+
+`collect.ts` runs locate, resolve, prune and provide for one cursor. Three things go around
+that path, each in its own file:
+
+- **Controls** (`providers/controls.ts`): right after the character that starts a control,
+  only the controls are offered.
+- **A text in another language** (`option_shell.ts`, `providers/sublanguage.ts`): a command
+  that ends with one, as PROMQL, has its options read from the tokens and its text served by
+  the grammar of that language.
+- **A word that is already whole** (`whole_word.ts`): the flow is asked again one space
+  later, and each continuation is offered with the word. The same file holds the keyword of
+  several words that is being typed (`NULLS F`).
 
 What the engine offers today:
 
@@ -39,8 +52,8 @@ What the engine offers today:
   `map` (the keys not used yet, and the values of the key before the cursor), `option_name`
   (the options not used and not in conflict with a used one) and `dependent_value` (the role
   the name gives it, listed in the signature or defined by the named entity).
-- Expressions, by the mode and the types of their role. Sublanguages are resolved and not
-  provided yet.
+- Expressions, by the mode and the types of their role.
+- The text of a sublanguage, by the grammar of that language.
 
 Inside an open string only a value is offered: the value of a map key or a constant.
 
