@@ -75,6 +75,13 @@ describe('present (v2)', () => {
 
       expect(item?.rangeToReplace).toEqual({ start: 0, end: 16 });
     });
+
+    it('is not the query for a header statement, which comes before it', async () => {
+      const item = itemWith(await at('▮FROM a | LIMIT 1'), 'SET ');
+
+      expect(item).toBeDefined();
+      expect(item?.rangeToReplace).toEqual({ start: 0, end: 0 });
+    });
   });
 
   describe('the order of the items', () => {

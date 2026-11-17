@@ -19,6 +19,7 @@ import { getColumnsByTypeRetriever } from '../../shared/columns_retrieval_helper
 import { getFromCommandHelper } from '../../shared/resources_helpers';
 import { RECOMMENDED_QUERIES } from '../presentation';
 import type { SuggestionContext } from '../types';
+import { startingQueryOver } from './command_names';
 import { pathOf } from '../written';
 
 const NO_EXTENSIONS = { recommendedQueries: [], recommendedFields: [] };
@@ -66,11 +67,11 @@ export const provideExtras = async (context: SuggestionContext): Promise<ISugges
  * What the editor offers where a query starts and nothing is written: queries that are ready
  * to run on the first source the editor knows.
  */
-export const provideStartingQueries = async ({
-  ir,
-  callbacks,
-  text,
-}: SuggestionContext): Promise<ISuggestionItem[]> => {
+export const provideStartingQueries = async (
+  context: SuggestionContext
+): Promise<ISuggestionItem[]> => {
+  const { ir, callbacks, text } = context;
+
   if (ir.position !== 'start_of_query' || ir.enclosingCommands.length > 0) {
     return [];
   }
@@ -86,5 +87,5 @@ export const provideStartingQueries = async ({
   return [
     ...mapRecommendedQueriesFromExtensions(extensions.recommendedQueries),
     ...(await getRecommendedQueriesSuggestionsFromStaticTemplates(getColumnsByType, source)),
-  ];
+  ].map(startingQueryOver(context));
 };

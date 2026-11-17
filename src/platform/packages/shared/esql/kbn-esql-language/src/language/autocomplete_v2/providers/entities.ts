@@ -132,15 +132,17 @@ const provideQualifiers = (
  * Whether the last thing written is a qualifier left behind, as in `_any: `: the name it
  * qualifies is missing. The parser reads no argument there, so the text is read.
  */
-export const isQualifierAlone = ({ segment, word }: CursorIR): boolean => {
+export const isQualifierAlone = ({ segment, word, previous }: CursorIR): boolean => {
+  // While the cursor is still at the qualifier, the name can be typed right after it. A
+  // qualifier is read as a value: after anything else there is none to look for.
+  if (word !== undefined || previous?.class !== 'value') {
+    return false;
+  }
+
   const last = segment.text.trimEnd().split(/\s+/).at(-1)?.toLowerCase();
 
-  // While the cursor is still at the qualifier, the name can be typed right after it.
-  return (
-    word === undefined &&
-    Object.values(ENTITY_FACTS).some(({ qualifiers = [] }) =>
-      qualifiers.some((qualifier) => last === `${qualifier}${QUALIFIER_JOINER}`)
-    )
+  return Object.values(ENTITY_FACTS).some(({ qualifiers = [] }) =>
+    qualifiers.some((qualifier) => last === `${qualifier}${QUALIFIER_JOINER}`)
   );
 };
 
