@@ -11,7 +11,8 @@ cursor and from the command signatures in `../../esql_js_sim`. Rules, enforced b
 - No import from a command's folder under `commands/registry/`.
 - No command name and no grammar rule name of a command (`whereCommand`) as a string.
 - A provider override is the only exception. It is keyed by an argument, never by a command,
-  it is listed in `overrides.ts`, and the list may grow only with an owner and an issue.
+  it is listed in `overrides.ts`, and the list may grow only with an owner and an issue. The
+  list is empty and no provider is wired to it: one is written with the first entry.
 
 ## The four steps
 
@@ -57,7 +58,7 @@ current flow share. The provider tells that engine what the role and the grammar
 While something is written that is not yet a whole expression of the type its role asks for,
 the command cannot go on: no pipe, no keyword and no separator of the command is offered.
 
-A lambda (`v -> v > 1`) is part of an expression (`providers/lambdas.ts`). The grammar allows
+A lambda (`v -> v > 1`) is part of an expression (`providers/expression_lambdas.ts`). The grammar allows
 one as any argument of any function; which argument takes one is a fact of the function
 (`FUNCTION_LAMBDAS` in the definitions, empty until a function Kibana knows declares one):
 

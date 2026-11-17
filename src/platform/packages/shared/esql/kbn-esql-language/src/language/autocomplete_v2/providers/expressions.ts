@@ -65,8 +65,13 @@ import { decideExpression } from './expression_decisions';
 import { getDefinedNames } from './expression_names';
 import { isAssignmentToken } from './tokens';
 import { describeExpressionPosition } from './expression_position';
-import { getLambdas, getLambdaState, type LambdaParameter, type LambdaState } from './lambdas';
-import { getItems, isLoneColumn, lowerTextOf, partOf, unquoted } from '../written';
+import {
+  getLambdas,
+  getLambdaState,
+  type LambdaParameter,
+  type LambdaState,
+} from './expression_lambdas';
+import { getItems, isLoneColumn, lowerTextOf, partOf, pickColumnName, unquoted } from '../written';
 
 /** What the expression at the cursor offers, and whether the command can go on after it. */
 export interface ExpressionSuggestions {
@@ -357,14 +362,7 @@ const getCallbacks = (
 
   return {
     getByType: readsColumnsHere(role, context.ir) || parameters.length ? getByType : undefined,
-    getSuggestedUserDefinedColumnName: () => {
-      let index = 0;
-      while (usedNames.has(`col${index}`)) {
-        index++;
-      }
-
-      return `col${index}`;
-    },
+    getSuggestedUserDefinedColumnName: () => pickColumnName(usedNames),
     getColumnsForQuery: getColumnsFor && (async (query: string) => getColumnsFor({ query })),
     hasMinimumLicenseRequired: hasLicense,
     getKqlSuggestions: callbacks?.getKqlSuggestions,
@@ -528,7 +526,7 @@ export const provideExpression = async (
   const starter = resolved.id === undefined ? undefined : getStartingValues()[resolved.id];
   const readyMade =
     position.kind === 'empty' && !position.call && !ir.word
-      ? [...getValueSnippet(role.format), ...(starter ? [starter] : [])]
+      ? [...getValueSnippet(resolved.id), ...(starter ? [starter] : [])]
       : [];
 
   return {

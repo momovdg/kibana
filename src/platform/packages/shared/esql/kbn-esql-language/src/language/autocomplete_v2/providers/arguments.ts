@@ -33,7 +33,7 @@ import {
   SUGGESTED_NAMES,
 } from '../presentation';
 import type { SuggestionContext } from '../types';
-import { ASSIGNMENT, roleIdOf } from '../written';
+import { ASSIGNMENT, pickColumnName, writtenWithRole } from '../written';
 
 /**
  * Whether the item for an argument ends with a space and opens the next suggestions. It does
@@ -44,13 +44,6 @@ const movesOn = ({ afterName }: SuggestionContext): boolean =>
   afterName.position !== 'invalid' &&
   !afterName.followers.some((follower) => follower.class === 'separator');
 
-/** The texts already written at the places that have the same role. */
-const writtenWithRole = ({ ir }: SuggestionContext, { id }: ResolvedRole): string[] =>
-  ir.written
-    .filter(({ kind, open }) => kind === 'rule' && !open)
-    .filter((argument) => roleIdOf(argument) === id)
-    .map(({ text }) => text.replace(/`/g, ''));
-
 /** The existing columns the role accepts. A column listed once is not offered again. */
 export const provideColumns = async (
   role: ColumnRole,
@@ -58,7 +51,7 @@ export const provideColumns = async (
   context: SuggestionContext
 ): Promise<ISuggestionItem[]> => {
   const moveOn = movesOn(context);
-  const listed = writtenWithRole(context, resolved);
+  const listed = writtenWithRole(context.ir.written, resolved.id);
   // A lone `*` stands for every column the role takes: offered while no column is listed.
   const everyColumn: ISuggestionItem[] =
     role.wildcard === 'alone' && listed.length === 0
@@ -144,12 +137,7 @@ export const provideNewName = (
     ];
   }
 
-  let index = 0;
-  while (context.usedNames.has(`col${index}`)) {
-    index++;
-  }
-
-  return [getNewUserDefinedColumnSuggestion(`col${index}`)];
+  return [getNewUserDefinedColumnSuggestion(pickColumnName(context.usedNames))];
 };
 
 /** The values a constant can take, when its role lists them. */
@@ -189,7 +177,7 @@ export const provideConstant = (
           },
         ]
       : [];
-  const snippet = isInString ? [] : [...getValueSnippet(role.format), ...defaultValue];
+  const snippet = isInString ? [] : [...getValueSnippet(resolved.id), ...defaultValue];
 
   return [
     ...snippet,

@@ -77,3 +77,24 @@ export const getItems = (written: WrittenArgument[], place: CallSiteId): Written
 /** Whether an item is one column and nothing else, as `a` and not `a + 1`. */
 export const isLoneColumn = (parts: WrittenArgument[]): boolean =>
   parts.length === 1 && isColumnPart(parts[0]);
+
+/**
+ * The texts written at the places that have a role, without their quotes: what is already
+ * listed where each thing is listed once. The argument the cursor is in is not one of them.
+ */
+export const writtenWithRole = (written: WrittenArgument[], roleId: string | undefined): string[] =>
+  written
+    .filter((argument) => !argument.open && roleIdOf(argument) === roleId)
+    .map(({ text }) => unquoted(text));
+
+const NEW_COLUMN_PREFIX = 'col';
+
+/** A name for a new column that the query does not use yet: `col0`, `col1`, and so on. */
+export const pickColumnName = (usedNames: Set<string>): string => {
+  let index = 0;
+  while (usedNames.has(`${NEW_COLUMN_PREFIX}${index}`)) {
+    index++;
+  }
+
+  return `${NEW_COLUMN_PREFIX}${index}`;
+};

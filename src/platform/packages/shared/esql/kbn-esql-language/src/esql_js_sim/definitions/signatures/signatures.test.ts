@@ -24,8 +24,6 @@ const callSites = new Set(commandPositions.flatMap(({ path }) => path));
 /** The call sites a role refers to, with what refers to them. */
 const referencesOf = (role: ArgumentRole): CallSiteId[] => {
   switch (role.kind) {
-    case 'column':
-      return role.matches ? [role.matches.argument] : [];
     case 'entity':
       return role.dependsOn ? [role.dependsOn] : [];
     case 'expression':
@@ -62,11 +60,11 @@ describe('the argument roles', () => {
     expect(dangling).toEqual([]);
   });
 
-  it('give every option of an option list a known conflict or requirement', () => {
+  it('give every option of an option list a known conflict', () => {
     const unknown = Object.entries(ARGUMENT_ROLES).flatMap(([id, role]) =>
       role.kind === 'option_name'
-        ? Object.entries(role.options).flatMap(([name, { conflictsWith = [], requires = [] }]) =>
-            [...conflictsWith, ...requires]
+        ? Object.entries(role.options).flatMap(([name, { conflictsWith = [] }]) =>
+            conflictsWith
               .filter((other) => !(other in role.options))
               .map((other) => `${id}: ${name} -> ${other}`)
           )

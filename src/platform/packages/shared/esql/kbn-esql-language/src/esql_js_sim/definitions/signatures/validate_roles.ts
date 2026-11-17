@@ -77,17 +77,9 @@ const shaped =
 
 const string = ofType('string');
 const boolean = ofType('boolean');
-const number = ofType('number');
 const strings = listOf(string);
 const entityType = oneOf(ENTITY_TYPES);
-const valueFormat = oneOf([
-  'llm_prompt',
-  'search_query',
-  'dissect_pattern',
-  'grok_pattern',
-  'separator',
-  'highlight_text',
-]);
+const valueFormat = oneOf(['dissect_pattern', 'grok_pattern', 'separator']);
 
 // A role may hold roles (the roles of a dependent value), so the check refers to itself.
 const role: FieldCheck = (value, path) => checkRole(value, path);
@@ -100,7 +92,6 @@ const ROLE_SHAPES: Record<RoleKind, Shape> = {
       types: strings,
       wildcard: oneOf(['pattern', 'alone']),
       unique: boolean,
-      matches: shaped({ required: { argument: string, property: string }, optional: {} }),
     },
   },
   new_name: { required: { of: oneOf(['column', 'subquery', 'qualifier']) }, optional: {} },
@@ -130,14 +121,11 @@ const ROLE_SHAPES: Record<RoleKind, Shape> = {
       allowedValues: strings,
       default: string,
       format: valueFormat,
-      range: shaped({ required: {}, optional: { min: number, max: number, exclusive: boolean } }),
     },
   },
   option_name: {
     required: {
-      options: recordOf(
-        shaped({ required: {}, optional: { conflictsWith: strings, requires: strings } })
-      ),
+      options: recordOf(shaped({ required: {}, optional: { conflictsWith: strings } })),
     },
     optional: {},
   },
@@ -172,7 +160,6 @@ const ROLE_SHAPES: Record<RoleKind, Shape> = {
       fullTextOnlyIn: string,
       columnsOf: string,
       namesOf: string,
-      format: valueFormat,
     },
   },
   dependent_value: {

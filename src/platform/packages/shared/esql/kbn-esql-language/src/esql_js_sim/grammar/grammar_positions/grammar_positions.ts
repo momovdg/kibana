@@ -8,7 +8,7 @@
  */
 
 import { Parser } from '@elastic/esql';
-import { callSiteId } from '../cursor_ir/call_site_id';
+import { ruleOfCallSite, callSiteId } from '../cursor_ir/call_site_id';
 import { classifyToken, getTokenText, isExpressionRule } from '../cursor_ir/token_classes';
 import type { CallSiteId } from '../cursor_ir/types';
 import { getCommandRuleNames, startsCommand } from '../cursor_location/command_rules';
@@ -210,7 +210,6 @@ export const getGrammarPositions = (): GrammarPosition[] => {
 };
 
 // The rule a call site is in: the part of its id before the label or the called rule.
-const callerOf = (id: CallSiteId): string => id.split(/[.>]/)[0];
 
 /**
  * Folds the repeats out of a path. A rule that contains itself, as a map inside a map, makes
@@ -221,7 +220,7 @@ export const withoutRecursion = (path: CallSiteId[]): CallSiteId[] => {
   const folded: CallSiteId[] = [];
 
   for (const id of path) {
-    const reentered = folded.findIndex((earlier) => callerOf(earlier) === callerOf(id));
+    const reentered = folded.findIndex((earlier) => ruleOfCallSite(earlier) === ruleOfCallSite(id));
     if (reentered !== -1) {
       folded.length = reentered;
     }
