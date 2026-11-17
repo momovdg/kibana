@@ -95,9 +95,10 @@ Object {
     "expression: ipLocationCommand>primaryExpression -> primaryExpression",
   ],
   "joinCommand": Array [
-    "argument: joinCommand>joinTarget / joinTarget.index -> indexPattern",
+    "argument: joinCommand>lookupJoinTarget / lookupJoinTarget.index -> indexPattern",
+    "argument: joinCommand>subqueryJoinTarget / subqueryJoinTarget>indexPattern -> indexPattern",
     "expression: joinCommand>joinCondition / joinCondition>booleanExpression -> booleanExpression",
-    "value_token: joinCommand>joinTarget / joinTarget>UNQUOTED_SOURCE -> UNQUOTED_SOURCE",
+    "value_token: joinCommand>lookupJoinTarget / lookupJoinTarget>UNQUOTED_SOURCE -> UNQUOTED_SOURCE",
   ],
   "keepCommand": Array [
     "argument: keepCommand>qualifiedNamePatterns / qualifiedNamePatterns>qualifiedNamePattern -> qualifiedNamePattern",
