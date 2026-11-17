@@ -6,11 +6,7 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import {
-  inOperators,
-  logicalOperators,
-  nullCheckOperators,
-} from '../../../commands/definitions/all_operators';
+import { inOperators, logicalOperators } from '../../../commands/definitions/all_operators';
 import {
   FunctionDefinitionTypes,
   isArrayType,
@@ -31,7 +27,6 @@ import { parseMapParams } from '../../../commands/definitions/utils/maps';
 import { getTimeUnitLiterals } from '../../../commands/definitions/utils/literals';
 import {
   canAcceptMoreArgs,
-  doesParamAcceptType,
   extractSignatureMapParams,
   isAmbiguousPosition,
   isTypeAcceptedAtPosition,
@@ -113,8 +108,71 @@ const getOperatorRule = (
     ctx: { options: { preferredExpressionType: [...preferred] } } as ExpressionContext,
   });
 
+/** What is known of a value beyond its type. */
+interface AfterValue {
+  /** The function whose argument the value is. */
+  call?: Offer['call'];
+  /** It is one literal, written out. */
+  isLiteral?: boolean;
+  /** It is what an operator gives. */
+  isResult?: boolean;
+}
+
 const isLiteralAlone = (written: Array<{ id: string }>): boolean =>
   written.length === 1 && partOf(written[0]) === 'literal';
+
+/**
+ * What can follow a value, wherever it is: the operators that take its type on their left,
+ * and inside a function call the comma when the value can be the whole argument.
+ *
+ * - A condition that is whole (what an operator gives, or `true` written out) is only joined
+ *   to another condition.
+ * - Inside a call, a string, an IP or a version that is written out takes no operator.
+ */
+const offerAfterValue = (
+  input: OfferInput,
+  type: ExpressionType,
+  { call, isLiteral = false, isResult = false }: AfterValue
+): Offer => {
+  if (!isParameterType(type)) {
+    return NOTHING;
+  }
+
+  const parameter = call?.parameter;
+  const rule = getOperatorRule(type, input, parameter);
+  const canExtend = !call || !isLiteral || isNumericType(type) || type === 'boolean';
+  const isWholeCondition = type === 'boolean' && (isResult || isLiteral);
+
+  return {
+    call,
+    ...(rule.shouldSuggest &&
+      canExtend && {
+        operators: {
+          after: type === 'param' ? undefined : type,
+          allowed: isWholeCondition
+            ? rule.allowedOperators ?? getLogicalNames(input)
+            : rule.allowedOperators,
+          // A match needs a column on its left: what an operator gives is none.
+          ignored: isResult ? [ASSIGNMENT, MATCH] : [ASSIGNMENT],
+        },
+      }),
+    ...(parameter && {
+      comma: {
+        position: 'after_complete',
+        typeMatches: isTypeAcceptedAtPosition(parameter, type, isLiteral),
+        isLiteral,
+        hasMoreParams: canAcceptMoreArgs(parameter),
+        isVariadic: hasVariadicSignature(parameter.signatures),
+        isAmbiguousPosition: isAmbiguousPosition(parameter),
+        isExpressionHeavy: hasArbitraryExpressionSignature(
+          parameter.functionDefinition?.signatures ?? []
+        ),
+        expressionType: type,
+        isCursorFollowedByComma: input.ir.next?.class === 'separator',
+      },
+    }),
+  };
+};
 
 /**
  * After a complete operand that no operator is written with, outside a function call: the
@@ -154,21 +212,11 @@ const offerAfterOperand = (input: OfferInput): Offer => {
     return NOTHING;
   }
 
-  const rule = getOperatorRule(expressionType, input);
   // Inside brackets that may hold a list, as that of `IN`, the next value can follow.
   const canListNext = allowsSubquery && openers > closers && ir.next?.class === 'closer';
 
   return {
-    ...(rule.shouldSuggest && {
-      operators: {
-        after: expressionType === 'param' ? undefined : expressionType,
-        allowed:
-          isLiteralAlone(values) && expressionType === 'boolean'
-            ? getLogicalNames(input)
-            : rule.allowedOperators,
-        ignored: [ASSIGNMENT],
-      },
-    }),
+    ...offerAfterValue(input, expressionType, { isLiteral: isLiteralAlone(values) }),
     items: canListNext ? [commaWithAutoSuggestCompleteItem] : [],
   };
 };
@@ -201,53 +249,6 @@ const getResultType = (
   const closedCall = last?.class === 'closer' && last.ancestors.at(-1);
 
   return closedCall && closedCall.id === FUNCTION_CALL ? typeOf(closedCall) : typeOf(range);
-};
-
-/**
- * The operators that can follow what an operator gives, and inside a function call the comma
- * when that can be the whole argument.
- */
-const offerAfterResult = (
-  input: OfferInput,
-  result: ExpressionType,
-  call: Offer['call']
-): Offer => {
-  const { written } = input.position;
-  const parameter = call?.parameter;
-  const [first] = written;
-  const isInBrackets = first.class === 'opener' && written.at(-1)?.class === 'closer';
-  const rule = getOperatorRule(result, input, parameter);
-  const allowedByType =
-    result === 'boolean' && isInBrackets && !parameter
-      ? namesOf([...logicalOperators, ...nullCheckOperators])
-      : rule.allowedOperators;
-  const allowed = allowedByType ?? (result === 'boolean' ? getLogicalNames(input) : undefined);
-
-  return {
-    call,
-    ...(rule.shouldSuggest && {
-      operators: {
-        after: (UNTYPED.includes(result) ? 'any' : result) as FunctionParameterType,
-        ignored: [ASSIGNMENT, MATCH],
-        allowed,
-      },
-    }),
-    // The result can be a whole argument: the next one can follow.
-    ...(parameter && {
-      comma: {
-        position: 'after_complete',
-        typeMatches: doesParamAcceptType(parameter, result, false),
-        isLiteral: false,
-        hasMoreParams: canAcceptMoreArgs(parameter),
-        isVariadic: hasVariadicSignature(parameter.signatures),
-        hasMoreMandatoryArgs: parameter.hasMoreMandatoryArgs,
-        isExpressionHeavy: hasArbitraryExpressionSignature(
-          parameter.functionDefinition?.signatures ?? []
-        ),
-        isCursorFollowedByComma: false,
-      },
-    }),
-  };
 };
 
 /** The call with what its definition says about the argument at the cursor, when it is known. */
@@ -310,11 +311,10 @@ const offerAfterOperator = (input: OfferInput): Offer | undefined => {
     const last = following.at(-1);
 
     return first && last
-      ? offerAfterResult(
-          input,
-          getResultType(typeOf, { start: first.start, end: last.end }, last),
-          call
-        )
+      ? offerAfterValue(input, getResultType(typeOf, { start: first.start, end: last.end }, last), {
+          call,
+          isResult: true,
+        })
       : undefined;
   }
 
@@ -375,11 +375,10 @@ const offerAfterOperator = (input: OfferInput): Offer | undefined => {
     }
 
     // What the operator gives; when its right operand is a function call, what the call gives.
-    return offerAfterResult(
-      input,
-      getResultType(typeOf, { ...left, end: right.end }, lastWritten),
-      call
-    );
+    return offerAfterValue(input, getResultType(typeOf, { ...left, end: right.end }, lastWritten), {
+      call,
+      isResult: true,
+    });
   };
 
   // The match operator takes a constant of the type its left operand asks for.
@@ -436,7 +435,7 @@ const offerAfterOperandInCall = (
   }
 
   const isLiteral = isLiteralAlone(position.written.filter((item) => item.kind === 'rule'));
-  const { hasMoreMandatoryArgs, functionDefinition, paramDefinitions, signatures } = parameter;
+  const { hasMoreMandatoryArgs, functionDefinition, paramDefinitions } = parameter;
   const takesTime = paramDefinitions.some((definition) => TIME_TYPES.includes(definition.type));
 
   // A number where a time span is taken needs its unit.
@@ -448,32 +447,7 @@ const offerAfterOperandInCall = (
     };
   }
 
-  const rule = getOperatorRule(type, input, parameter);
-  // A string, an IP or a version that is written out takes no operator.
-  const canExtend = !isLiteral || isNumericType(type) || type === 'boolean';
-
-  return {
-    call,
-    ...(rule.shouldSuggest &&
-      canExtend && {
-        operators: {
-          after: type === 'param' ? undefined : type,
-          allowed: isLiteral && type === 'boolean' ? getLogicalNames(input) : rule.allowedOperators,
-          ignored: [ASSIGNMENT],
-        },
-      }),
-    comma: {
-      position: 'after_complete',
-      typeMatches: isTypeAcceptedAtPosition(parameter, type, isLiteral),
-      isLiteral,
-      hasMoreParams: canAcceptMoreArgs(parameter),
-      isVariadic: hasVariadicSignature(signatures),
-      isAmbiguousPosition: isAmbiguousPosition(parameter),
-      isExpressionHeavy: hasArbitraryExpressionSignature(functionDefinition?.signatures ?? []),
-      expressionType: type,
-      isCursorFollowedByComma: isFollowedByComma,
-    },
-  };
+  return offerAfterValue(input, type, { call, isLiteral });
 };
 
 /**
