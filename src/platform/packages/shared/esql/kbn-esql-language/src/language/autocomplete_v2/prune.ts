@@ -12,7 +12,7 @@ import { provide } from './providers';
 import { provideColumns } from './providers/arguments';
 import { provideEntityNames } from './providers/entities';
 import type { ExpressionSuggestions } from './providers/expressions';
-import { isAssignmentToken, isUnknownName, opensSubquery } from './providers/tokens';
+import { isAssignmentToken, isUnknownName } from './providers/tokens';
 import type { ISuggestionItem } from '../../commands/registry/types';
 import type { SuggestionContext, SuggestionRequest } from './types';
 import { pathOf } from './written';
@@ -36,8 +36,6 @@ export interface PruneState {
   isUnknownName: boolean;
   /** Every item of the list the cursor is after is listed. */
   isListExhausted: boolean;
-  /** An entity is expected: its role says whether a subquery can stand for it. */
-  roleDecidesSubquery: boolean;
 }
 
 /**
@@ -103,9 +101,6 @@ export const getPruneState = async (
     unfinished: expressions.filter(({ isUnfinished }) => isUnfinished).map(({ entry }) => entry),
     isUnknownName: assignment !== undefined && (await isUnknownName(context)),
     isListExhausted: await hasNothingLeftToList(context),
-    roleDecidesSubquery: requests.some(
-      (request) => request.kind === 'argument' && request.resolved?.role.kind === 'entity'
-    ),
   };
 };
 
@@ -129,10 +124,6 @@ const PRUNE_RULES: Readonly<Record<string, PruneRule>> = {
   // one applies.
   nothingFollowsUnknownName: (request, state) =>
     state.isUnknownName && (request.kind === 'token' || request.kind === 'end_of_command'),
-  // Where an entity is expected, its role says whether a subquery can stand for it: the
-  // bracket alone does not.
-  roleDecidesSubquery: (request, { roleDecidesSubquery }) =>
-    roleDecidesSubquery && request.kind === 'token' && opensSubquery(request.follower),
   // While an expression is unfinished the command cannot go on: only the expression can.
   unfinishedExpressionComesFirst: (request, { unfinished }) =>
     unfinished.length > 0 && isOutside(request, unfinished),

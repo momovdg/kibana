@@ -13,6 +13,7 @@ import { getNesting } from '../pipeline';
 import { getCommandAutocompleteDefinitions } from '../../../commands/registry/complete_items';
 import type { ICommand } from '../../../commands/registry/registry';
 import type { ISuggestionItem } from '../../../commands/registry/types';
+import { ReplacementRangeStrategyKind } from '../../autocomplete/utils/prefix_range';
 import { getRegisteredCommand } from '../command_metadata';
 import type { SuggestionContext } from '../types';
 
@@ -63,14 +64,29 @@ export const provideCommandNames = (
   context: SuggestionContext
 ): ISuggestionItem[] => {
   const nesting = getNesting(context.ir);
-  const names = new Set(
+  const commands = new Set(
     commandRules
       .filter((rule) => !(COMMAND_FACTS[rule]?.notInItself && nesting.includes(rule)))
       .map(getRegisteredCommand)
       .filter((command): command is ICommand => command !== undefined)
       .filter((command) => isAvailable(command, context))
-      .map(({ name }) => name)
   );
 
-  return getCommandAutocompleteDefinitions([...names]);
+  // A header statement comes before the query, so it does not start the query over.
+  return [...commands].flatMap(({ name, metadata }) => {
+    const items = getCommandAutocompleteDefinitions([name]);
+
+    return metadata.type === 'header' ? items : items.map(startingQueryOver(context));
+  });
 };
+
+/**
+ * Where a query starts, what is chosen replaces the whole query, what is written after the
+ * cursor included: a source or a ready-made query starts over.
+ */
+export const startingQueryOver =
+  ({ ir: { position } }: SuggestionContext) =>
+  (item: ISuggestionItem): ISuggestionItem =>
+    position === 'start_of_query'
+      ? { ...item, replacementRangeStrategy: { kind: ReplacementRangeStrategyKind.ROOT_QUERY } }
+      : item;

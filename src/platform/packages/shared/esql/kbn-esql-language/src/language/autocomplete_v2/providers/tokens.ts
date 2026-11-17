@@ -193,7 +193,8 @@ const isKnownName = async (context: SuggestionContext): Promise<boolean | undefi
 
   // Where nothing but the assignment can follow the name, the name is a new one whatever it
   // is called.
-  if (name?.kind !== 'rule' || ir.followers.length === 1) {
+  const canOnlyBeAssigned = ir.followers.length === 1;
+  if (name?.kind !== 'rule' || canOnlyBeAssigned) {
     return undefined;
   }
   // A parameter stands for a name that is given later: there is nothing to look up.
@@ -250,6 +251,9 @@ export const provideToken = (follower: Follower): ISuggestionItem[] => {
 /** The item that ends the command by moving to the next line. */
 export const provideEndOfCommand = (): ISuggestionItem[] => [newLineCompleteItem];
 
+const expectsEntity = ({ ir }: SuggestionContext): boolean =>
+  ir.arguments.some(({ path, rule }) => resolveRole(path, rule)?.role.kind === 'entity');
+
 /**
  * The items for a token the grammar expects, by what the token is there: the bracket of a
  * branch, of a subquery or of a map, the assignment after a name, or the token itself.
@@ -260,6 +264,11 @@ export const provideForToken = (
 ): ISuggestionItem[] | Promise<ISuggestionItem[]> => {
   // A terminator that is already written right after the cursor is not offered again.
   if (follower.class === 'terminator' && context.ir.next?.class === 'terminator') {
+    return [];
+  }
+  // Where an entity is expected, its role says whether a subquery can stand for it, and the
+  // entities are offered with the openings: the bracket alone decides nothing.
+  if (opensSubquery(follower) && expectsEntity(context)) {
     return [];
   }
   if (opensBranch(follower)) {
