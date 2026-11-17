@@ -20,8 +20,15 @@ export const COMMAND_FACTS: Readonly<Record<string, CommandFacts>> = {
   // The grammar lets the `WITH` map out; the inference endpoint in it is needed.
   completionCommand: { requires: ['completionCommand>commandNamedParameters'] },
   // `JOIN index AS? qualifier`: the grammar has a qualifier for the index, which is not
-  // supported yet.
-  joinCommand: { unsupported: ['joinTarget>AS', 'joinTarget>UNQUOTED_SOURCE'] },
+  // supported yet. Neither are the joins that take any source as their target.
+  joinCommand: {
+    unsupported: [
+      'lookupJoinTarget>AS',
+      'lookupJoinTarget>UNQUOTED_SOURCE',
+      'joinCommand>DEV_JOIN_OUTER',
+      'joinCommand>subqueryJoinTarget',
+    ],
+  },
   // The grammar lets the input out: the columns to embed, or a text given in their place.
   denseVectorCommand: {
     requires: [['denseVectorCommand>qualifiedNames', 'denseVectorNaming.literalInput']],
@@ -43,6 +50,8 @@ export const UNDESCRIBED_COMMANDS: Readonly<Record<string, string>> = {
   explainCommand: 'development only',
   externalCommand: 'development only',
   fillNullCommand: 'development only; not adopted yet',
+  eqlCommand: 'development only',
+  intoCommand: 'development only; not adopted yet',
   lookupCommand: 'development only',
   tsCollapseCommand: 'not adopted yet',
 };

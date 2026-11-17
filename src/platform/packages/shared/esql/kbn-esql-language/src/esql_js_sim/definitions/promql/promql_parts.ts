@@ -37,6 +37,8 @@ export const PROMQL_PARTS: Readonly<Record<string, PromqlPart>> = {
   'labelListItem>labelName': 'listed_label',
   'selector>duration': 'range',
   'expression>duration': 'range',
+  // An offset is a time written out, or a duration in brackets when it is computed.
+  'offset>timeValue': 'offset',
   'offset>duration': 'offset',
   'at>timeValue': 'time',
   'constant>number': 'literal',

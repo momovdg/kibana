@@ -49,7 +49,7 @@ describe('locatePromql', () => {
       ['{', ['label>labelName']],
       ['a{job=', ['label>labelValue']],
       ['a[', ['selector>duration']],
-      ['a offset ', ['offset>duration']],
+      ['a offset ', ['offset>timeValue']],
       ['a @ ', ['at>timeValue']],
     ])('expects at the end of %j: %j', (query, expected) => {
       expect(rules(at(query))).toEqual(expect.arrayContaining(expected));
