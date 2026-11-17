@@ -23,14 +23,8 @@ export type EntityType =
   | 'inference_endpoint'
   | 'setting';
 
-/** What a string value holds, when it is more than text. */
-export type ValueFormat =
-  | 'llm_prompt'
-  | 'search_query'
-  | 'dissect_pattern'
-  | 'grok_pattern'
-  | 'separator'
-  | 'highlight_text';
+/** What a string holds, where the language gives it a form of its own. */
+export type ValueFormat = 'dissect_pattern' | 'grok_pattern' | 'separator';
 
 export type ConstantType =
   | 'any'
@@ -73,8 +67,6 @@ export interface ColumnRole {
   wildcard?: 'pattern' | 'alone';
   /** A column may be listed only once. */
   unique?: boolean;
-  /** The column corresponds to a property of the entity another argument names. */
-  matches?: { argument: CallSiteId; property: string };
 }
 
 /** A name the query introduces. Any name is valid, including an existing one. */
@@ -106,15 +98,12 @@ export interface ConstantRole {
   /** The value Elasticsearch uses when the argument is left out. */
   default?: string;
   format?: ValueFormat;
-  range?: { min?: number; max?: number; exclusive?: boolean };
 }
 
 /** What using an option implies for the other options of the same list. */
 export interface OptionFacts {
   /** Options that cannot be used together with this one. */
   conflictsWith?: readonly string[];
-  /** Options that must be used together with this one. */
-  requires?: readonly string[];
 }
 
 /** The name of an option set as `name = value`. Each option is used at most once. */
@@ -166,8 +155,6 @@ export interface ExpressionRole {
   columnsOf?: CallSiteId;
   /** It also reads the names another argument of the command defines, as a grouping does. */
   namesOf?: CallSiteId;
-  /** What a string in its place holds. */
-  format?: ValueFormat;
 }
 
 /**

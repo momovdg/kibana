@@ -11,18 +11,18 @@ import type { EntityType } from '../signatures/types';
 import type { EntityFacts } from './types';
 
 /**
- * Every kind of entity an argument can name, with where its values come from. Adding a kind of
+ * Every kind of entity an argument can name, with what the language says about it. Adding a kind of
  * entity to the schema without describing it here does not compile.
  */
 export const ENTITY_FACTS: Readonly<Record<EntityType, EntityFacts>> = {
-  source: { origin: 'cluster' },
-  lookup_index: { origin: 'cluster' },
+  source: {},
+  lookup_index: {},
   // The mode says on which cluster of a cross-cluster query the enrichment runs.
-  enrich_policy: { origin: 'cluster', qualifiers: ['_any', '_coordinator', '_remote'] },
-  inference_endpoint: { origin: 'cluster' },
-  enrich_field: { origin: 'parent', parent: 'enrich_policy' },
-  metadata_field: { origin: 'language' },
-  setting: { origin: 'language' },
+  enrich_policy: { qualifiers: ['_any', '_coordinator', '_remote'] },
+  inference_endpoint: {},
+  enrich_field: { parent: 'enrich_policy' },
+  metadata_field: {},
+  setting: {},
 };
 
 /** The kinds of entity, for checking data that names one. */

@@ -528,7 +528,7 @@ export const provideExpression = async (
   const starter = resolved.id === undefined ? undefined : getStartingValues()[resolved.id];
   const readyMade =
     position.kind === 'empty' && !position.call && !ir.word
-      ? [...getValueSnippet(role.format), ...(starter ? [starter] : [])]
+      ? [...getValueSnippet(resolved.id), ...(starter ? [starter] : [])]
       : [];
 
   return {
