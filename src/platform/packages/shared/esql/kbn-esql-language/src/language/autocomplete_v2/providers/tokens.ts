@@ -11,7 +11,6 @@ import { i18n } from '@kbn/i18n';
 import { ReplacementRangeStrategyKind } from '../../autocomplete/utils/prefix_range';
 import {
   assignCompletionItem,
-  buildSubqueryCompleteItems,
   commaCompleteItem,
   headerSemiColonCompleteItem,
   newLineCompleteItem,
@@ -26,13 +25,15 @@ import {
   ruleOfCallSite,
   type Follower,
 } from '../../../esql_js_sim/grammar';
-import { esqlCommandRegistry } from '../../../commands/registry';
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import type { SuggestionContext } from '../types';
 import { resolveRole } from '../../../esql_js_sim/definitions';
+import { describeAfterName } from '../after_name';
 import { getRegisteredCommand } from '../command_metadata';
 import { ASSIGNMENT, MAP_OPENER, unquoted } from '../written';
 import { isEntity } from './entities';
+import { provideMapOpener } from './structured';
+import { buildSubqueryOpeners, getSubquerySources } from './subqueries';
 
 const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggestionItem =>
   withAutoSuggest({
@@ -149,7 +150,7 @@ export const provideBranchOpener = (): ISuggestionItem[] => [
 ];
 
 /**
- * The openings of a subquery, one per command a subquery can start with. When the subquery
+ * The openings of a subquery where a bracket can only open one. When the subquery
  * ends its statement, as the one a name is bound to, the terminator comes with it.
  */
 export const provideSubqueryOpener = ({
@@ -162,21 +163,13 @@ export const provideSubqueryOpener = ({
     return [];
   }
 
-  const sources = esqlCommandRegistry
-    .getAllCommands({ isStartingSubquery: true })
-    .map(({ name }) => name);
-  const [first] = sources;
+  const [first] = getSubquerySources();
   // What has to follow a whole subquery here: one is written and the grammar is asked.
   const closed = `${text.slice(0, offset)}(${first?.toUpperCase()} a) `;
-  const after = first ? locate(closed, closed.length) : undefined;
-  const [only] = after?.followers ?? [];
-  const terminator =
-    after?.followers.length === 1 && only.class === 'terminator' ? only.text ?? '' : '';
+  const { only } = describeAfterName(locate(closed, closed.length));
+  const terminator = first && only?.class === 'terminator' ? only.text ?? '' : '';
 
-  return buildSubqueryCompleteItems({ previewCommands: sources }).map((item) => ({
-    ...item,
-    text: `${item.text}${terminator}`,
-  }));
+  return buildSubqueryOpeners().map((item) => ({ ...item, text: `${item.text}${terminator}` }));
 };
 
 /** The token assigns a value to the name before it, as in `name = value`. */
@@ -256,3 +249,28 @@ export const provideToken = (follower: Follower): ISuggestionItem[] => {
 
 /** The item that ends the command by moving to the next line. */
 export const provideEndOfCommand = (): ISuggestionItem[] => [newLineCompleteItem];
+
+/**
+ * The items for a token the grammar expects, by what the token is there: the bracket of a
+ * branch, of a subquery or of a map, the assignment after a name, or the token itself.
+ */
+export const provideForToken = (
+  follower: Follower,
+  context: SuggestionContext
+): ISuggestionItem[] | Promise<ISuggestionItem[]> => {
+  // A terminator that is already written right after the cursor is not offered again.
+  if (follower.class === 'terminator' && context.ir.next?.class === 'terminator') {
+    return [];
+  }
+  if (opensBranch(follower)) {
+    return provideBranchOpener();
+  }
+  if (opensSubquery(follower)) {
+    return provideSubqueryOpener(context);
+  }
+  if (follower.text === MAP_OPENER) {
+    return provideMapOpener(follower, context);
+  }
+
+  return isAssignmentToken(follower) ? provideAssignment(context) : provideToken(follower);
+};

@@ -16,6 +16,7 @@ import {
   ReplacementRangeStrategyKind,
 } from '../autocomplete/utils/prefix_range';
 import { getEsqlLexerTokens } from '../shared/lexer_scope';
+import { esqlCommandRegistry } from '../../commands/registry';
 import { getRegisteredCommand } from './command_metadata';
 import { isOfExpression } from './resolve';
 import type { SuggestionContext } from './types';
@@ -137,6 +138,22 @@ const inOrder = (items: ISuggestionItem[], { ir }: Presented): ISuggestionItem[]
 };
 
 /**
+ * Where a query starts, what is chosen replaces the whole query, what is written after the
+ * cursor included: a source or a ready-made query starts over. A header statement does not,
+ * as the query comes after it.
+ */
+const replacingWholeQuery =
+  ({ ir: { position } }: Presented) =>
+  (item: ISuggestionItem): ISuggestionItem => {
+    const isHeader =
+      esqlCommandRegistry.getCommandByName(item.label.toLowerCase())?.metadata.type === 'header';
+
+    return position === 'start_of_query' && !isHeader
+      ? { ...item, replacementRangeStrategy: { kind: ReplacementRangeStrategyKind.ROOT_QUERY } }
+      : item;
+  };
+
+/**
  * Turns what the providers offer into what the editor shows: each item once, with the text
  * it replaces and its place in the list.
  */
@@ -144,7 +161,9 @@ export const present = async (
   items: ISuggestionItem[],
   presented: Presented
 ): Promise<ISuggestionItem[]> => {
-  const visible = withoutNewLineOnEmptyLine(withoutDuplicates(items), presented);
+  const visible = withoutNewLineOnEmptyLine(withoutDuplicates(items), presented).map(
+    replacingWholeQuery(presented)
+  );
 
   return inOrder(await withReplacementRanges(visible, presented), presented);
 };

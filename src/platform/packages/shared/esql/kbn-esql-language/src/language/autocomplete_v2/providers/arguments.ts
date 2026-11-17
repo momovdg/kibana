@@ -25,6 +25,7 @@ import {
   getDateLiterals,
 } from '../../../commands/definitions/utils/literals';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
+import { describeAfterName } from '../after_name';
 import { getRegisteredCommand } from '../command_metadata';
 import {
   getSuggestedValues,
@@ -40,9 +41,11 @@ import { ASSIGNMENT, pickColumnName, writtenWithRole } from '../written';
  * unless the argument is an item of a list: there a separator can follow it, and the editor
  * offers the separator on the name itself, so that `a` becomes `a, ` and not `a , `.
  */
-const movesOn = ({ afterName }: SuggestionContext): boolean =>
-  afterName.position !== 'invalid' &&
-  !afterName.followers.some((follower) => follower.class === 'separator');
+const movesOn = ({ afterName }: SuggestionContext): boolean => {
+  const { isValid, separatorFollows } = describeAfterName(afterName);
+
+  return isValid && !separatorFollows;
+};
 
 /** The existing columns the role accepts. A column listed once is not offered again. */
 export const provideColumns = async (
