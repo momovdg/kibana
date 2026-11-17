@@ -74,6 +74,16 @@ export const getItems = (written: WrittenArgument[], place: CallSiteId): Written
   return [...items.values()];
 };
 
+/** The item of a place the cursor is in: the one the last thing written belongs to. */
+export const getCurrentItem = (
+  written: WrittenArgument[],
+  place: CallSiteId
+): WrittenArgument[] => {
+  const last = written.at(-1);
+
+  return (last && getItems(written, place).find((parts) => parts.includes(last))) ?? [];
+};
+
 /** Whether an item is one column and nothing else, as `a` and not `a + 1`. */
 export const isLoneColumn = (parts: WrittenArgument[]): boolean =>
   parts.length === 1 && isColumnPart(parts[0]);

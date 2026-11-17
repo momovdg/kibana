@@ -9,7 +9,7 @@
 
 import { FUNCTION_CALL, type CallSiteId } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenAncestor, WrittenArgument } from '../../../esql_js_sim/grammar';
-import { getLambdas } from './expression_lambdas';
+import { getLambdas } from './lambdas';
 import { CAST, isSamePlace, partOf, lowerTextOf, isDirectlyIn } from '../written';
 
 /**

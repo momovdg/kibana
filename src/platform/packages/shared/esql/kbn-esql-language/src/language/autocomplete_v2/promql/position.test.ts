@@ -10,7 +10,7 @@ import { runScenario, SUGGEST_FLOWS } from '../../../__tests__/scenarios';
 import * as queryPosition from '../../../commands/definitions/utils/autocomplete/promql/query_position';
 import { promqlScenarios } from '../../../commands/registry/promql/autocomplete.scenarios';
 import type { PromqlDetailedPosition } from '../../../commands/definitions/utils/autocomplete/promql/types';
-import { describePromqlPosition, toDetailedPosition } from './promql_position';
+import { describePromqlPosition, toDetailedPosition } from './position';
 
 /**
  * The details of a position that the item builders read for its kind, as one comparable text.
