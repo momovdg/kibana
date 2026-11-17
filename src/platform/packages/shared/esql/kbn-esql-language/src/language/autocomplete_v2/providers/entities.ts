@@ -24,7 +24,7 @@ import { ENTITIES } from '../entities/registry';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
 import type { SuggestionContext } from '../types';
 import { getQualifierDetail } from '../presentation';
-import { unquoted, roleIdOf } from '../written';
+import { unquoted, writtenWithRole } from '../written';
 
 /** How an entity of each kind looks in the list. */
 const ENTITY_KINDS: Readonly<Record<EntityType, ISuggestionItem['kind']>> = {
@@ -189,11 +189,7 @@ export const provideEntityNames = async (
     context.callbacks ?? {},
     toScope(role, context)
   );
-  const used = role.unique
-    ? context.ir.written
-        .filter((argument) => !argument.open && roleIdOf(argument) === resolved.id)
-        .map(({ text }) => unquoted(text))
-    : [];
+  const used = role.unique ? writtenWithRole(context.ir.written, resolved.id) : [];
   const suffix = suffixAfterName(context);
   const visible = items.filter(({ hidden, name }) => !hidden && !used.includes(name));
 

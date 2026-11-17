@@ -9,19 +9,17 @@
 import { ARGUMENT_ROLES, type SublanguageRole } from '../../esql_js_sim/definitions';
 import {
   readOptionShell,
+  ruleOfCallSite,
   type CursorIR,
   type OptionShell,
   type WrittenArgument,
   type WrittenOption,
 } from '../../esql_js_sim/grammar';
 
-/** The rule of a command, read from one of its places: `rule>called` or `rule.label`. */
-const commandOf = (place: string): string => place.split(/[.>]/)[0];
-
 /** The role of the text in another language that the command at the cursor ends with. */
 const getSublanguageRole = ({ command }: CursorIR): SublanguageRole | undefined =>
   Object.entries(ARGUMENT_ROLES)
-    .filter(([place]) => commandOf(place) === command)
+    .filter(([place]) => ruleOfCallSite(place) === command)
     .map(([, role]) => role)
     .find((role): role is SublanguageRole => role.kind === 'sublanguage');
 
@@ -73,7 +71,7 @@ export const getForeignBody = (
       ...commandName(ir),
       ...shell.options.flatMap(({ name: optionName, assign, values }) => [
         toWritten(options.names, optionName),
-        toWritten(`${commandOf(options.names)}>ASSIGN`, assign, 'token'),
+        toWritten(`${ruleOfCallSite(options.names)}>ASSIGN`, assign, 'token'),
         ...values.map((value) => toWritten(options.values, value)),
       ]),
     ],
@@ -107,7 +105,7 @@ export const atOptionValue = (ir: CursorIR, text: string, offset: number): Curso
   const word = typed && typed.end === offset ? typed : undefined;
   const asWritten = ({ name: optionName, assign, values }: WrittenOption): WrittenArgument[] => [
     toWritten(options.names, optionName),
-    toWritten(`${commandOf(options.names)}>ASSIGN`, assign, 'token'),
+    toWritten(`${ruleOfCallSite(options.names)}>ASSIGN`, assign, 'token'),
     ...values.filter((value) => value !== word).map((value) => toWritten(options.values, value)),
   ];
 
@@ -117,7 +115,7 @@ export const atOptionValue = (ir: CursorIR, text: string, offset: number): Curso
     arguments: [
       {
         id: options.values,
-        rule: commandOf(options.values),
+        rule: ruleOfCallSite(options.values),
         path: [options.values],
         command: ir.command,
         continues: false,

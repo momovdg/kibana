@@ -33,7 +33,7 @@ import { getOptionDetails, getSuggestedParameterValues, OPENING_PARAMETERS } fro
 import { SuggestionCategory } from '../../autocomplete/utils/sorting/types';
 import { ENTITIES } from '../entities/registry';
 import type { SuggestionContext } from '../types';
-import { MAP_OPENER, partOf, unquoted, pathOf, roleIdOf } from '../written';
+import { MAP_OPENER, partOf, pathOf, unquoted, writtenWithRole } from '../written';
 
 const STRING_TYPES: readonly string[] = ['keyword', 'text', 'string'];
 const NUMBER_TYPES: readonly string[] = ['integer', 'long', 'double', 'number'];
@@ -260,9 +260,7 @@ export const provideOptionNames = (
   resolved: ResolvedRole,
   context: SuggestionContext
 ): ISuggestionItem[] => {
-  const used = context.ir.written
-    .filter((written) => !written.open && roleIdOf(written) === resolved.id)
-    .map(({ text }) => unquoted(text).toLowerCase());
+  const used = writtenWithRole(context.ir.written, resolved.id).map((name) => name.toLowerCase());
   const isUsed = (name: string) => used.includes(name.toLowerCase());
 
   return Object.entries(options)

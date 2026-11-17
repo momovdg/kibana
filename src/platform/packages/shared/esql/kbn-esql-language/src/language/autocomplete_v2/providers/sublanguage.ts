@@ -25,6 +25,7 @@ import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplet
 import type { ForeignBody } from '../option_shell';
 import type { SuggestionContext } from '../types';
 import { describePromqlPosition, toDetailedPosition } from './promql_position';
+import { pickColumnName } from '../written';
 import { provideOptionNames } from './structured';
 
 type Columns = Awaited<ReturnType<SuggestionContext['getColumnMap']>>;
@@ -167,17 +168,13 @@ export const provideSublanguage = async (
   // What comes after the cursor is an option: the text does not start here.
   const [next] = text.slice(offset).trimStart().split(/[\s=]/, 1);
   const startsText = !next || !isOption(next);
-  let index = 0;
-  while (usedNames.has(`col${index}`)) {
-    index++;
-  }
 
   return [
     ...separator,
     ...options,
     ...(startsText
       ? [
-          getNewUserDefinedColumnSuggestion(`col${index}`),
+          getNewUserDefinedColumnSuggestion(pickColumnName(usedNames)),
           ...provideText({ text: '', textAfter: '', shouldWrap: false, columns, context }),
         ]
       : []),

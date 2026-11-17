@@ -23,6 +23,7 @@ import {
   getCommandStarts,
   getTokenSuccessors,
   locate,
+  ruleOfCallSite,
   type Follower,
 } from '../../../esql_js_sim/grammar';
 import { esqlCommandRegistry } from '../../../commands/registry';
@@ -43,8 +44,9 @@ const toKeywordItem = (label: string, text: string, asSnippet = false): ISuggest
     category: SuggestionCategory.LANGUAGE_KEYWORD,
   });
 
-// The rule that takes a token is the first part of the token's place: `rule>TOKEN`.
-const ruleOf = (id: string | undefined): string | undefined => id?.split(/[.>]/)[0];
+// The rule that takes a token is the rule its place is in.
+const ruleOf = (id: string | undefined): string | undefined =>
+  id === undefined ? undefined : ruleOfCallSite(id);
 
 /**
  * Whether a keyword is the first word of a longer one: only other keywords can follow it,

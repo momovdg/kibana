@@ -108,6 +108,21 @@ const asLambda = (
  * ones the last written thing belongs to: what is typed next goes on in them.
  */
 export const getLambdas = (ir: CursorIR): WrittenLambda[] => {
+  const known = lambdasByCursor.get(ir);
+  if (known) {
+    return known;
+  }
+
+  const lambdas = readLambdas(ir);
+  lambdasByCursor.set(ir, lambdas);
+
+  return lambdas;
+};
+
+// The lambdas of a cursor are asked for by several readers: they are read once.
+const lambdasByCursor = new WeakMap<CursorIR, WrittenLambda[]>();
+
+const readLambdas = (ir: CursorIR): WrittenLambda[] => {
   const around = ir.written.at(-1)?.ancestors ?? [];
   const lambdas = new Map<number, WrittenLambda>();
 
