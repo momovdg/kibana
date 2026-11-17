@@ -32,8 +32,16 @@ export const limitScenarios: ScenarioTable = {
 - `status: 'replaced'`: what the current flow does where the behaviour was changed. The row is
   skipped on the flows that have the change, and a `new` row next to it says what they do.
 
-`describeScenarios(table)` declares one test per row and per flow in `SUGGEST_FLOWS`. While
-two autocomplete flows exist, both are listed there and every row has to pass on both.
+`describeScenarios(table)` declares one test per row and per flow in `SUGGEST_FLOWS`. Call it
+from a test file next to the table:
+
+```ts
+// autocomplete.scenarios.test.ts
+describeScenarios(limitScenarios);
+```
+
+Today `SUGGEST_FLOWS` holds the current flow only. The grammar-driven flow runs the same rows
+in `parity.test.ts`, below.
 
 ## Parity with the new flow
 
@@ -45,5 +53,4 @@ snapshot, so a change that moves them, up or down, shows in its diff. Update the
 Rows tagged `replaced` are left out of the counts and reported as one number; rows tagged
 `new` have to pass on the new flow.
 
-Read the counts with care early on: a row that expects nothing, or only that some items are
-absent, matches a flow that offers little.
+A command only the new flow knows has every row tagged `new`.
