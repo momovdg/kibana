@@ -1,381 +1,362 @@
 # Autocomplete v2
 
-The grammar-driven autocomplete engine, built next to the current flow in `../autocomplete`. Both
-export a `suggest` with the same signature. The package exports one of them from
-`../index.ts`, so switching flows is one line.
+The grammar-driven autocomplete engine. It is built next to the current flow
+(`../autocomplete`) and exports a `suggest` with the same signature; `../index.ts` exports one
+of the two, so switching flows is one line.
 
-The engine knows no command. A command gets its suggestions from the grammar position of the
-cursor and from the command signatures in `../../esql_js_sim`. Rules, enforced by
-`boundary.test.ts`:
+**The engine knows no command.** A command gets its suggestions from where the cursor is in
+the grammar and from a few lines of data that say what each argument means.
+
+- [Who owns what](#who-owns-what)
+- [I want to change something](#i-want-to-change-something)
+- [Add a command](#add-a-command)
+- [How one call runs](#how-one-call-runs)
+- [Expressions](#expressions)
+- [The order of the list](#the-order-of-the-list)
+- [Tests](#tests)
+- [Words](#words)
+
+## Who owns what
+
+```mermaid
+flowchart LR
+  subgraph G["esql_js_sim/grammar (future esql-js)"]
+    L["locate(text, offset)<br/>→ Cursor IR"]
+  end
+  subgraph D["esql_js_sim/definitions (future esql-js)"]
+    R["ARGUMENT_ROLES<br/>COMMAND_FACTS<br/>ENTITY_FACTS"]
+  end
+  subgraph E["autocomplete_v2 (this folder)"]
+    S["resolve → prune → provide → present"]
+    P["presentation.ts<br/>what the editor adds"]
+  end
+  subgraph K["Kibana, shared with the current flow"]
+    B["item builders<br/>function definitions<br/>ordering"]
+    C["editor callbacks<br/>columns, sources, policies"]
+  end
+  L --> S
+  R --> S
+  P --> S
+  S --> B
+  S --> C
+```
+
+| Part | Says | Kind |
+|---|---|---|
+| `esql_js_sim/grammar` | **Where** the cursor is, from the grammar alone | Code, no command named |
+| `esql_js_sim/definitions` | **What** each argument means in the language | Data, per command |
+| `presentation.ts` | **How** the editor shows a place beyond the language: common values, snippets, suggested names | Data, per place |
+| The rest of this folder | The engine: one provider per kind of thing | Code, no command named |
+
+Three rules keep it that way (`boundary.test.ts`):
 
 - No import from a command's folder under `commands/registry/`.
-- No command name and no grammar rule name of a command (`whereCommand`) as a string.
-- A provider override is the only exception. It is keyed by an argument, never by a command,
-  it is listed in `overrides.ts`, and the list may grow only with an owner and an issue. The
-  list is empty and no provider is wired to it: one is written with the first entry.
+- No command name and no grammar rule of a command (`whereCommand`) as a string in the engine.
+- A provider written by hand for one argument is listed in `overrides.ts`, with an owner and
+  an issue. The list is empty.
 
-## The steps
+## I want to change something
 
-`suggest(fullText, offset, callbacks)` has the signature of the current flow's `suggest`.
-`suggest.ts` is the whole flow in a few lines; each step is one file.
-
-| Step | File | What it does |
+| I want to… | Edit | Kind |
 |---|---|---|
-| Locate | `esql_js_sim/grammar` | Where the cursor is in the grammar: the Cursor IR. |
-| Resolve | `resolve.ts` | What has to be offered there, as a list of requests. A request is a kind of thing: the names of commands, a token, the end of the command, an argument with its role, an expression with its role. Pure: nothing is fetched. |
-| Prune | `prune.ts` | The requests the written text rules out, one named rule each: a name that does not exist can only be assigned, an exhausted list has no separator, an unfinished expression comes first. |
-| Provide | `providers/index.ts` | The items for each request. A provider is chosen by the kind of the request and knows the editor only through the context (`context.ts`). |
-| Present | `present.ts` | The final list: each item once, the text it replaces, its place in the list. |
+| Say what an argument of a command is (a column, a new name, an expression…) | `esql_js_sim/definitions/signatures/argument_roles.ts` | Data |
+| Say what Elasticsearch requires and the grammar leaves open (an argument is needed, a clause is used once, a place is not supported yet) | `esql_js_sim/definitions/signatures/command_facts.ts` | Data |
+| Offer common values where any value is valid (`LIMIT 10`) | `presentation.ts` → `getSuggestedValues` | Data |
+| Offer a name for a new column | `presentation.ts` → `SUGGESTED_NAMES` | Data |
+| Offer a ready-made string, selected once inserted | `presentation.ts` → `getValuePlaceholders` | Data |
+| Offer values for one setting or option, or describe an option | `presentation.ts` → `getSuggestedValuesByName`, `getOptionDetails` | Data |
+| Choose the parameter a map opens with | `presentation.ts` → `OPENING_PARAMETERS` | Data |
+| Offer recommended queries after the sources | `presentation.ts` → `RECOMMENDED_QUERIES` | Data |
+| Add a kind of entity (something named outside the query) | `esql_js_sim/definitions/entities/entity_facts.ts`, then `entities/registry.ts` in this folder | Data + one fetcher |
+| Add a kind of role | `esql_js_sim/definitions/signatures/types.ts`, `validate_roles.ts`, then `providers/index.ts` | Schema + one provider |
+| Change how a keyword, a separator or a bracket is offered | `providers/tokens.ts` | Code, by what the grammar allows next |
+| Change which functions apply to a kind of expression | `expressions/functions.ts` | Code |
+| Change what is offered at a position inside an expression | `expressions/offer.ts`, `expressions/operator_forms.ts` | Code, returns data |
+| Change the order of the list | `../autocomplete/utils/sorting/priority_provider.ts` | Data, shared with the current flow |
+| Change which text an item replaces | `present.ts` | Code |
+| State or change the expected behaviour | `commands/registry/<command>/autocomplete.scenarios.ts` | Data |
+| Follow a grammar upgrade | See [After a grammar upgrade](#after-a-grammar-upgrade) | Generated |
 
-`collect.ts` runs locate, resolve, prune and provide for one cursor. Three things go around
-that path, each in its own file:
+If a change needs a command's name in the engine, it belongs in one of the data files above.
 
-- **Controls** (`providers/controls.ts`): right after the character that starts a control,
-  only the controls are offered.
-- **A text in another language** (`option_shell.ts`, `providers/sublanguage.ts`): a command
-  that ends with one, as PROMQL, has its options read from the tokens and its text served by
-  the grammar of that language.
-- **A word that is already whole** (`whole_word.ts`): the flow is asked again one space
-  later, and each continuation is offered with the word. The same file holds the keyword of
-  several words that is being typed (`NULLS F`).
+## Add a command
 
-What the engine offers today:
+The example is `CHANGE_POINT value ON key AS type, pvalue BY grouping`, as it is described
+today.
 
-- Command names, with the license, tier, time-series and "hidden after" gates of the
-  registered commands.
-- Keywords, the pipe, the separator of a list and the next line. A keyword is presented by
-  what the grammar allows right after it (`getTokenSuccessors`): alone when nothing has to
-  follow (`ASC`), joined with the keywords that have to follow (`NULLS FIRST`), with the
-  braces of a map (`WITH { $0 }`), or with a space when anything else has to follow (`BY `).
-- Arguments with the roles `column` (by type, each listed once where the role says so),
-  `new_name` (a free name with its assignment), `constant` (its allowed values), `entity`,
-  `map` (the keys not used yet, and the values of the key before the cursor), `option_name`
-  (the options not used and not in conflict with a used one) and `dependent_value` (the role
-  the name gives it, listed in the signature or defined by the named entity).
-- Expressions, by the mode and the types of their role.
-- The text of a sublanguage, by the grammar of that language.
+**0. Before anything is written.** Once the grammar has the command it already works: its
+keywords, its separators, the pipe, columns where the grammar takes a name, constants where it
+takes a literal, scalar expressions where it takes one. These come from the grammar and from
+`DEFAULT_ROLES`.
 
-Inside an open string only a value is offered: the value of a map key or a constant.
+**1. Register it.** Write `commands/registry/<command>/index.ts` (name, description,
+declaration, examples) and add the command to `baseCommands` in `commands/registry/index.ts`.
+The `name` has to be the text of the command's first token: that is how the engine finds the
+registered command for a grammar rule (`getRegisteredCommand`). Until the current flow is
+removed, the registry type also asks for an `autocomplete` method of that flow; a command only
+the new flow knows returns nothing there.
 
-An expression is one request, whatever the cursor is nested in: its operands, its operators,
-its brackets and the arguments of its functions are offered together. The provider
-(`providers/expressions.ts`) runs four steps, each one file in `expressions/`:
+**2. Describe its arguments.** Remove the command from `UNDESCRIBED_COMMANDS`
+(`command_facts.ts`) if it is listed there. `signature_coverage.test.ts` now fails and prints
+the path of every place of the command that has no role. To see the places beforehand, filter
+`getGrammarPositions()` by the command's rule. Add one line per place to `ARGUMENT_ROLES`:
 
-| Step | File | What it does |
-|---|---|---|
-| Position | `position.ts` | Where the cursor is inside the expression, from the grammar position alone: the start of an operand, after an operand, after an operator, after `NOT` or a cast, in a string or a map, and the function call and argument it is in |
-| Types | `environment.ts` | The types of what is written, and what the functions written take. The only reader of the syntax tree (`tree.ts`): the type lookup works on its nodes |
-| Offer | `offer.ts`, `operator_forms.ts` | The rule for the position: which operands, which operators, whether the comma. It returns data (`Offer` in `types.ts`) and builds no item |
-| Build | `build.ts` | The items of an offer, from the item builders the commands share. The only file that knows them |
+```ts
+'changePointCommand.value':             { kind: 'column', types: NUMBER_TYPES },
+'changePointCommand.key':               { kind: 'column' },
+'changePointCommand.targetType':        { kind: 'new_name', of: 'column' },
+'changePointCommand.targetPvalue':      { kind: 'new_name', of: 'column' },
+'changePointCommand.booleanExpression': { kind: 'expression', mode: 'key', unique: true },
+```
 
-Next to them: `functions.ts` says which functions and operators apply, from the mode of the
-role (and the roles around it: a filter inside an aggregation); `columns.ts` gathers the names
-an expression reads beyond the columns of the query.
+The key of each line is a call site:
 
-While something is written that is not yet a whole expression of the type its role asks for,
-the command cannot go on: no pipe, no keyword and no separator of the command is offered.
+```
+ grammar:   renameClause : oldName=qualifiedNamePattern AS newName=qualifiedNamePattern
+                           ───────                         ───────
+ call site:                renameClause.oldName            renameClause.newName
+                           rule . label   (the grammar labels the call)
 
-A lambda (`v -> v > 1`) is part of an expression (`expressions/lambdas.ts`). The grammar allows
-one as any argument of any function; which argument takes one is a fact of the function
-(`FUNCTION_LAMBDAS` in the definitions, empty until a function Kibana knows declares one):
+ grammar:   keepCommand  : KEEP qualifiedNamePatterns
+                                ─────────────────────
+ call site:                keepCommand>qualifiedNamePatterns
+                           rule > called rule   (no label)
+```
 
-- where that argument starts, only the parameters with the arrow are offered (`x -> `), with
-  names the query does not use; after a parameter's name, only the arrow;
-- in the body, the parameters of every lambda around the cursor are offered next to the
-  columns, and nowhere else. A parameter has the type of the argument whose values it stands
-  for, when the function says which (`valuesOf`);
-- the body is offered as the value of the argument: the expression engine does not know
-  lambdas, so it reads the text with the parameters and the arrow blanked out.
+A role applies to everything below its call site that has no role of its own. So put it on
+the outermost call site that means one thing: one line on a list covers each item, one line on
+a value covers every kind of literal the grammar takes there.
 
-What to offer inside an expression is decided in this flow. The expression engine of the
-current flow (`suggestForExpression`), which works the position out from the syntax tree and
-the text, is not used (`expressions/no_old_engine.test.ts`). Three tests hold the rules:
+The fields of each role are in `signatures/types.ts`. The file has shorthands for the common
+ones: `columnList` (columns, each listed once), `newColumn`, `stringColumn`.
 
-- `expressions/position.test.ts` keeps, in a snapshot, how the position agrees with what the
-  current engine works out, on every scenario row.
-- `expressions/offer.test.ts` checks the rules as data: a query, the types of what is written,
-  and the offer that comes out. No editor, no columns, no items.
-- `expressions/current_flow.test.ts` compares, item by item with the current flow, the
-  positions no scenario table has a row for.
+**3. Add facts**, only if Elasticsearch asks for more than the grammar does
+(`COMMAND_FACTS`): `requiresArgument`, `requires`, `singleUse`, `unsupported`, `notInItself`,
+`readsOwnColumns`.
 
-What is shared with the current flow, by design:
+**4. Add presentation**, only if the editor should offer more than the language says. An
+entry has the same key as the role line:
 
-- the item builders (columns, functions, operators and literals by type) and the small rule
-  helpers over function definitions (which signatures still fit, when a comma follows);
-- the function definitions, with the names they use for the places a function is allowed in
-  (`MODE_LOCATIONS` maps the mode of a role to them);
-- the type of a written expression, read from the syntax tree of the command: the grammar
-  gives the range, the tree gives the type.
+```ts
+// presentation.ts, SUGGESTED_NAMES
+'changePointCommand.targetType':   'changePointType',
+'changePointCommand.targetPvalue': 'pValue',
+```
 
-Where the new flow differs from the current engine on purpose:
+**5. Write the scenarios** in `commands/registry/<command>/autocomplete.scenarios.ts`: one row
+per position, with the query and the items expected there, and next to it a three-line
+`autocomplete.scenarios.test.ts` that calls `describeScenarios(table)`. A command only the new
+flow knows has every row tagged `new`: those rows are checked by
+`__tests__/scenarios/parity.test.ts`. See `__tests__/scenarios/README.md`.
 
-- after a keyword of the command typed in full (`SORT a ASC`), nothing of the expression is
-  offered: it has ended;
-- inside a string that is still open, nothing is offered, except the editor's own suggestions
-  for a KQL query;
-- right after `NOT` at the start of a function argument, the boolean columns and functions
-  are offered, as they are outside a call (the current flow offers nothing there).
+**6. Update the snapshots** that list what is registered: `command_metadata.test.ts` and
+`parity.test.ts` (run each with `-u` and read the diff). A test that names the command as not
+adopted yet fails and is fixed by hand.
 
-Entities come from `entities/registry.ts`: one definition per kind, each turning what the
-editor provides today into entities, in a scope. The scope is all a definition gets: the index
-mode, the parent's name, the task, serverless. `providers/entities.ts` builds the scope from
-the role and from what is written (the policy an enrich field depends on), and presents the
-entities. The editor's callbacks are unchanged.
+That is all for a typical command: an `index.ts`, five lines of roles, two lines of
+presentation, a table of scenarios. No engine file changes.
 
-The columns a command can read are those of the query before the cursor (`pipeline.ts`): the
-commands before it in its pipeline, plus the outer pipeline for a branch, and only the
-subquery's own commands for a subquery. They are fetched on the first request, so a position
-that offers no column asks the editor for none.
+```sh
+node scripts/jest src/platform/packages/shared/esql/kbn-esql-language/src/language/autocomplete_v2
+node scripts/jest src/platform/packages/shared/esql/kbn-esql-language/src/commands/registry/<command>
+```
 
-An item for an argument ends with a space, and reopens the suggestions, unless the argument is
-an item of a list. There a separator can follow, and it is offered on the name itself.
+### After a grammar upgrade
 
-`__tests__/scenarios/parity.test.ts` runs every scenario table through this flow and keeps,
-in a snapshot, how many rows of each command already match the current flow.
+| Step | What |
+|---|---|
+| Regenerate the labels | `node src/platform/packages/shared/esql/kbn-esql-language/scripts/generate_grammar_labels.js` from the Kibana root, then `node scripts/eslint --fix` on the generated file |
+| `command_metadata.test.ts` snapshot changes | It lists every place of the registered commands: the diff is what the upgrade added, removed or renamed |
+| `signatures.test.ts` fails | A role points at a call site that is gone or renamed: fix the key |
+| `signature_coverage.test.ts` fails | A registered command has a new place: add its role |
+| A command Kibana has not adopted | Add it to `UNDESCRIBED_COMMANDS` with the reason |
 
-What is here so far:
-
-- `command_metadata.ts`: `getRegisteredCommand(commandRule)`, the one function through which
-  the engine reads what Kibana registered for a command. It is undefined for a command that
-  is in the grammar and that Kibana has not adopted.
-- `command_metadata.test.ts`: the snapshot of every position of the registered commands, and
-  the list of commands Kibana has not registered. A grammar upgrade shows up as a change here.
-- `locate_examples.test.ts`: runs `locate` at every token boundary of the registered command
-  examples.
-- `signature_coverage.test.ts`: the gate for a new command. A command Kibana registers must
-  be described, and every position it has must get its role from a signature.
-- `entities/types.ts`: `EntityDefinition`, how the entities of one kind are listed from the
-  editor's callbacks, and `EntityRegistry`, one definition per kind. The registry itself comes
-  with the engine.
-- `suggest.test.ts`: the engine's own tests, by kind of request and not by command.
-- `load_order.test.ts`: the package has import cycles through its entry, so a module of the
-  engine may load before the modules it imports are ready. The test keeps every read of a
-  module outside the engine inside a function, where it runs after everything has loaded.
-- `written.ts`: the small questions the engine asks about what is written (the same place,
-  the part of an expression, a name without its quotes). They read the Cursor IR. The
-  predicates of `@elastic/esql` with similar names (`isColumn`, `isAssignment`) are about
-  nodes of the syntax tree, which the engine does not read for the command at the cursor.
-
-## Flow map
-
-One call to `suggest`, followed through the four steps on real queries. `▮` is the cursor.
-The values are what the code returns for the test world of the scenario kit; long lists are
-cut. The words are explained, in the same order, in the vocabulary below.
+## How one call runs
 
 ```
  text, offset
       │
       ▼
- ┌─────────┐  Cursor IR   ┌─────────┐  requests   ┌─────────┐  items   ┌─────────┐
- │ locate  │ ───────────▶ │ resolve │ ──────────▶ │ provide │ ───────▶ │ present │ ──▶ list
- └─────────┘              └─────────┘             └─────────┘          └─────────┘
-   grammar                 signatures              one provider          follow-ups,
-   (esql_js_sim/grammar)   (esql_js_sim/           per kind, with        no duplicates
-                           definitions)            the context:
-                                                   columns, entities,
-                                                   editor callbacks
+ ┌─────────┐ Cursor IR ┌─────────┐ requests ┌───────┐ requests ┌─────────┐ items ┌─────────┐
+ │ locate  │ ────────▶ │ resolve │ ───────▶ │ prune │ ───────▶ │ provide │ ────▶ │ present │ ─▶ list
+ └─────────┘           └─────────┘          └───────┘          └─────────┘       └─────────┘
 ```
 
-Only `provide` talks to the editor, and only for what the request needs.
+| Step | File | What it does |
+|---|---|---|
+| Locate | `esql_js_sim/grammar` | Where the cursor is in the grammar: the Cursor IR |
+| Resolve | `resolve.ts` | What has to be offered there, as requests. Pure: nothing is fetched |
+| Prune | `prune.ts` | Drops the requests the written text rules out, one named rule each |
+| Provide | `providers/index.ts` | The items for each request, by its kind. Only this step talks to the editor |
+| Present | `present.ts` | Each item once, the text it replaces, its place in the list |
 
-### 1. An argument with a role: `FROM a | KEEP keywordField, ▮`
+`suggest.ts` is the whole flow in about fifty lines; `collect.ts` runs locate to provide for
+one cursor. Three things go around that path:
 
-The whole flow on the simplest case.
+| Case | File |
+|---|---|
+| Right after the character that starts a control, only controls are offered | `providers/controls.ts` |
+| A command that ends with a text in another language (PROMQL): its options are read from the tokens, its text is served by that language's grammar | `option_shell.ts`, `providers/sublanguage.ts`, `promql/position.ts` |
+| The word at the cursor is already whole: the flow is asked again one space later and each continuation is offered with the word | `whole_word.ts` |
 
-**Locate.** The grammar says where the cursor is and what is already there.
+A request is one of five kinds, each with one provider:
 
-| Field of the IR | Value |
-| --- | --- |
-| `command` | `keepCommand` |
-| `position` | `start_of_argument` |
-| `previous` | `,` of class `separator` |
-| `word` | none: nothing is typed yet |
-| `arguments` (expected) | one, the call site `qualifiedNamePatterns>qualifiedNamePattern`, on the path `keepCommand>qualifiedNamePatterns` / `qualifiedNamePatterns>qualifiedNamePattern` |
-| `followers` | none: a name has to come first |
-| `written` | `KEEP` (keyword), `keywordField` (at the same call site as the expected argument), `,` (separator) |
+| Request | Provider | Example |
+|---|---|---|
+| `command_names` | `providers/command_names.ts` | `FROM a \| ▮` |
+| `token` | `providers/tokens.ts` | `ASC`, `, `, `\| `, `NULLS FIRST` |
+| `end_of_command` | `providers/tokens.ts` | The next line |
+| `argument`, by its role | `providers/arguments.ts` (column, new name, constant), `providers/entities.ts`, `providers/structured.ts` (map, option name, dependent value) | `KEEP ▮`, `ENRICH ▮`, `WITH { ▮` |
+| `expression`, by its role | `providers/expressions.ts` | `WHERE ▮` |
 
-**Resolve.** The path is looked up in the signatures. `keepCommand>qualifiedNamePatterns`
-has a role, and the argument takes it:
+### Example: `FROM a | KEEP keywordField, ▮`
+
+| Step | Result |
+|---|---|
+| Locate | `position: start_of_argument`, `previous: ,` (separator). One argument expected, on the path `keepCommand>qualifiedNamePatterns` / `qualifiedNamePatterns>qualifiedNamePattern`. Written: `KEEP`, `keywordField`, `,` |
+| Resolve | One request: an argument with the role `{ kind: 'column', wildcard: 'pattern', unique: true }`, found at `keepCommand>qualifiedNamePatterns` |
+| Prune | Nothing dropped |
+| Provide | The column provider asks for the columns of `FROM a` (fetched now, not before). `unique` leaves out `keywordField`. An item of a list gets no trailing space |
+| Present | Every column of `a` but `keywordField` |
+
+### Example: `FROM a | SORT keywordField ▮`
+
+| Step | Result |
+|---|---|
+| Locate | `position: after_argument`. Followers: the operators of an expression, `nulls`, `asc`, `desc` (keywords), `,` (separator), `\|` (pipe), the end |
+| Resolve | Seven requests: one expression (`mode: 'scalar'`), three keyword tokens, the separator, the pipe, the end of the command |
+| Prune | Nothing dropped: `keywordField` is a whole expression |
+| Provide | Expression: the operators that take a keyword. Keywords, by what the grammar allows after each: `ASC`, `DESC` alone; `NULLS` joined with what has to follow, `NULLS FIRST`, `NULLS LAST`. Then `, `, `\| ` and the next line |
+| Present | 15 items, keywords first |
+
+At `FROM a | WHERE doubleField > ▮` the prune step matters: the expression is not a whole
+boolean yet, so the pipe and the end of the command are dropped until it is.
+
+## Expressions
+
+An expression is one request, whatever the cursor is nested in. Its provider runs four steps,
+one file each in `expressions/`:
 
 ```
-{ kind: 'argument',
-  argument: qualifiedNamePatterns>qualifiedNamePattern,
-  resolved: { role: { kind: 'column', wildcard: 'pattern', unique: true },
-              id: 'keepCommand>qualifiedNamePatterns', source: 'signature' } }
+ Cursor IR ─▶ position.ts ─▶ environment.ts ─▶ offer.ts ─▶ build.ts ─▶ items
+              where in the    the types of      the rule:   the items
+              expression      what is written   an Offer    of an Offer
+                                                (data)
 ```
 
-One request. Nothing was fetched so far.
+| Step | File | What it does |
+|---|---|---|
+| Position | `position.ts` | Where the cursor is inside the expression, from the grammar alone: the start of an operand, after an operand, after an operator, after `NOT` or a cast, in a string or a map, and the function call and argument it is in |
+| Types | `environment.ts` | The types of what is written and what the functions written take. With `tree.ts`, the only reader of the syntax tree |
+| Offer | `offer.ts`, `operator_forms.ts` | The rule for the position. It returns data and builds no item |
+| Build | `build.ts` | The items of an offer. The only file that uses the item builders the commands share |
 
-**Provide.** The request is an argument with a `column` role, so the column provider runs
-(`providers/arguments.ts`):
+`FROM a | WHERE doubleField > ▮` gives the position `after_operator`, the left type `double`,
+and the offer:
 
-- it asks the context for the columns. The context fetches them now, for the query before
-  the cursor's command (`FROM a`);
-- `unique` says a column is listed once: the written arguments with the same role
-  (`keywordField`) are left out;
-- the argument is an item of a list, so the items get no trailing space.
-
-**Present.** 20 items: every column of `a` but `keywordField`.
-
-### 2. An expression: `FROM a | WHERE doubleField > ▮`
-
-Inside an expression the grammar is deep and the engine answers once for the whole of it.
-
-**Locate.** `position` is `start_of_argument`, `previous` is `>` of class `operator`. Six
-arguments are expected: a constant, a column and a function name, each along two branches of
-the grammar, all under `whereCommand>booleanExpression`. The followers are `(`, `+` and `-`.
-`written` has `doubleField` under `valueExpression.left` and `>` as an operator.
-
-**Resolve.** Every expected argument and follower is inside the same expression, so they
-become one request, keyed by the expression entry:
-
-```
-{ kind: 'expression',
-  entry: 'whereCommand>booleanExpression',
-  role: { kind: 'expression', mode: 'filter', types: ['boolean'],
-          completeAs: 'boolean', subqueries: true } }
+```ts
+{ operands: { types: ['double', 'integer', 'long', …], columns: true, literals: 'exact' } }
 ```
 
-**Provide.** The expression provider (`providers/expressions.ts`):
+Next to these: `functions.ts` (which functions apply, from the mode of the role), `columns.ts`
+(the names an expression reads beyond the columns of the query), `names.ts` (the names a
+grouping defines) and `lambdas.ts`.
 
-- reads the expression position from the written arguments (`expressions/position.ts`):
-  `after_operator`, with `>` as the last operator and `doubleField` as its left operand;
-- asks for the type of that operand (`double`), from the columns and the syntax tree of the
-  command (`expressions/environment.ts`);
-- gets the offer (`expressions/offer.ts`): the right operand of `>` after a `double` is a
-  number, so `{ operands: { types: [numbers], columns: true, literals: 'exact' } }`;
-- builds its items (`expressions/build.ts`): the numeric columns and the functions that
-  return a number, as allowed in a `filter`.
+**Lambdas** (`v -> v > 1`). The grammar allows one as any argument of any function; which
+argument takes one is a fact of the function (`FUNCTION_LAMBDAS`, empty until a function
+declares one, tested with simulated functions). Where that argument starts, the parameters
+with the arrow are offered; in the body, the parameters in scope are offered next to the
+columns.
 
-It also reports that the expression is unfinished (`doubleField >` is not a boolean yet), so
-nothing of the command outside the expression would be offered.
+**Shared with the current flow, on purpose:** the item builders, the function definitions, and
+the type of a written expression (the grammar gives the range, the syntax tree gives the type).
+The current flow's expression engine (`suggestForExpression`) is not used
+(`expressions/no_old_engine.test.ts`).
 
-**Present.** 96 items: `doubleField`, `integerField`, `longField`, ..., `ABS($0)`, ...
+**Different from the current flow, on purpose:**
 
-One space after a value, at `FROM a | WHERE doubleField > 1 ▮`, the same request comes with
-two more: the pipe and the end of the command, because the grammar now lets the command
-end. The expression is a whole boolean, so they are kept: `AND $0`, `OR $0`, `| ` and the
-next line.
+- After a keyword of the command typed in full (`SORT a ASC`), nothing of the expression is
+  offered.
+- Inside an open string, nothing is offered, except the editor's suggestions for a KQL query.
+- Right after `NOT` at the start of a function argument, boolean operands are offered.
+- A list in brackets that no operator comes before, as `WHERE (a, b) `, gets nothing.
 
-### 3. Tokens and their presentation: `FROM a | SORT keywordField ▮`
+## The order of the list
 
-**Locate.** `position` is `after_argument`. The followers are the operators of an
-expression, then `nulls`, `asc`, `desc` (class `keyword`), `,` (`separator`), `|` (`pipe`)
-and the end of the text (`end`).
+```
+ item ─▶ its category ─▶ base priority ─▶ adjusted for the command ─▶ ties by label ─▶ sortText
+         (set by the      (CATEGORY_       and the clause
+          provider, or     PRIORITIES)     (CONTEXT_BOOSTS)
+          inferred)
+```
 
-**Resolve.** Seven requests:
+`present.ts` hands the items to the ordering engine the current flow uses
+(`../autocomplete/utils/sorting`), with the registered name of the command and the last keyword
+written in it as the clause. Lower comes first: actions, keywords, the next line and the pipe,
+columns, operators, functions.
 
-| Request | From |
-| --- | --- |
-| `expression`, entry `orderExpression>booleanExpression`, role `{ mode: 'scalar' }` | the operators: they are tokens of the expression, not of the command |
-| `token` × 3 | `nulls`, `asc`, `desc` |
-| `token` | `,` |
-| `token` | the pipe |
-| `end_of_command` | the pipe or the end can follow |
+Known limit: the adjustments are keyed by the current flow's own names for places
+(`Location`), not by call site.
 
-**Provide.**
+## Tests
 
-- Expression: the position is `after_operand` and the operand is a keyword column, so the
-  operators that take a keyword (`IN $0`, `LIKE $0`, `IS NULL`, ...).
-- Keywords (`providers/tokens.ts`): each is presented by what the grammar allows right after
-  it. Nothing has to follow `asc` and `desc`, so they are offered alone. `nulls` has to be
-  followed by `first` or `last`, so it is offered joined: `NULLS FIRST`, `NULLS LAST`.
-- Separator: `, `. Pipe: `| `. End of the command: the next line.
+```mermaid
+flowchart TB
+  subgraph Gates["Gates: fail when a rule of the design is broken"]
+    B["boundary.test.ts<br/>no command in the engine"]
+    SC["signature_coverage.test.ts<br/>every place of a registered command has a role"]
+    LO["load_order.test.ts<br/>nothing read from another module at load"]
+  end
+  subgraph Grammar["Grammar: no suggestion involved"]
+    LE["locate_examples.test.ts<br/>locate at every token of every example"]
+    CM["command_metadata.test.ts<br/>snapshot of every place"]
+  end
+  subgraph Behaviour["Behaviour: through suggest()"]
+    SCN["commands/registry/*/autocomplete.scenarios.ts<br/>one row per position; its own test runs the current flow"]
+    PAR["__tests__/scenarios/parity.test.ts<br/>every row on this flow: rows matched as a snapshot, new rows must pass"]
+    ST["suggest.test.ts<br/>by kind of request, not by command"]
+  end
+  subgraph Rules["Expression rules"]
+    OT["expressions/offer.test.ts<br/>rules as data"]
+    PT["expressions/position.test.ts<br/>agreement with the current flow"]
+  end
+```
 
-**Present.** 15 items.
+| I changed… | Run |
+|---|---|
+| A role, a fact or `presentation.ts` | `__tests__/scenarios/parity.test.ts` (it runs the scenario rows on this flow), `signature_coverage.test.ts` |
+| The engine | This folder and `__tests__/scenarios` |
+| An expression rule | `expressions/` |
+| The grammar version | Everything under `esql_js_sim` and this folder |
 
-### 4. The other kinds, in short
+A scenario row is written for either flow. Today a command's own scenario test runs the
+current flow only, and `parity.test.ts` runs every table on this flow. A behaviour changed on
+purpose has two rows: one tagged `replaced` (what the current flow does) and one tagged `new`
+(what this flow does, which has to pass). Parity counts the untagged rows.
 
-- **Command names.** `FROM a | ▮` → `position` is `start_of_command` and the followers are
-  the keywords that start a command → one `command_names` request with their command rules →
-  the provider keeps the rules Kibana registered and that the license, the tier and the
-  query allow → `EVAL `, `WHERE `, `KEEP `, ... (28 of the grammar's 33).
-- **Entity.** `FROM a | ENRICH ▮` → the expected argument is `enrichCommand.policyName` →
-  its role is `{ kind: 'entity', entityType: 'enrich_policy' }` → the entity provider asks
-  the `enrich_policy` definition of the registry, which asks the editor for the policies →
-  `policy `, `` `policy$` ``. No column is fetched.
-- **Constant.** `FROM a | LIMIT ▮` → role `{ kind: 'constant', valueType: 'integer' }` →
-  the suggested values of that place, from `presentation.ts` → `10 `, `100 `, `1000 `.
-- **New name.** `FROM a | RENAME keywordField AS ▮` → role `{ kind: 'new_name', of: 'column' }`
-  → nothing: a name is free text, and it is offered only where the grammar assigns it.
-- **Two readings of one place.** `FROM a | STATS avg(doubleField) BY ▮` → two requests: an
-  argument with role `new_name` (the name of a grouping) and an expression with mode
-  `grouping` → the items of both, in one list (216 here: columns and functions).
-- **Follow-up.** `FROM a | KEEP keywordField▮` → the `word` is `keywordField`, a whole name
-  that is an existing column → `suggest` looks at what is offered one space later and offers
-  the word with each continuation → `keywordField, `, `keywordField | ` and the next line.
-
-## Vocabulary
-
-The words this flow uses, in the order a call to `suggest` meets them. The types behind the
-grammar words are in `esql_js_sim/grammar`, those behind the meaning words in
-`esql_js_sim/definitions`.
-
-**The two flows**
-
-| Word | Meaning |
-| --- | --- |
-| Current flow | The autocomplete in `../autocomplete` and in each command's `autocomplete.ts`. Production today. |
-| New flow, v2, the engine | This folder. It knows no command. |
-| Simulated packages | `esql_js_sim/grammar` and `esql_js_sim/definitions`: what the engine expects from esql-js, kept in Kibana until it can move there. |
-
-**Where the cursor is (locate)**
+## Words
 
 | Word | Meaning |
-| --- | --- |
-| Cursor IR | The result of `locate(text, offset)`: a description of the cursor that has the same shape for every command. IR stands for intermediate representation. Everything below in this table is a field of it or a word about it. |
-| Position | One of a closed set of places in a command: the start of the query, of a statement, of a command or of an argument, inside an argument, after an argument, inside a string, inside a comment, invalid. |
-| Command rule | The grammar rule of a command. The engine never names one; it gets it from the IR and asks `getRegisteredCommand` what Kibana registered for it. |
-| Call site | One place in the grammar where a rule takes a rule or a token: `rule.label` when the grammar labels it, `rule>called` otherwise. It is the identity of an argument. |
-| Path | The call sites from the command down to an argument. Roles are looked up along it. |
-| Expected argument | An argument the grammar allows at the cursor, with its path. |
-| Written argument | An argument or a token already written in the command at the cursor, with its call site, text, range and the places it is in. It replaces reading the syntax tree. |
-| Place (ancestor) | A call site with the offset it starts at: one written thing that contains others, such as one function call or one map. A place is `open` when the cursor is still inside it. |
-| Follower | A token the grammar allows next. |
-| Token class | What kind of token a follower or a written token is, derived from the grammar: `keyword`, `operator`, `separator`, `opener`, `closer`, `pipe`, `terminator`, `value`, `end`. |
-| Word | What is being typed at the cursor, and whether it is already a whole token. |
-| Previous, next | The token before the cursor and the first one after it. |
-| Enclosing commands, nesting | The commands the cursor's command is inside of: a branch, a subquery. |
-
-**What it means (resolve)**
-
-| Word | Meaning |
-| --- | --- |
-| Role | What an argument means in the language: a column of some types, a new name, an entity, a constant, a map, an expression. The grammar cannot say this. |
-| Role kind | The closed list of roles: `column`, `new_name`, `entity`, `constant`, `option_name`, `map`, `expression`, `dependent_value`, `parameter`, `sublanguage`. |
-| Signature | The roles of one command, keyed by call site. The only thing written per command. |
-| Default role | The role an argument gets with no signature, from its grammar rule. It is why a new command works before it is described. |
-| Inherited | A field of a role that an argument takes from a role above it on its path (the index mode of a list of sources). |
-| Dependent value | A value whose role depends on a name written before it (the value of a setting). |
-| Expression entry | The call site where a whole expression starts. An expression is offered as one thing, whatever the cursor is nested in. |
-| Expression part | What a call site inside an expression is: a column, a function name, a map key, the name of a lambda parameter. Described once, for all commands. |
-| Mode | The kind of expression a role asks for: scalar, aggregation, grouping, filter, constant, full text. It decides which functions apply. |
-| Sublanguage | A body in another language inside a command (PromQL). The engine hands it over whole. |
-| Request | What `resolve` asks for at the cursor: the names of commands, a token, the end of the command, an argument with its role, an expression with its role. |
-
-**What is offered (provide, present)**
-
-| Word | Meaning |
-| --- | --- |
-| Provider | The function that makes the items of one kind of request or role. There is one per kind and none per command. |
-| Context | What a provider knows besides its request: the IR, the columns of the query before the cursor, the editor's callbacks, the license. |
-| Entity | A named thing that exists outside the query: a source, an enrich policy, a lookup index, an inference endpoint, a setting, a metadata field. |
-| Entity definition | How the entities of one kind are listed (`fetch`), with optional `children`, `actions` and `valueRoles`. One per kind, in `entities/registry.ts`. |
-| Scope | What narrows the entities at the cursor: the index mode, the parent's name, inside a subquery, serverless. |
-| Action | Something the editor can do where an entity is expected, offered as an item (the browser of data sources). |
-| Expression position | Where the cursor is inside an expression: the start of an operand, after an operand, after an operator, in a string. Read from the written arguments. |
-| Decision | The rule that picks the items for one expression position. |
-| Presentation | How an item looks and what it inserts: the text of a keyword with what must follow it, suggested values, snippets. Data in `presentation.ts`, rules in `providers/tokens.ts`. |
-| Follow-up | What is offered on a word that is already whole: the word together with what can come after it. |
-| Extras | Items that are not part of the grammar (recommended queries). |
-| Override | A provider registered for one argument by hand, in `overrides.ts`. The exception, counted by a test. |
-
-**Tests**
-
-| Word | Meaning |
-| --- | --- |
-| Scenario row | One query with a cursor and the items expected there, in a command's `autocomplete.scenarios.ts`. Rows run through `suggest`, so they hold for either flow. |
-| Parity | The number of scenario rows on which the new flow gives what the current flow gives. |
-| `new` row | A row for a behaviour only the new flow has, accepted on purpose. It is skipped for the current flow. |
-| Conformance | A test that the grammar side says the right thing, with no suggestion involved. |
-| Boundary test | The test that keeps command names and command folders out of the engine, and Kibana out of the simulated packages. |
+|---|---|
+| Cursor IR | The result of `locate(text, offset)`: a description of the cursor with the same shape for every command |
+| Position | One of a closed set: the start of the query, of a statement, of a command or of an argument, inside an argument, after an argument, inside a string, inside a comment, invalid |
+| Call site | One place in the grammar where a rule takes a rule or a token: `rule.label` or `rule>called`. The identity of an argument, and the key of every table of data |
+| Path | The call sites from the command down to an argument. Roles are looked up along it |
+| Place | A call site with the offset it starts at: one written thing that contains others, as one function call. `open` while the cursor is inside it |
+| Expected argument | An argument the grammar allows at the cursor |
+| Written argument | An argument or a token already written in the command, with its call site, text, range and the places it is in. It replaces reading the syntax tree |
+| Follower | A token the grammar allows next, with its class: `keyword`, `operator`, `separator`, `opener`, `closer`, `pipe`, `terminator`, `value`, `end` |
+| Word | What is being typed at the cursor, and whether it is already a whole token |
+| Role | What an argument means in the language. One of `column`, `new_name`, `entity`, `constant`, `option_name`, `map`, `expression`, `dependent_value`, `parameter`, `sublanguage` |
+| Signature | The roles of one command, keyed by call site |
+| Default role | The role an argument gets with no signature, from its grammar rule |
+| Mode | The kind of expression a role asks for: scalar, aggregation, grouping, key, filter, constant, full text. It decides which functions apply |
+| Request | What `resolve` asks for at the cursor |
+| Provider | The function that makes the items of one kind of request or role |
+| Context | What a provider knows besides its request: the IR, the columns of the query before the cursor, the editor's callbacks, the license |
+| Entity | A named thing outside the query: a source, an enrich policy, a lookup index, an inference endpoint, a setting, a metadata field |
+| Scope | What narrows the entities at the cursor: the index mode, the parent's name, inside a subquery, serverless |
+| Offer | What an expression rule returns: which operands, which operators, whether the comma |
+| Follow-up | What is offered on a word that is already whole: the word with what can come after it |
+| Scenario row | One query with a cursor and the items expected there |
+| Parity | The number of scenario rows on which this flow gives what the current flow gives |
