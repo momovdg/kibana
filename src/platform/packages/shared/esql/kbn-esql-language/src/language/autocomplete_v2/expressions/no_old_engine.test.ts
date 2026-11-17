@@ -18,17 +18,20 @@ const ENGINE_MODULE = 'suggestion_engine';
  * expression engine of the current flow, which works the position out from the syntax tree
  * and the text, is not used: neither its entry nor its module is named by a provider.
  */
-describe('expression decisions', () => {
-  const providers = readdirSync(__dirname).filter(
-    (name) => name.endsWith('.ts') && !name.endsWith('.test.ts')
+describe('the expression rules', () => {
+  const folders = [__dirname, join(__dirname, '../providers')];
+  const sources = folders.flatMap((folder) =>
+    readdirSync(folder)
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+      .map((name) => join(folder, name))
   );
 
-  it('has providers to check', () => {
-    expect(providers.length).toBeGreaterThan(5);
+  it('has files to check', () => {
+    expect(sources.length).toBeGreaterThan(10);
   });
 
-  it.each(providers)('%s does not use the expression engine of the current flow', (name) => {
-    const source = readFileSync(join(__dirname, name), 'utf8');
+  it.each(sources)('%s does not use the expression engine of the current flow', (path) => {
+    const source = readFileSync(path, 'utf8');
 
     expect(source).not.toContain(ENGINE_ENTRY);
     expect(source).not.toContain(ENGINE_MODULE);

@@ -19,7 +19,7 @@ import { Location } from '../../../commands/registry/types';
 import { FUNCTION_LAMBDAS } from '../../../esql_js_sim/definitions';
 import { locate } from '../../../esql_js_sim/grammar';
 import { suggest } from '../suggest';
-import { getLambdaState } from './expression_lambdas';
+import { getLambdaState } from './lambdas';
 
 // No function Kibana knows takes a lambda yet, so the tests declare two: one that keeps the
 // values its lambda accepts, and one whose lambda takes two parameters.

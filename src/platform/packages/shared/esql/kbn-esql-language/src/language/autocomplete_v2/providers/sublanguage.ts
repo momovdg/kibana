@@ -24,7 +24,7 @@ import { getQueryForFields } from '../../shared/get_query_for_fields';
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { ForeignBody } from '../option_shell';
 import type { SuggestionContext } from '../types';
-import { describePromqlPosition, toDetailedPosition } from './promql_position';
+import { describePromqlPosition, toDetailedPosition } from '../promql/position';
 import { pickColumnName } from '../written';
 import { provideOptionNames } from './structured';
 
