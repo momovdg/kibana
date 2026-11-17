@@ -6,7 +6,7 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { inOperators, logicalOperators } from '../../../commands/definitions/all_operators';
+import { logicalOperators } from '../../../commands/definitions/all_operators';
 import {
   FunctionDefinitionTypes,
   isArrayType,
@@ -108,9 +108,9 @@ const getOperatorRule = (
     ctx: { options: { preferredExpressionType: [...preferred] } } as ExpressionContext,
   });
 
-/** What is known of a value beyond its type. */
-interface AfterValue {
-  /** The function whose argument the value is. */
+/** What is known of an operand beyond its type. */
+interface OperandFacts {
+  /** The function whose argument the operand is. */
   call?: Offer['call'];
   /** It is one literal, written out. */
   isLiteral?: boolean;
@@ -122,17 +122,18 @@ const isLiteralAlone = (written: Array<{ id: string }>): boolean =>
   written.length === 1 && partOf(written[0]) === 'literal';
 
 /**
- * What can follow a value, wherever it is: the operators that take its type on their left,
- * and inside a function call the comma when the value can be the whole argument.
+ * What can follow a complete operand (a column, a literal, a call, or what an operator
+ * gives), wherever it is: the operators that take its type on their left, and inside a
+ * function call the comma when the operand can be the whole argument.
  *
  * - A condition that is whole (what an operator gives, or `true` written out) is only joined
  *   to another condition.
  * - Inside a call, a string, an IP or a version that is written out takes no operator.
  */
-const offerAfterValue = (
+const offerAfterOperand = (
   input: OfferInput,
   type: ExpressionType,
-  { call, isLiteral = false, isResult = false }: AfterValue
+  { call, isLiteral = false, isResult = false }: OperandFacts
 ): Offer => {
   if (!isParameterType(type)) {
     return NOTHING;
@@ -178,26 +179,16 @@ const offerAfterValue = (
  * After a complete operand that no operator is written with, outside a function call: the
  * operators that take an operand of its type on their left.
  */
-const offerAfterOperand = (input: OfferInput): Offer => {
+const offerAfterOperandOutsideCall = (input: OfferInput): Offer => {
   const { position, expressionType, allowsSubquery, ir } = input;
   const values = position.written.filter((item) => item.class === 'value' || item.kind === 'rule');
   const brackets = position.written.filter((item) => item.kind === 'token');
   const openers = brackets.filter((item) => item.class === 'opener').length;
   const closers = brackets.filter((item) => item.class === 'closer').length;
 
-  // A list in brackets, as `(a, b)`. While it is open, each value starts as an expression
-  // does, and a comma can follow a value. Once closed it can only be looked up in a list.
+  // A list in brackets with no operator before it, as `(a, b)`, is not an operand.
   if (brackets.some(isOwnSeparator)) {
-    if (openers <= closers) {
-      return { operators: { allowed: namesOf(inOperators) } };
-    }
-
-    const isAfterValue = position.written.at(-1)?.class !== 'separator' && !ir.word;
-
-    return {
-      ...offerOperandStart(input),
-      items: isAfterValue ? [commaWithAutoSuggestCompleteItem] : [],
-    };
+    return NOTHING;
   }
   // A null check is a complete condition: only another condition can be joined to it.
   if (position.operator === NULL_CHECK_END) {
@@ -216,7 +207,7 @@ const offerAfterOperand = (input: OfferInput): Offer => {
   const canListNext = allowsSubquery && openers > closers && ir.next?.class === 'closer';
 
   return {
-    ...offerAfterValue(input, expressionType, { isLiteral: isLiteralAlone(values) }),
+    ...offerAfterOperand(input, expressionType, { isLiteral: isLiteralAlone(values) }),
     items: canListNext ? [commaWithAutoSuggestCompleteItem] : [],
   };
 };
@@ -311,10 +302,14 @@ const offerAfterOperator = (input: OfferInput): Offer | undefined => {
     const last = following.at(-1);
 
     return first && last
-      ? offerAfterValue(input, getResultType(typeOf, { start: first.start, end: last.end }, last), {
-          call,
-          isResult: true,
-        })
+      ? offerAfterOperand(
+          input,
+          getResultType(typeOf, { start: first.start, end: last.end }, last),
+          {
+            call,
+            isResult: true,
+          }
+        )
       : undefined;
   }
 
@@ -375,10 +370,14 @@ const offerAfterOperator = (input: OfferInput): Offer | undefined => {
     }
 
     // What the operator gives; when its right operand is a function call, what the call gives.
-    return offerAfterValue(input, getResultType(typeOf, { ...left, end: right.end }, lastWritten), {
-      call,
-      isResult: true,
-    });
+    return offerAfterOperand(
+      input,
+      getResultType(typeOf, { ...left, end: right.end }, lastWritten),
+      {
+        call,
+        isResult: true,
+      }
+    );
   };
 
   // The match operator takes a constant of the type its left operand asks for.
@@ -447,7 +446,7 @@ const offerAfterOperandInCall = (
     };
   }
 
-  return offerAfterValue(input, type, { call, isLiteral });
+  return offerAfterOperand(input, type, { call, isLiteral });
 };
 
 /**
@@ -530,7 +529,10 @@ export const offer = (input: OfferInput): Offer => {
     case 'after_operator':
       return offerAfterOperator(input) ?? NOTHING;
     case 'after_operand':
-      return (call ? offerAfterOperandInCall(input, call) : offerAfterOperand(input)) ?? NOTHING;
+      return (
+        (call ? offerAfterOperandInCall(input, call) : offerAfterOperandOutsideCall(input)) ??
+        NOTHING
+      );
     default:
       return call ? offerArgumentStart(input, call) : offerOperandStart(input);
   }
