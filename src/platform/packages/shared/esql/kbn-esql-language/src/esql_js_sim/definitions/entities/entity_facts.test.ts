@@ -37,11 +37,11 @@ describe('the entity vocabulary', () => {
     expect(ENTITY_TYPES.filter((type) => !used.has(type))).toEqual([]);
   });
 
-  it('gives an entity that comes from a parent a parent that exists', () => {
+  it('gives an entity that belongs to another a parent that exists', () => {
     const wrong = ENTITY_TYPES.filter((type) => {
-      const { origin, parent } = ENTITY_FACTS[type];
+      const { parent } = ENTITY_FACTS[type];
 
-      return origin === 'parent' ? !parent || !(parent in ENTITY_FACTS) : parent !== undefined;
+      return parent !== undefined && !(parent in ENTITY_FACTS);
     });
 
     expect(wrong).toEqual([]);
@@ -53,12 +53,12 @@ describe('the entity vocabulary', () => {
         return [];
       }
 
-      const { origin, parent } = ENTITY_FACTS[role.entityType];
+      const { parent } = ENTITY_FACTS[role.entityType];
       const dependsOn = role.dependsOn ? ARGUMENT_ROLES[role.dependsOn] : undefined;
       const namesParent = dependsOn?.kind === 'entity' && dependsOn.entityType === parent;
 
       // It depends on its parent exactly when it has one.
-      return (origin === 'parent') === namesParent ? [] : [id];
+      return (parent !== undefined) === namesParent ? [] : [id];
     });
 
     expect(wrong).toEqual([]);

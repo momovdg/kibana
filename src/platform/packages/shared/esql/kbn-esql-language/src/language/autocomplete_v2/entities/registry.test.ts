@@ -13,11 +13,10 @@ import {
   ENTITY_TYPES,
   METADATA_FIELD_NAMES,
   SERVERLESS_METADATA_FIELD_NAMES,
-  type EntityItem,
-  type EntityScope,
   type EntityType,
 } from '../../../esql_js_sim/definitions';
 import { ENTITIES } from './registry';
+import type { EntityItem, EntityScope } from './types';
 
 const callbacks: ESQLCallbacks = {
   getSources: async () => [
@@ -112,14 +111,12 @@ describe('the entity registry', () => {
           hidden: true,
           category: 'Index',
           description: undefined,
-          hasChildren: false,
         },
         {
           name: 'nginx',
           hidden: false,
           category: 'Integration',
           description: undefined,
-          hasChildren: true,
         },
         { name: 'my_view', category: 'View', description: undefined },
       ])

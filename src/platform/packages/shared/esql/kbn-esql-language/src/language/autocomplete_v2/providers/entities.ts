@@ -14,12 +14,11 @@ import { buildSubqueryCompleteItems } from '../../../commands/registry/complete_
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   ENTITY_FACTS,
-  type EntityItem,
   type EntityRole,
-  type EntityScope,
   type EntityType,
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
+import type { EntityItem, EntityScope } from '../entities/types';
 import { getRegisteredCommand } from '../command_metadata';
 import { ENTITIES } from '../entities/registry';
 import type { CursorIR } from '../../../esql_js_sim/grammar';

@@ -23,7 +23,7 @@ const options: OptionNameRole = {
     index: {},
     time: { conflictsWith: ['step', 'start'] },
     step: { conflictsWith: ['time'] },
-    start: { conflictsWith: ['time'], requires: ['end'] },
+    start: { conflictsWith: ['time'] },
     end: {},
   },
 };

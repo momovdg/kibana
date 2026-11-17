@@ -71,7 +71,7 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   // ROW has no input, so its values are literals, parameters and functions of them.
   'rowCommand>fields': { kind: 'expression', mode: 'constant' },
   'orderExpression>booleanExpression': { kind: 'expression', mode: 'scalar', unique: true },
-  'limitCommand>constant': { kind: 'constant', valueType: 'integer', range: { min: 0 } },
+  'limitCommand>constant': { kind: 'constant', valueType: 'integer' },
   'limitByGroupKey>booleanExpression': { kind: 'expression', mode: 'key', unique: true },
 
   // Aggregations. An aggregation and its filter also read the names the grouping defines.
@@ -126,7 +126,6 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   [POLICY]: { kind: 'entity', entityType: 'enrich_policy' },
   'enrichCommand.matchField': {
     kind: 'column',
-    matches: { argument: POLICY, property: 'match_field' },
   },
   'enrichWithClause.newName': newColumn,
   'enrichWithClause.enrichField': {
@@ -189,7 +188,6 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
   'sampleCommand.probability': {
     kind: 'constant',
     valueType: 'double',
-    range: { min: 0, max: 1, exclusive: true },
   },
   'changePointCommand.value': { kind: 'column', types: NUMBER_TYPES },
   'changePointCommand.key': { kind: 'column' },
@@ -205,14 +203,13 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
     kind: 'expression',
     mode: 'scalar',
     types: [...STRING_TYPES, 'unknown'],
-    format: 'llm_prompt',
   },
   'completionCommand>commandNamedParameters': {
     kind: 'map',
     parameters: inferenceParameters('completion'),
   },
   'rerankCommand.targetField': newColumn,
-  'rerankCommand.queryText': { kind: 'constant', valueType: 'string', format: 'search_query' },
+  'rerankCommand.queryText': { kind: 'constant', valueType: 'string' },
   'rerankCommand.rerankFields': { kind: 'expression', mode: 'scalar', types: STRING_TYPES },
   'rerankCommand>commandNamedParameters': {
     kind: 'map',
@@ -248,7 +245,6 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
     kind: 'expression',
     mode: 'full_text',
     types: ['boolean'],
-    format: 'highlight_text',
   },
   // `*` alone stands for every text and keyword column.
   'highlightCommand.highlightFields': { kind: 'column', types: STRING_TYPES, wildcard: 'alone' },
@@ -297,8 +293,8 @@ export const ARGUMENT_ROLES: Readonly<Record<CallSiteId, ArgumentRole>> = {
       index: {},
       time: { conflictsWith: ['step', 'buckets', 'start', 'end'] },
       step: { conflictsWith: ['buckets', 'time'] },
-      start: { conflictsWith: ['time'], requires: ['end'] },
-      end: { conflictsWith: ['time'], requires: ['start'] },
+      start: { conflictsWith: ['time'] },
+      end: { conflictsWith: ['time'] },
       buckets: { conflictsWith: ['step', 'time'] },
       scrape_interval: {},
     },

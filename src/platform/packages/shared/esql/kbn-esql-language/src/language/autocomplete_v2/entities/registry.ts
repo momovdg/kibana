@@ -15,9 +15,8 @@ import { parseMapParams } from '../../../commands/definitions/utils/maps';
 import {
   METADATA_FIELD_NAMES,
   SERVERLESS_METADATA_FIELD_NAMES,
-  type EntityItem,
 } from '../../../esql_js_sim/definitions';
-import type { EntityRegistry } from './types';
+import type { EntityItem, EntityRegistry } from './types';
 
 /**
  * How each kind of entity is listed, from what the editor provides today. Each definition
@@ -67,7 +66,6 @@ export const ENTITIES: EntityRegistry = {
             hidden,
             category: type,
             description: description ?? title,
-            hasChildren: Boolean(dataStreams?.length),
           })
         ),
         ...(views?.views ?? []).map(({ name, description }) => ({

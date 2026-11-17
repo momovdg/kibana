@@ -16,7 +16,7 @@ import {
   valuePlaceholderConstant,
 } from '../../commands/registry/complete_items';
 import { UnmappedFieldsStrategy, type ISuggestionItem } from '../../commands/registry/types';
-import type { CallSiteId, EntityType, ValueFormat } from '../../esql_js_sim/definitions';
+import type { CallSiteId, EntityType } from '../../esql_js_sim/definitions';
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 
 /**
@@ -54,21 +54,21 @@ export const getSuggestedValues = (): Readonly<Record<CallSiteId, SuggestedValue
 });
 
 /**
- * A ready-made string the editor offers where a value has a known use, by that use: the
- * string is selected once inserted, so typing replaces it.
+ * A ready-made string the editor offers where a string has a known use, by the place of the
+ * string: it is selected once inserted, so typing replaces it.
  */
-const getValuePlaceholders = (): Readonly<Partial<Record<ValueFormat, string>>> => ({
-  llm_prompt: 'Your prompt to the LLM.',
-  search_query: 'Your search query',
-  highlight_text: i18n.translate(
+const getValuePlaceholders = (): Readonly<Record<CallSiteId, string>> => ({
+  'completionCommand.prompt': 'Your prompt to the LLM.',
+  'rerankCommand.queryText': 'Your search query',
+  'highlightCommand.queryExpression': i18n.translate(
     'esqlLanguage.commands.highlight.autocomplete.queryTextPlaceholder',
     { defaultMessage: 'The text to highlight' }
   ),
 });
 
-/** The item for the ready-made string of a use, when the editor has one. */
-export const getValueSnippet = (format: ValueFormat | undefined): ISuggestionItem[] => {
-  const placeholder = format === undefined ? undefined : getValuePlaceholders()[format];
+/** The item for the ready-made string of a place, when the editor has one. */
+export const getValueSnippet = (place: CallSiteId | undefined): ISuggestionItem[] => {
+  const placeholder = place === undefined ? undefined : getValuePlaceholders()[place];
 
   return placeholder === undefined
     ? []

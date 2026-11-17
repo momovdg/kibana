@@ -189,7 +189,7 @@ export const provideConstant = (
           },
         ]
       : [];
-  const snippet = isInString ? [] : [...getValueSnippet(role.format), ...defaultValue];
+  const snippet = isInString ? [] : [...getValueSnippet(resolved.id), ...defaultValue];
 
   return [
     ...snippet,
