@@ -9,8 +9,6 @@
 
 import { getSafeInsertText } from '../../../commands/definitions/utils/autocomplete/helpers';
 import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplete/helpers';
-import { esqlCommandRegistry } from '../../../commands/registry';
-import { buildSubqueryCompleteItems } from '../../../commands/registry/complete_items';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   ENTITY_FACTS,
@@ -19,12 +17,14 @@ import {
   type ResolvedRole,
 } from '../../../esql_js_sim/definitions';
 import type { EntityItem, EntityScope } from '../entities/types';
+import { describeAfterName } from '../after_name';
 import { getRegisteredCommand } from '../command_metadata';
 import { ENTITIES } from '../entities/registry';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
 import type { SuggestionContext } from '../types';
 import { getQualifierDetail } from '../presentation';
 import { unquoted, writtenWithRole } from '../written';
+import { buildSubqueryOpeners } from './subqueries';
 
 /** How an entity of each kind looks in the list. */
 const ENTITY_KINDS: Readonly<Record<EntityType, ISuggestionItem['kind']>> = {
@@ -65,19 +65,14 @@ const toScope = (role: EntityRole, { ir, callbacks }: SuggestionContext): Entity
  * Any other name gets a space.
  */
 const suffixAfterName = ({ afterName }: SuggestionContext): string => {
-  if (afterName.position === 'invalid') {
-    return '';
-  }
-  if (afterName.followers.some((follower) => follower.class === 'separator')) {
+  const { isValid, separatorFollows, only } = describeAfterName(afterName);
+
+  if (!isValid || separatorFollows) {
     return '';
   }
 
-  const [only] = afterName.followers;
   const isOnlySymbol =
-    afterName.followers.length === 1 &&
-    !afterName.arguments.length &&
-    only.class === 'operator' &&
-    only.text !== undefined;
+    !afterName.arguments.length && only?.class === 'operator' && only.text !== undefined;
 
   return isOnlySymbol ? ` ${only.text} ` : ' ';
 };
@@ -101,21 +96,6 @@ const toSuggestion = (
 
   // A name reopens the suggestions: what follows it comes next, also in a list.
   return withAutoSuggest(item);
-};
-
-/**
- * The openings of a subquery. The commands other than the one at the cursor come with a
- * preview: a subquery that starts as its own command does needs none.
- */
-const provideSubqueries = ({ ir }: SuggestionContext): ISuggestionItem[] => {
-  const current = ir.command && getRegisteredCommand(ir.command)?.name;
-
-  return buildSubqueryCompleteItems({
-    previewCommands: esqlCommandRegistry
-      .getAllCommands({ isStartingSubquery: true })
-      .map(({ name }) => name)
-      .filter((name) => name !== current),
-  });
 };
 
 const QUALIFIER_JOINER = ':';
@@ -219,6 +199,7 @@ export const provideEntities = async (
   }
 
   const scope = toScope(role, context);
+  const currentCommand = context.ir.command && getRegisteredCommand(context.ir.command)?.name;
   // What the editor can do where a name is expected. A qualifier typed before the name is
   // not part of it.
   const startsName = NAME_POSITIONS.includes(context.ir.position);
@@ -230,7 +211,7 @@ export const provideEntities = async (
   return [
     ...actions,
     // Where a subquery can stand for the entity: one per command a subquery can start with.
-    ...(role.subqueries && !scope.inSubquery ? provideSubqueries(context) : []),
+    ...(role.subqueries && !scope.inSubquery ? buildSubqueryOpeners(currentCommand) : []),
     ...(await provideEntityNames(role, resolved, context)),
   ];
 };

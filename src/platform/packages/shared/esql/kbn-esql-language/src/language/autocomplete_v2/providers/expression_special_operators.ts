@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { buildSubqueryOpeners } from './subqueries';
 import {
   logicalOperators,
   nullCheckOperators,
@@ -18,14 +19,12 @@ import type { FunctionParameterType, SupportedDataType } from '../../../commands
 import { getFunctionDefinition } from '../../../commands/definitions/utils/functions';
 import { getOperatorSuggestion } from '../../../commands/definitions/utils/operators';
 import {
-  buildSubqueryCompleteItems,
   commaCompleteItem,
   commaWithAutoSuggestCompleteItem,
   likePatternItems,
   listCompleteItem,
   rlikePatternItems,
 } from '../../../commands/registry/complete_items';
-import { esqlCommandRegistry } from '../../../commands/registry';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
 import { getOperandRange, type ExpressionPosition } from './expression_position';
@@ -41,10 +40,6 @@ export interface OperatorRuleInput {
 
 const NULL_CHECKS: readonly string[] = ['is null', 'is not null'];
 const NOT_FOLLOWERS: readonly string[] = ['like', 'rlike', 'in'];
-
-/** The commands a subquery can start with, as the registry marks them. */
-const getSubquerySources = (): string[] =>
-  esqlCommandRegistry.getAllCommands({ isStartingSubquery: true }).map(({ name }) => name);
 
 const logicalContinuation = (): ISuggestionItem[] => logicalOperators.map(getOperatorSuggestion);
 
@@ -155,12 +150,7 @@ export const decideIn = async (
   const list = describeList(after, ir);
 
   if (!list.isStarted) {
-    return [
-      listCompleteItem,
-      ...(context.options.allowSubquery
-        ? buildSubqueryCompleteItems({ previewCommands: getSubquerySources() })
-        : []),
-    ];
+    return [listCompleteItem, ...(context.options.allowSubquery ? buildSubqueryOpeners() : [])];
   }
   // After the list a condition can be joined; one in brackets can also be checked for null.
   if (list.isClosed) {
