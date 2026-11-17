@@ -23,3 +23,6 @@ export const callSiteId = (rule: string, called: string, invokingState?: number)
     ? `${rule}.${label.label}`
     : `${rule}>${called}`;
 };
+
+/** The rule a place is in: the first part of its id, `rule` in `rule.label` and `rule>called`. */
+export const ruleOfCallSite = (id: CallSiteId): string => id.split(/[.>]/)[0];
