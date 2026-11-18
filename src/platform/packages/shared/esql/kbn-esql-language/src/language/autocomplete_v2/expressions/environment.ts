@@ -13,7 +13,7 @@ import type { SuggestForExpressionParams } from '../../../commands/definitions/u
 import { isExpressionComplete } from '../../../commands/definitions/utils/expressions';
 import { getUnmappedFieldsStrategy } from '../../../commands/definitions/utils/settings';
 import type { ESQLColumnData, ICommandContext } from '../../../commands/registry/types';
-import type { CursorIR } from '../../../esql_js_sim/grammar';
+import { getCommandWindow, type CursorIR } from '../../../esql_js_sim/grammar';
 import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_context';
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
@@ -70,7 +70,10 @@ export const readExpression = async (
       `${blanked.slice(0, start)}${' '.repeat(end - start)}${blanked.slice(end)}`,
     context.text
   );
-  const { root, astContext } = getAutocompleteCursorContext(text, offset);
+  // Only the command at the cursor is asked about: the commands before it are not parsed
+  // again. Every offset stays.
+  const windowed = `${getCommandWindow(text.slice(0, offset)).text}${text.slice(offset)}`;
+  const { root, astContext } = getAutocompleteCursorContext(windowed, offset);
 
   if (astContext.type !== 'expression') {
     return undefined;

@@ -17,6 +17,7 @@ import {
 import type { CursorLocation } from '../cursor_location/types';
 import { callSiteId } from './call_site_id';
 import { describeCommands } from './describe_commands';
+import { getCommandWindow, type CommandWindow } from './window';
 import { classifyToken, getTokenText, isExpressionRule } from './token_classes';
 import type {
   CallSiteId,
@@ -213,10 +214,23 @@ const openBrackets = (textBefore: string): string[] => {
  * where an argument or a value can come, then the brackets that are still open. Whatever the
  * parser reads from the added text is left out again.
  */
+// The commands before the one at the cursor do not change while that one is typed: they are
+// described once per text.
+let earlierCommands: { text: string; commands: WrittenCommand[] } | undefined;
+
+const describeEarlier = (text: string): WrittenCommand[] => {
+  if (earlierCommands?.text !== text) {
+    earlierCommands = { text, commands: describeCommands(text) };
+  }
+
+  return earlierCommands.commands;
+};
+
 const toCommands = (
   textBefore: string,
   requiredTokens: string,
-  placeholder: string
+  placeholder: string,
+  { earlier, lastPipe = 0 }: CommandWindow
 ): WrittenCommand[] => {
   const caret = textBefore.length;
   const unfinished = `${textBefore}${requiredTokens}`;
@@ -227,7 +241,16 @@ const toCommands = (
   const finished = `${unfinished}${placeholder}${closers}`;
   const expectsValue = placeholder !== '';
 
-  return describeCommands(finished)
+  // Where commands were blanked out, their description comes from their own text.
+  const described =
+    earlier === undefined
+      ? describeCommands(finished)
+      : [
+          ...describeEarlier(earlier),
+          ...describeCommands(finished).filter(({ start }) => start > lastPipe),
+        ];
+
+  return described
     .filter(({ start }) => start < caret)
     .map((command) => ({
       ...command,
@@ -417,7 +440,19 @@ export const locateExpected = (text: string, offset: number): ExpectedAtCursor =
  * Describes the cursor at `offset` in terms of the grammar: where it is, which arguments and
  * tokens can come next, and the word being typed. It knows no command by name.
  */
-export const locate = (text: string, offset: number): CursorIR => {
+export const locate = (fullText: string, offset: number): CursorIR =>
+  // The text is read with the commands the cursor is not in blanked out.
+  locateThrough(fullText, offset, getCommandWindow(fullText.slice(0, offset)));
+
+/**
+ * The same as `locate`, reading every command of the text. It is what `locate` has to agree
+ * with, and it is slower by the length of the query: tests compare the two.
+ */
+export const locateWholeText = (fullText: string, offset: number): CursorIR =>
+  locateThrough(fullText, offset, { text: fullText.slice(0, offset) });
+
+const locateThrough = (fullText: string, offset: number, window: CommandWindow): CursorIR => {
+  const text = `${window.text}${fullText.slice(offset)}`;
   const location = locateCursor(text, offset);
   const expected = toArguments(location);
   const followers = toFollowers(location);
@@ -445,7 +480,7 @@ export const locate = (text: string, offset: number): CursorIR => {
     : withRequiredTokens(textBefore, { position, expected, followers });
   const commands = location.inComment
     ? []
-    : toCommands(textBefore, required.text.slice(caret), required.placeholder);
+    : toCommands(textBefore, required.text.slice(caret), required.placeholder, window);
   const written = getInnermost(commands, textBefore) ?? [];
 
   return {
@@ -455,7 +490,11 @@ export const locate = (text: string, offset: number): CursorIR => {
       command && command !== shared.command
         ? [...shared.enclosingCommands, ...(shared.command ? [shared.command] : [])]
         : shared.enclosingCommands,
-    segment: location.segment,
+    // The text of the segment is the one written, also where commands were blanked out.
+    segment: {
+      ...location.segment,
+      text: fullText.slice(location.segment.start, offset),
+    },
     previous,
     arguments: expected,
     followers,
