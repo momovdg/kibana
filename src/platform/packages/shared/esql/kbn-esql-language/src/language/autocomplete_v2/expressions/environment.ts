@@ -13,7 +13,9 @@ import type { SuggestForExpressionParams } from '../../../commands/definitions/u
 import { isExpressionComplete } from '../../../commands/definitions/utils/expressions';
 import { getUnmappedFieldsStrategy } from '../../../commands/definitions/utils/settings';
 import type { ESQLColumnData, ICommandContext } from '../../../commands/registry/types';
-import { getCommandWindow, type CursorIR } from '../../../esql_js_sim/grammar';
+import { getCommandWindow, getSyntaxTree, type CursorIR } from '../../../esql_js_sim/grammar';
+import { removeAutocompleteMarkers } from '../../../commands/definitions/utils/ast';
+import { getCursorContext } from '../../shared/get_cursor_context';
 import { enhanceWithFunctionsContext } from '../../autocomplete/get_command_context';
 import { getAutocompleteCursorContext } from '../../shared/parse_for_autocomplete_query';
 import type { SuggestionContext, SuggestionRequest } from '../types';
@@ -21,7 +23,7 @@ import { getItems, isLoneColumn, unquoted } from '../written';
 import { getBuilderCallbacks, getLambdaColumns, getRoleColumns } from './columns';
 import { getFunctionsToIgnore, locationOf, readsColumnsHere } from './functions';
 import { getLambdas, type LambdaState } from './lambdas';
-import { findExpressionRoot } from './tree';
+import { findExpressionRoot, withoutTextFrom } from './tree';
 import type { TypeLookup } from './types';
 
 /**
@@ -70,10 +72,17 @@ export const readExpression = async (
       `${blanked.slice(0, start)}${' '.repeat(end - start)}${blanked.slice(end)}`,
     context.text
   );
-  // Only the command at the cursor is asked about: the commands before it are not parsed
-  // again. Every offset stays.
-  const windowed = `${getCommandWindow(text.slice(0, offset)).text}${text.slice(offset)}`;
-  const { root, astContext } = getAutocompleteCursorContext(windowed, offset);
+  // The locator has parsed the text already: its syntax tree is read where it describes what
+  // is written. It does not while a word is typed (its parse stops where the word starts),
+  // and a lambda is read with its head blanked out, which is another text. Those are parsed.
+  const located = lambdas.length || ir.word ? undefined : getSyntaxTree(ir);
+  const tree = located && withoutTextFrom(removeAutocompleteMarkers(located), offset);
+  const { root, astContext } = tree
+    ? { root: tree, astContext: getCursorContext(text.slice(0, offset), tree, offset) }
+    : getAutocompleteCursorContext(
+        `${getCommandWindow(text.slice(0, offset)).text}${text.slice(offset)}`,
+        offset
+      );
 
   if (astContext.type !== 'expression') {
     return undefined;
