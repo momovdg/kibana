@@ -6,12 +6,17 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { GRAMMAR_LABELS } from './grammar_labels.generated';
+import { GRAMMAR_LABELS, TOKEN_TEXTS } from './grammar_labels.generated';
+import { readTokenTexts } from '../cursor_ir/token_classes';
 import { readGrammarLabels } from './read_grammar';
 
 describe('grammar labels', () => {
   it('match the installed grammar (regenerate with node scripts/generate_grammar_labels.js in @kbn/esql-language)', () => {
     expect(readGrammarLabels()).toEqual(GRAMMAR_LABELS);
+  });
+
+  it('have the text of every token of the installed grammar (regenerate the same way)', () => {
+    expect(readTokenTexts()).toEqual(TOKEN_TEXTS);
   });
 
   it('give the tokens around each RENAME name', () => {
