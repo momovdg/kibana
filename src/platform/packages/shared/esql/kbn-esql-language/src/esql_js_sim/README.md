@@ -73,6 +73,12 @@ brackets that are still open, and leaves out what the parser read from the added
 argument the cursor is in and the places above it that the cursor is still inside are marked
 `open`. That is how the parameters of a lambda are known to be in scope: their lambda is open.
 
+`locate` reads a long query through a window (`cursor_ir/window.ts`): the commands between
+the first one of the pipeline and the one at the cursor are blanked out, so every offset
+stays and only two commands are lexed and parsed. The blanked commands are described once and
+reused while the command at the cursor is typed. `locateWholeText` reads every command; a test
+in the engine checks that the two agree, also key by key.
+
 A command the grammar has and Kibana has not registered is located like any other.
 
 ## The table of positions
