@@ -52,3 +52,4 @@ export type { CallSite, GrammarLabel } from './grammar_labels/types';
 export { locatePromql } from './promql/locate_promql';
 export type { PromqlCursor, PromqlExpectedRule, PromqlFollower } from './promql/locate_promql';
 export { ruleOfCallSite } from './cursor_ir/call_site_id';
+export { TOKEN_TEXTS } from './grammar_labels/grammar_labels.generated';

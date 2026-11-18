@@ -128,7 +128,7 @@ const getVocabulary = (): Vocabulary => {
   const texts = new Map<number, string>();
 
   symbolicNames.forEach((name, type) => {
-    const text = name ? TOKEN_TEXTS[name] : undefined;
+    const text = name ? (TOKEN_TEXTS as Readonly<Record<string, string>>)[name] : undefined;
 
     if (text !== undefined) {
       texts.set(type, text);

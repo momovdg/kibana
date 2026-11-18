@@ -37,11 +37,7 @@ export const GRAMMAR_LABELS: readonly GrammarLabel[] = ${JSON.stringify(
     )};
 
 /** The fixed text of each token that has one, lower-cased, by the name of the token. */
-export const TOKEN_TEXTS: Readonly<Record<string, string>> = ${JSON.stringify(
-      readTokenTexts(),
-      null,
-      2
-    )};
+export const TOKEN_TEXTS = ${JSON.stringify(readTokenTexts(), null, 2)} as const;
 `
   );
   return target;

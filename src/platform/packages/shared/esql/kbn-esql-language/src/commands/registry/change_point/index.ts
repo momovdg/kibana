@@ -8,7 +8,8 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommand, ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
+import { createSpecAutocomplete } from '../../spec/suggest';
+import { changePointSpec } from './spec';
 import { columnsAfter } from './columns_after';
 import { validate } from './validate';
 import { summary } from './summary';
@@ -17,7 +18,7 @@ import { Commands } from '../../definitions/keywords';
 
 const changePointCommandMethods: ICommandMethods<ICommandContext> = {
   validate,
-  autocomplete,
+  autocomplete: createSpecAutocomplete(changePointSpec),
   columnsAfter,
   summary,
 };

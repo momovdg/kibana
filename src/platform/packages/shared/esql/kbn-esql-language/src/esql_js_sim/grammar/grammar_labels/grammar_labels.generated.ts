@@ -518,7 +518,7 @@ export const GRAMMAR_LABELS: readonly GrammarLabel[] = [
 ];
 
 /** The fixed text of each token that has one, lower-cased, by the name of the token. */
-export const TOKEN_TEXTS: Readonly<Record<string, string>> = {
+export const TOKEN_TEXTS = {
   CHANGE_POINT: 'change_point',
   DEDUP: 'dedup',
   DENSE_VECTOR: 'dense_vector',
@@ -628,4 +628,4 @@ export const TOKEN_TEXTS: Readonly<Record<string, string>> = {
   DEV_EQL: 'eql',
   INLINE_STATS: 'stats',
   MMR_LIMIT: 'limit',
-};
+} as const;
