@@ -2,8 +2,8 @@
 
 exports[`parity of the new flow with the current flow matches these rows of each scenario table 1`] = `
 Array [
-  "all commands: 663 of 663",
-  "replaced on purpose: 102",
+  "all commands: 667 of 667",
+  "replaced on purpose: 103",
   "change_point: 15 of 15",
   "completion: 18 of 18",
   "dense_vector: 10 of 10",
@@ -15,11 +15,11 @@ Array [
   "fuse: 22 of 22",
   "grok: 4 of 4",
   "highlight: 11 of 11",
-  "inline stats: 5 of 5",
+  "inline stats: 8 of 8",
   "ip_location: 6 of 6",
   "join: 9 of 9",
   "keep: 1 of 1",
-  "let: 7 of 7",
+  "let: 8 of 8",
   "limit: 8 of 8",
   "mmr: 10 of 10",
   "mv_expand: 3 of 3",

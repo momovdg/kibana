@@ -149,6 +149,8 @@ per position, with the query and the items expected there, and next to it a thre
 flow knows has every row tagged `new`: those rows are checked by
 `__tests__/scenarios/parity.test.ts`. See `__tests__/scenarios/README.md`.
 
+`position_coverage.test.ts` fails until every place of the command is the cursor of a row.
+
 **6. Update the snapshots** that list what is registered: `command_metadata.test.ts` and
 `parity.test.ts` (run each with `-u` and read the diff). A test that names the command as not
 adopted yet fails and is fixed by hand.
@@ -306,6 +308,7 @@ flowchart TB
     B["boundary.test.ts<br/>no command in the engine"]
     SC["signature_coverage.test.ts<br/>every place of a registered command has a role"]
     LO["load_order.test.ts<br/>nothing read from another module at load"]
+    PC["position_coverage.test.ts<br/>every place of a registered command is the cursor of a scenario row"]
   end
   subgraph Grammar["Grammar: no suggestion involved"]
     LE["locate_examples.test.ts<br/>locate at every token of every example"]
