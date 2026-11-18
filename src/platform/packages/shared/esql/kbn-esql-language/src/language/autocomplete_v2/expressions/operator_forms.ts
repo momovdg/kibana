@@ -15,8 +15,6 @@ import type { FunctionParameterType } from '../../../commands/definitions/types'
 import { getFunctionDefinition } from '../../../commands/definitions/utils/functions';
 import { getOperatorSuggestion } from '../../../commands/definitions/utils/operators';
 import {
-  commaCompleteItem,
-  commaWithAutoSuggestCompleteItem,
   likePatternItems,
   listCompleteItem,
   rlikePatternItems,
@@ -24,6 +22,7 @@ import {
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
 import { buildSubqueryOpeners } from '../providers/subqueries';
+import { getSeparatorItem } from '../providers/tokens';
 import { isColumnPart, lowerTextOf } from '../written';
 import { getOperandRange } from './position';
 import type { Offer, OfferInput } from './types';
@@ -127,7 +126,7 @@ export const offerLike = (
     return { items: joinCondition() };
   }
 
-  return { items: list.startsValue ? patterns : [{ ...commaCompleteItem, text: ', ' }] };
+  return { items: list.startsValue ? patterns : [getSeparatorItem()] };
 };
 
 /**
@@ -154,7 +153,7 @@ export const offerIn = (
     };
   }
   if (!list.startsValue) {
-    return { items: [commaWithAutoSuggestCompleteItem] };
+    return { items: [getSeparatorItem()] };
   }
 
   // The type of the values is that of the left operand when it is a column.
