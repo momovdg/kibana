@@ -13,9 +13,11 @@ export {
   getValuePlaceholder,
   locate,
   locateExpected,
+  locateWholeText,
   readToEndOfCommand,
 } from './cursor_ir/locate';
 export type { CommandReading, ExpectedAtCursor } from './cursor_ir/locate';
+export { getCommandWindow } from './cursor_ir/window';
 export { readOptionShell } from './cursor_ir/option_shell';
 export type { OptionShell, WrittenOption } from './cursor_ir/option_shell';
 export type {

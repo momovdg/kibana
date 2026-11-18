@@ -8,7 +8,7 @@
  */
 import type { ISuggestionItem } from '../../commands/registry/types';
 import { resolveRole } from '../../esql_js_sim/definitions';
-import type { CursorIR, WrittenArgument } from '../../esql_js_sim/grammar';
+import { getCommandWindow, type CursorIR, type WrittenArgument } from '../../esql_js_sim/grammar';
 import { SuggestionOrderingEngine } from '../autocomplete/utils/sorting/suggestion_ordering_engine';
 import { SuggestionCategory } from '../autocomplete/utils/sorting/types';
 import {
@@ -100,7 +100,9 @@ const withReplacementRanges = async (
   const needsColumns = items.some(({ requiresExistingColumnMatch }) => requiresExistingColumnMatch);
 
   return attachReplacementRanges(innerText, ranged, {
-    tokens: getEsqlLexerTokens(innerText),
+    // The tokens near the cursor are all that is read: the commands the cursor is not in
+    // are not lexed again.
+    tokens: getEsqlLexerTokens(getCommandWindow(innerText).text),
     commandContext: needsColumns && context ? { columns: await context.getColumnMap() } : undefined,
     fullText,
     offset,
