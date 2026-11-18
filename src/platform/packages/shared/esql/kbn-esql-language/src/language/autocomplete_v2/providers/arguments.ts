@@ -7,7 +7,10 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { getNewUserDefinedColumnSuggestion } from '../../../commands/registry/complete_items';
+import {
+  getNewNamedSubquerySuggestion,
+  getNewUserDefinedColumnSuggestion,
+} from '../../../commands/registry/complete_items';
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   type ColumnRole,
@@ -34,7 +37,7 @@ import {
   SUGGESTED_NAMES,
 } from '../presentation';
 import type { SuggestionContext } from '../types';
-import { ASSIGNMENT, pickColumnName, writtenWithRole } from '../written';
+import { ASSIGNMENT, pickColumnName, pickSubqueryName, writtenWithRole } from '../written';
 
 /**
  * Whether the item for an argument ends with a space and opens the next suggestions. It does
@@ -119,6 +122,14 @@ export const provideNewName = (
 ): ISuggestionItem[] => {
   const isAssigned = context.afterName.followers.some(({ text }) => text === ASSIGNMENT);
 
+  // A subquery is named where it is bound: a name no binding of the query has yet.
+  if (role.of === 'subquery' && isAssigned) {
+    const bound = context.ir.commands.flatMap(({ arguments: written }) =>
+      written.filter(({ id }) => id === resolved.id).map(({ text }) => text)
+    );
+
+    return [getNewNamedSubquerySuggestion(pickSubqueryName(new Set(bound)))];
+  }
   if (role.of !== 'column') {
     return [];
   }

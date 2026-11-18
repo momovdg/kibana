@@ -17,6 +17,7 @@ const SUBQUERIES = ['(FROM $0);', '(ROW $0);', '(TS $0);'];
 export const letScenarios: ScenarioTable = {
   command: 'let',
   scenarios: [
+    ...rows('suggests a name for the subquery', ['LET '], ['subquery0 = ']),
     ...rows(
       'suggests the assignment after the binding name',
       ['LET selected ', 'let\tselected\n'],
