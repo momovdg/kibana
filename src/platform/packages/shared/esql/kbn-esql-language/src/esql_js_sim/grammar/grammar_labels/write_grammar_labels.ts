@@ -8,6 +8,7 @@
  */
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { readTokenTexts } from '../cursor_ir/token_classes';
 import { readGrammarLabels } from './read_grammar';
 
 const LICENSE_HEADER = `/*
@@ -31,6 +32,13 @@ import type { GrammarLabel } from './types';
 
 export const GRAMMAR_LABELS: readonly GrammarLabel[] = ${JSON.stringify(
       readGrammarLabels(),
+      null,
+      2
+    )};
+
+/** The fixed text of each token that has one, lower-cased, by the name of the token. */
+export const TOKEN_TEXTS: Readonly<Record<string, string>> = ${JSON.stringify(
+      readTokenTexts(),
       null,
       2
     )};

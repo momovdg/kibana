@@ -13,7 +13,8 @@ import { dirname, join, relative, resolve, sep } from 'path';
 const SOURCE_ROOT = join(__dirname, '..');
 const PACKAGES = ['grammar', 'definitions'] as const;
 
-const IMPORT = /(?:from|require\(|import\()\s*['"]([^'"]+)['"]/g;
+// `from` is followed by a space in an import: a table entry `FROM: 'from'` is not one.
+const IMPORT = /(?:\bfrom\s+|require\(\s*|import\(\s*)['"]([^'"]+)['"]/g;
 // What esql-js packages can depend on, plus Node built-ins for their generators.
 const ALLOWED_MODULES = [/^@elastic\/esql/, /^antlr4$/, /^fs$/, /^path$/];
 
