@@ -9,7 +9,7 @@
 
 import type { ESQLCallbacks } from '@kbn/esql-types';
 import type { ISuggestionItem } from '../../commands/registry/types';
-import { collect, NOTHING_APPLIES } from './collect';
+import { collect, NOTHING_APPLIES, prepare, provideAll } from './collect';
 import { present } from './present';
 import { provideControls } from './providers/controls';
 import { getLongerKeywordStart, provideFollowUps } from './whole_word';
@@ -23,18 +23,18 @@ export const suggest = async (
   offset: number,
   callbacks?: ESQLCallbacks
 ): Promise<ISuggestionItem[]> => {
-  const collected = await collect(fullText, offset, callbacks);
-  const presented = { fullText, offset, ir: collected.ir, context: collected.context };
+  const located = await prepare(fullText, offset, callbacks);
+  const presented = { fullText, offset, ir: located.ir, context: located.context };
   // Right after the character that starts a control, only the controls are offered.
-  const controls = NOTHING_APPLIES.includes(collected.ir.position)
+  const controls = NOTHING_APPLIES.includes(located.ir.position)
     ? undefined
     : provideControls(fullText, offset, callbacks);
 
   if (controls) {
-    return present(controls, { ...presented, ir: { ...collected.ir, command: undefined } });
+    return present(controls, { ...presented, ir: { ...located.ir, command: undefined } });
   }
 
-  const keywordStart = getLongerKeywordStart(collected.ir, fullText, offset);
+  const keywordStart = getLongerKeywordStart(located.ir, fullText, offset);
 
   if (keywordStart !== undefined) {
     const without = `${fullText.slice(0, keywordStart)}${fullText.slice(offset)}`;
@@ -42,12 +42,16 @@ export const suggest = async (
     return present((await collect(without, keywordStart, callbacks)).items, presented);
   }
 
-  const followUps = await provideFollowUps(fullText, offset, collected, callbacks);
+  const followUps = await provideFollowUps(fullText, offset, located, callbacks);
 
   // A word that is already whole is offered with what follows it, and not as itself again. A
   // value that is whole has nothing else to offer, also when nothing follows it.
   const isWholeValue =
-    followUps !== undefined && followUps.length === 0 && collected.ir.word?.kind !== 'name';
+    followUps !== undefined && followUps.length === 0 && located.ir.word?.kind !== 'name';
 
-  return present(followUps?.length || isWholeValue ? followUps ?? [] : collected.items, presented);
+  // What the cursor itself offers is provided only when that is what is shown.
+  return present(
+    followUps?.length || isWholeValue ? followUps ?? [] : (await provideAll(located)).items,
+    presented
+  );
 };
