@@ -86,6 +86,22 @@ export const whereScenarios: ScenarioTable = {
   command: 'where',
   scenarios: withNameSpacing(
     [
+      // The list that is looked up in the rows of a subquery: `(a, b) IN (FROM ...)`.
+      {
+        name: 'suggests operands inside a list in brackets',
+        query: 'from a | where (keywordField, ',
+        expect: { contains: ['textField ', 'ABS($0)'] },
+      },
+      {
+        name: 'suggests IN after a list in brackets',
+        query: 'from a | where (keywordField, textField) ',
+        expect: { contains: ['IN $0'], excludes: ['| ', 'AND $0'] },
+      },
+      {
+        name: 'suggests a subquery for a list in brackets to be looked up in',
+        query: 'from a | where (keywordField, textField) IN ',
+        expect: { contains: ['(FROM $0)'] },
+      },
       ...rows(
         START,
         'suggests columns and functions',

@@ -15,7 +15,8 @@ import type { EntityFacts } from './types';
  * entity to the schema without describing it here does not compile.
  */
 export const ENTITY_FACTS: Readonly<Record<EntityType, EntityFacts>> = {
-  source: {},
+  // `LET name = (subquery);` makes `name` a source of the query after it.
+  source: { boundAs: 'subquery' },
   lookup_index: {},
   // The mode says on which cluster of a cross-cluster query the enrichment runs.
   enrich_policy: { qualifiers: ['_any', '_coordinator', '_remote'] },

@@ -12,6 +12,7 @@ import { withAutoSuggest } from '../../../commands/definitions/utils/autocomplet
 import type { ISuggestionItem } from '../../../commands/registry/types';
 import {
   ENTITY_FACTS,
+  resolveRole,
   type EntityRole,
   type EntityType,
   type ResolvedRole,
@@ -23,7 +24,7 @@ import { ENTITIES } from '../entities/registry';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
 import type { SuggestionContext } from '../types';
 import { getQualifierDetail } from '../presentation';
-import { unquoted, writtenWithRole } from '../written';
+import { pathOf, unquoted, writtenWithRole } from '../written';
 import { buildSubqueryOpeners } from './subqueries';
 
 /** How an entity of each kind looks in the list. */
@@ -146,14 +147,61 @@ export const isQualifierAlone = ({ segment, word, previous }: CursorIR): boolean
   );
 };
 
+/**
+ * The names the query binds before the command at the cursor that stand for an entity of the
+ * kind the role names, as the name a subquery is bound to stands for a source. Each says which
+ * command bound it. A name bound by the statement the cursor is in is not bound yet.
+ */
+const getBoundEntities = (role: EntityRole, { ir }: SuggestionContext): EntityItem[] => {
+  const { boundAs } = ENTITY_FACTS[role.entityType];
+
+  // A source of a kind, as a time series, is not something a subquery is.
+  if (boundAs === undefined || role.indexMode !== undefined) {
+    return [];
+  }
+
+  return ir.commands
+    .filter(({ end }) => end <= ir.segment.start)
+    .flatMap(({ rule, arguments: written }) =>
+      written
+        .filter((argument) => {
+          const bound = resolveRole(pathOf(argument))?.role;
+
+          return bound?.kind === 'new_name' && bound.of === boundAs;
+        })
+        .map(({ text }) => ({
+          name: text,
+          category: getRegisteredCommand(rule)?.name.toUpperCase(),
+        }))
+    );
+};
+
+/**
+ * The entities the role names, in the scope of the cursor: the names the query binds first,
+ * each in the place of an entity of the same name, then what the editor lists.
+ */
+const listEntities = async (
+  role: EntityRole,
+  context: SuggestionContext
+): Promise<EntityItem[]> => {
+  const bound = getBoundEntities(role, context);
+  const names = bound.map(({ name }) => name);
+  const listed = await ENTITIES[role.entityType].fetch(
+    context.callbacks ?? {},
+    toScope(role, context)
+  );
+
+  return [...bound, ...listed.filter(({ name }) => !names.includes(name))];
+};
+
 /** Whether a name is one of the entities the role names, in the scope of the cursor. */
 export const isEntity = async (
   name: string,
   role: EntityRole,
   context: SuggestionContext
 ): Promise<boolean> => {
-  const { fetch, exists } = ENTITIES[role.entityType];
-  const items = await fetch(context.callbacks ?? {}, toScope(role, context));
+  const { exists } = ENTITIES[role.entityType];
+  const items = await listEntities(role, context);
 
   return exists ? exists(name, items) : items.some((item) => item.name === name);
 };
@@ -167,10 +215,7 @@ export const provideEntityNames = async (
   resolved: ResolvedRole,
   context: SuggestionContext
 ): Promise<ISuggestionItem[]> => {
-  const items = await ENTITIES[role.entityType].fetch(
-    context.callbacks ?? {},
-    toScope(role, context)
-  );
+  const items = await listEntities(role, context);
   const used = role.unique ? writtenWithRole(context.ir.written, resolved.id) : [];
   const suffix = suffixAfterName(context);
   const visible = items.filter(({ hidden, name }) => !hidden && !used.includes(name));
