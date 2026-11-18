@@ -335,7 +335,7 @@ const offerAfterOperator = (input: OfferInput): Offer | undefined => {
 
       return {
         call,
-        operands: { types, columns: true, values: true, spaced: false, literals: 'exact' },
+        operands: { types, columns: true, values: true, spaced: true, literals: 'exact' },
       };
     }
 
