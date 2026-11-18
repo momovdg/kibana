@@ -21,8 +21,15 @@ const callbacks = createCallbacks({
   ],
 });
 
+// The comma of this flow comes with a space, wherever a list is: the one difference from the
+// current flow that these comparisons leave out.
+const SPACED_COMMA = ', ';
+const BARE_COMMA = ',';
+
 const textsOf = async (flow: typeof suggest, query: string): Promise<string[]> =>
-  (await flow(query, query.length, callbacks)).map(({ text }) => text).sort();
+  (await flow(query, query.length, callbacks))
+    .map(({ text }) => (text === SPACED_COMMA ? BARE_COMMA : text))
+    .sort();
 
 /**
  * Expression positions that no scenario table has a row for, compared item by item with the

@@ -864,8 +864,9 @@ describe('suggest (v2)', () => {
     it('offers the operands of the type an operator needs', async () => {
       const texts = await textsAt('FROM e | WHERE n > ', callbacks);
 
-      expect(texts).toContain('n');
-      expect(texts).not.toContain('k');
+      // An operand ends with a space, also after an operator.
+      expect(texts).toContain('n ');
+      expect(texts).not.toContain('k ');
     });
 
     it('offers the arguments of a function by its signature', async () => {
@@ -1039,8 +1040,13 @@ describe('suggest (v2)', () => {
       'FROM e | EVAL a = n + ',
       'FROM e | EVAL a = ROUND(n, ',
     ])('offers at the end of %j what the current flow offers', async (query) => {
-      expect((await textsAt(query, callbacks)).sort()).toEqual(
-        (await currentTextsAt(query)).sort()
+      // After an operator the current flow ends an operand with no space; this flow ends every
+      // operand with one. The comparison is on what is offered, not on that space.
+      const withoutEndingSpace = (texts: string[]): string[] =>
+        texts.map((text) => text.replace(/^(\S+) $/, '$1')).sort();
+
+      expect(withoutEndingSpace(await textsAt(query, callbacks))).toEqual(
+        withoutEndingSpace(await currentTextsAt(query))
       );
     });
   });

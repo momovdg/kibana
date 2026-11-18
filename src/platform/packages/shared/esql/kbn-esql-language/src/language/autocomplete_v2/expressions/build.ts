@@ -13,7 +13,9 @@ import type {
   SuggestForExpressionParams,
 } from '../../../commands/definitions/utils/autocomplete/expressions/types';
 import { getKqlSuggestionsIfApplicable } from '../../../commands/definitions/utils/autocomplete/expressions/utils';
+import { commaCompleteItem } from '../../../commands/registry/complete_items';
 import type { ISuggestionItem } from '../../../commands/registry/types';
+import { getSeparatorItem } from '../providers/tokens';
 import type { CursorIR } from '../../../esql_js_sim/grammar';
 import type { Offer } from './types';
 
@@ -93,6 +95,8 @@ export const build = async (
         types,
         includeDateLiterals: true,
         includeCompatibleLiterals: literals === 'compatible',
+        // A literal is an operand as a column is: the same space, the same list after it.
+        advanceCursorAndOpenSuggestions: spaced,
       });
     }
     builder.addFunctions({ types });
@@ -105,5 +109,9 @@ export const build = async (
     builder.addCommaIfNeeded(comma);
   }
 
-  return builder.addSuggestions(items).build();
+  // The comma that ends an argument is the separator every list has.
+  return builder
+    .addSuggestions(items)
+    .build()
+    .map((item) => (item === commaCompleteItem ? getSeparatorItem() : item));
 };

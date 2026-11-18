@@ -154,8 +154,8 @@ describe('lambdas', () => {
       const afterOperator = await textsAt('FROM lam | EVAL a = TEST_FILTER(n, v -> n > ');
 
       expect(afterParameter).toContain('> $0');
-      expect(afterOperator).toEqual(expect.arrayContaining(['v', 'n']));
-      expect(afterOperator).not.toContain('k');
+      expect(afterOperator).toEqual(expect.arrayContaining(['v ', 'n ']));
+      expect(afterOperator).not.toContain('k ');
     });
 
     it('offers the parameters of the lambdas around a nested one', async () => {
@@ -169,8 +169,8 @@ describe('lambdas', () => {
     it('offers a parameter only inside its lambda', async () => {
       const texts = await textsAt('FROM lam | EVAL a = TEST_FILTER(n, v -> v > 1) + ');
 
-      expect(texts).toContain('n');
-      expect(texts).not.toContain('v');
+      expect(texts).toContain('n ');
+      expect(texts).not.toContain('v ');
     });
 
     it('does not let the command go on inside a lambda', async () => {

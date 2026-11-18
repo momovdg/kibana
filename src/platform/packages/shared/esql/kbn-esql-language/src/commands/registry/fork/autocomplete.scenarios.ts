@@ -445,6 +445,9 @@ export const forkScenarios: ScenarioTable = {
     ],
     {
       'FROM a | FORK (SORT ': 'spaced',
+      // An operand after an operator ends with a space, as every operand does.
+      'FROM a | FORK (WHERE textField != ': 'spaced',
+      'FROM a | FORK (WHERE textField != text ': 'spaced',
     }
   ),
 };
