@@ -96,6 +96,11 @@ registered command for a grammar rule (`getRegisteredCommand`). Until the curren
 removed, the registry type also asks for an `autocomplete` method of that flow; a command only
 the new flow knows returns nothing there.
 
+A command that is still in development has a token named `DEV_…` in the grammar (`DEV_LET`).
+It is registered like any other, under the text of that token (`let`, listed in the generated
+`TOKEN_TEXTS`), with `hidden: process.env.NODE_ENV !== 'test'` in its metadata. A hidden
+command is not offered by name; everything inside it works, so its scenario rows run in tests.
+
 **2. Describe its arguments.** Remove the command from `UNDESCRIBED_COMMANDS`
 (`command_facts.ts`) if it is listed there. `signature_coverage.test.ts` now fails and prints
 the path of every place of the command that has no role. To see the places beforehand, filter
