@@ -220,6 +220,19 @@ const isKnownName = async (context: SuggestionContext): Promise<boolean | undefi
 export const isUnknownName = async (context: SuggestionContext): Promise<boolean> =>
   (await isKnownName(context)) === false;
 
+const COMMA = ',';
+
+/**
+ * The separator of a list, the same wherever a list is: followed by a space, so the next item
+ * can be typed at once, and taking the place of a space before it: `a, ` and never `a , `.
+ */
+export const getSeparatorItem = (text: string = COMMA): ISuggestionItem =>
+  withAutoSuggest({
+    ...commaCompleteItem,
+    text: `${text} `,
+    replacementRangeStrategy: { kind: ReplacementRangeStrategyKind.TRAILING_WHITESPACE },
+  });
+
 /** The item for a token with a fixed text, by the class of the token alone. */
 export const provideToken = (follower: Follower): ISuggestionItem[] => {
   const { class: tokenClass, text = '' } = follower;
@@ -229,14 +242,7 @@ export const provideToken = (follower: Follower): ISuggestionItem[] => {
       return [pipeCompleteItem];
     // A separator is followed by a space, so the next item of the list can be typed at once.
     case 'separator':
-      // After a space the separator takes the place of the space: `a, ` and not `a , `.
-      return [
-        withAutoSuggest({
-          ...commaCompleteItem,
-          text: `${text} `,
-          replacementRangeStrategy: { kind: ReplacementRangeStrategyKind.TRAILING_WHITESPACE },
-        }),
-      ];
+      return [getSeparatorItem(text)];
     case 'keyword':
       return provideKeyword(follower);
     // The end of a header statement moves to the next line, where the next one starts.

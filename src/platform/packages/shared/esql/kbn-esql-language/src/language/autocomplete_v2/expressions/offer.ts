@@ -36,13 +36,10 @@ import {
   hasVariadicSignature,
 } from '../../../commands/definitions/utils/signatures/traits';
 import { getMatchingSignatures } from '../../../commands/definitions/utils/signatures/matchers';
-import {
-  buildMapValueCompleteItem,
-  commaCompleteItem,
-  commaWithAutoSuggestCompleteItem,
-} from '../../../commands/registry/complete_items';
+import { buildMapValueCompleteItem } from '../../../commands/registry/complete_items';
 import { FUNCTION_CALL } from '../../../esql_js_sim/definitions';
 import type { CursorIR, WrittenArgument } from '../../../esql_js_sim/grammar';
+import { getSeparatorItem } from '../providers/tokens';
 import { ASSIGNMENT, CAST, partOf } from '../written';
 import { joinCondition, offerAfterNot, offerIn, offerLike, offerNullCheck } from './operator_forms';
 import { getOperandRange, isOperandOf, type FunctionCallPosition } from './position';
@@ -208,7 +205,7 @@ const offerAfterOperandOutsideCall = (input: OfferInput): Offer => {
 
   return {
     ...offerAfterOperand(input, expressionType, { isLiteral: isLiteralAlone(values) }),
-    items: canListNext ? [commaWithAutoSuggestCompleteItem] : [],
+    items: canListNext ? [getSeparatorItem()] : [],
   };
 };
 
@@ -424,7 +421,7 @@ const offerAfterOperandInCall = (
     const canEnd =
       !isFollowedByComma && (isAmbiguousPosition(parameter) || canAcceptMoreArgs(parameter));
 
-    return { items: [...joinCondition(), ...(canEnd ? [commaCompleteItem] : [])] };
+    return { items: [...joinCondition(), ...(canEnd ? [getSeparatorItem()] : [])] };
   }
 
   const type = typeOf({ start: position.start, end: last.end });

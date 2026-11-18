@@ -7,7 +7,13 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { columns, functions, operators, timeUnits } from '../../../__tests__/scenarios';
+import {
+  columns,
+  functions,
+  operators,
+  timeUnits,
+  withSpacedComma,
+} from '../../../__tests__/scenarios';
 import type { Scenario, ScenarioTable } from '../../../__tests__/scenarios';
 
 const rows = (group: string, name: string, queries: string[], exact: string[]): Scenario[] =>
@@ -311,11 +317,14 @@ export const evalScenarios: ScenarioTable = {
       ['from a | eval a = 1 year '],
       [...afterCompleteExpression, '+ $0', '- $0']
     ),
-    ...rows(
-      DATE_MATH,
-      'suggests time units after a number in a date function',
-      ['from a | eval col0=date_trunc(2 '],
-      [...timeUnits().map((unit) => `${unit}, `), ',']
+    // The comma is the one every list has: with a space after it.
+    ...withSpacedComma(
+      rows(
+        DATE_MATH,
+        'suggests time units after a number in a date function',
+        ['from a | eval col0=date_trunc(2 '],
+        [...timeUnits().map((unit) => `${unit}, `), ',']
+      )
     ),
     ...rows(CASE, 'first position', ['from a | eval case('], caseExpression),
     ...rows(
@@ -333,11 +342,14 @@ export const evalScenarios: ScenarioTable = {
         (operator) => operator !== '-'
       )
     ),
-    ...rows(
-      CASE,
-      'suggests boolean operators and a comma after a boolean column',
-      ['from a | eval case( booleanField '],
-      ['== $0', '!= $0', ',', ...operators('logical', 'in', 'nullCheck'), 'NOT']
+    // The comma is the one every list has: with a space after it.
+    ...withSpacedComma(
+      rows(
+        CASE,
+        'suggests boolean operators and a comma after a boolean column',
+        ['from a | eval case( booleanField '],
+        ['== $0', '!= $0', ',', ...operators('logical', 'in', 'nullCheck'), 'NOT']
+      )
     ),
     ...rows(
       CASE,

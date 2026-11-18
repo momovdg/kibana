@@ -11,7 +11,6 @@ import { buildVectorSuggestions } from '../../../commands/definitions/utils/auto
 import { getPreGroupedAggregationName } from '../../../commands/definitions/utils/promql';
 import {
   assignCompletionItem,
-  commaCompleteItem,
   getNewUserDefinedColumnSuggestion,
   newLineCompleteItem,
   pipeCompleteItem,
@@ -26,6 +25,7 @@ import type { ForeignBody } from '../option_shell';
 import type { SuggestionContext } from '../types';
 import { describePromqlPosition, toDetailedPosition } from '../promql/position';
 import { pickColumnName } from '../written';
+import { getSeparatorItem } from './tokens';
 import { provideOptionNames } from './structured';
 
 type Columns = Awaited<ReturnType<SuggestionContext['getColumnMap']>>;
@@ -164,7 +164,9 @@ export const provideSublanguage = async (
       ? values.roles?.[last.name.text.toLowerCase()]
       : undefined;
   const separator =
-    lastRole?.kind === 'entity' && lastRole.unique && !isTypingFirstWord ? [commaCompleteItem] : [];
+    lastRole?.kind === 'entity' && lastRole.unique && !isTypingFirstWord
+      ? [getSeparatorItem()]
+      : [];
   // What comes after the cursor is an option: the text does not start here.
   const [next] = text.slice(offset).trimStart().split(/[\s=]/, 1);
   const startsText = !next || !isOption(next);
