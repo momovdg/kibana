@@ -12,7 +12,7 @@ import type { LicenseType } from '@kbn/licensing-types';
 import { EsqlQuery } from '@elastic/esql';
 import type { ICommand } from '../../commands/registry/registry';
 import type { ColumnsMap } from '../shared/columns_retrieval_helpers';
-import { getValuePlaceholder, locate, type CursorIR } from '../../esql_js_sim/grammar';
+import { getValuePlaceholder, locateExpected, type CursorIR } from '../../esql_js_sim/grammar';
 import { getColumnsByTypeRetriever } from '../shared/columns_retrieval_helpers';
 import { getNesting, getQueryBeforeCursor } from './pipeline';
 import { getRegisteredCommand } from './command_metadata';
@@ -78,7 +78,7 @@ export const createContext = async (
     text,
     offset,
     ir,
-    afterName: locate(afterNameText, afterNameText.length),
+    afterName: locateExpected(afterNameText, afterNameText.length),
     ...createColumnsGetters(text, ir, callbacks),
     usedNames: new Set(
       ir.commands.flatMap(({ arguments: written }) =>

@@ -9,8 +9,13 @@
 
 // The public entry of the simulated `@elastic/esql-grammar` package. Kibana code imports only this file.
 export { describeCommands } from './cursor_ir/describe_commands';
-export { getValuePlaceholder, locate, readToEndOfCommand } from './cursor_ir/locate';
-export type { CommandReading } from './cursor_ir/locate';
+export {
+  getValuePlaceholder,
+  locate,
+  locateExpected,
+  readToEndOfCommand,
+} from './cursor_ir/locate';
+export type { CommandReading, ExpectedAtCursor } from './cursor_ir/locate';
 export { readOptionShell } from './cursor_ir/option_shell';
 export type { OptionShell, WrittenOption } from './cursor_ir/option_shell';
 export type {

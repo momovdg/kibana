@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CursorIR, Follower } from '../../esql_js_sim/grammar';
+import type { ExpectedAtCursor, Follower } from '../../esql_js_sim/grammar';
 
 /** What has to follow a name or a value once it is written, read once for every provider. */
 export interface AfterName {
@@ -30,7 +30,7 @@ export const describeAfterName = ({
   position,
   followers,
   arguments: expected,
-}: CursorIR): AfterName => ({
+}: ExpectedAtCursor): AfterName => ({
   isValid: position !== 'invalid',
   separatorFollows: followers.some((follower) => follower.class === 'separator'),
   only: followers.length === 1 ? followers[0] : undefined,
