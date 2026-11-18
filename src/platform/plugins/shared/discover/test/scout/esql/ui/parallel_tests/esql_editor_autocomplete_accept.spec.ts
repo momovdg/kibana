@@ -15,56 +15,10 @@
  * The queries are typed key by key and the suggestion is accepted with Enter, as a user does.
  */
 
-import type { PageObjects, ScoutPage } from '@kbn/scout';
 import { expect } from '@kbn/scout/ui';
-import { spaceTest } from '../fixtures';
+import { createEditorUser, spaceTest } from '../fixtures';
 
 const SOURCE = 'FROM logstash-* ';
-// More rows than any list here has before the one looked for.
-const MAX_MOVES = 40;
-
-/** The moves a user makes in the editor and its list of suggestions. */
-const createEditorUser = (page: ScoutPage, { esqlEditor }: Pick<PageObjects, 'esqlEditor'>) => {
-  const suggestWidget = esqlEditor.getSuggestWidget();
-  // The row Enter accepts. Monaco gives it no test subject, so its classes are the only hook.
-  const focusedRow = suggestWidget.locator('.monaco-list-row.focused');
-  const focusedLabel = focusedRow.locator('.label-name');
-
-  const reset = async () => {
-    await page.keyboard.press('Escape');
-    await esqlEditor.setQuery('');
-  };
-
-  /** Types the query and waits for the list to open. */
-  const type = async (query: string) => {
-    await esqlEditor.typeQuery(query);
-    await expect(suggestWidget).toBeVisible();
-  };
-
-  /** Types the query, waits for `label` to be the focused suggestion and accepts it. */
-  const typeAndAccept = async (query: string, label: string) => {
-    await type(query);
-    await expect(focusedRow).toContainText(label);
-    await page.keyboard.press('Enter');
-  };
-
-  /** Moves down the open list to the suggestion with exactly this label, and accepts it. */
-  const accept = async (label: string) => {
-    await expect(suggestWidget).toBeVisible();
-
-    for (let moves = 0; moves < MAX_MOVES; moves++) {
-      if ((await focusedLabel.innerText()).trim() === label) {
-        await page.keyboard.press('Enter');
-        return;
-      }
-      await page.keyboard.press('ArrowDown');
-    }
-
-    throw new Error(`No suggestion "${label}" in the first ${MAX_MOVES} of the list`);
-  };
-
-  return { suggestWidget, focusedRow, reset, type, typeAndAccept, accept };
-};
 
 spaceTest.describe(
   'Discover ES|QL editor autocomplete: accepting a suggestion',
