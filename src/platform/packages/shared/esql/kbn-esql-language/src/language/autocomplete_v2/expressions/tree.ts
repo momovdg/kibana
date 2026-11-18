@@ -47,3 +47,28 @@ export const findExpressionRoot = (
     return isBetter ? node : best;
   }, undefined);
 };
+
+const startsFrom = (item: unknown, offset: number): boolean => {
+  const { location } = (item ?? {}) as { location?: { min: number } };
+
+  return location !== undefined && location.min >= offset;
+};
+
+/**
+ * A syntax tree without what starts at or after an offset: the text the locator adds after
+ * the cursor so that the command parses is not something that is written.
+ */
+export const withoutTextFrom = <T>(value: T, offset: number): T => {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => !startsFrom(item, offset))
+      .map((item) => withoutTextFrom(item, offset)) as T;
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, withoutTextFrom(child, offset)])
+  ) as T;
+};

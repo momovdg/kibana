@@ -12,6 +12,7 @@ export { describeCommands } from './cursor_ir/describe_commands';
 export {
   getValuePlaceholder,
   locate,
+  getSyntaxTree,
   locateExpected,
   locateWholeText,
   readToEndOfCommand,
