@@ -95,6 +95,8 @@ export const build = async (
         types,
         includeDateLiterals: true,
         includeCompatibleLiterals: literals === 'compatible',
+        // A literal is an operand as a column is: the same space, the same list after it.
+        advanceCursorAndOpenSuggestions: spaced,
       });
     }
     builder.addFunctions({ types });

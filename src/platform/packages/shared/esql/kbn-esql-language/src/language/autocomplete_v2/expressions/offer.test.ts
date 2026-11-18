@@ -82,7 +82,7 @@ describe('what is offered inside an expression', () => {
   it('is the operands an operator takes on its right for the type on its left', () => {
     const { operands } = offerAt('FROM a | WHERE n > ▮', { n: 'integer' });
 
-    expect(operands).toMatchObject({ columns: true, spaced: false, literals: 'exact' });
+    expect(operands).toMatchObject({ columns: true, spaced: true, literals: 'exact' });
     expect(operands?.types).toEqual(expect.arrayContaining(['integer', 'double']));
     expect(operands?.types).not.toContain('keyword');
   });

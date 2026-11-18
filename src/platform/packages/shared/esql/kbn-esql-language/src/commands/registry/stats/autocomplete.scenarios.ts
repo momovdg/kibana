@@ -629,6 +629,9 @@ export const statsScenarios: ScenarioTable = {
       'from a | stats a=max(b) by integerF': 'spaced',
       'from a | stats avg(b) by col0 = ': 'spaced',
       'from a | stats avg(b) by c, col0 = ': 'spaced',
+      // An operand after an operator ends with a space, as every operand does.
+      'FROM a | STATS MIN(b) WHERE keywordField != ': 'spaced',
+      'from a | stats avg(b) by integerField % ': 'spaced',
     }
   ),
 };
