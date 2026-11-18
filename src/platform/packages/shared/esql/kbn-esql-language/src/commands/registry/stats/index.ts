@@ -8,7 +8,8 @@
  */
 import { i18n } from '@kbn/i18n';
 import type { ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
+import { createSpecAutocomplete } from '../../spec/suggest';
+import { statsSpec } from './spec';
 import { validate } from './validate';
 import { columnsAfter } from './columns_after';
 import { summary } from './summary';
@@ -16,7 +17,7 @@ import type { ICommandContext } from '../types';
 import { Commands } from '../../definitions/keywords';
 
 const statsCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
+  autocomplete: createSpecAutocomplete(statsSpec),
   validate,
   columnsAfter,
   summary,

@@ -93,14 +93,12 @@ const starts = (
     return isText(tokens[index + 1], second.text);
   }
 
-  // What starts with a value is there unless a keyword of the command is written instead.
-  if (first?.kind === 'slot') {
-    return !stops.includes(tokens[index].text.toUpperCase());
-  }
-
-  return firstOf(nodes).some(
-    (expected) =>
-      expected.kind !== 'slot' && expected.kind !== 'end' && isText(tokens[index], expected.text)
+  // A value is there unless a keyword of the command is written in its place; a keyword or a
+  // symbol is there when it is the one written.
+  return firstOf(nodes).some((expected) =>
+    expected.kind === 'slot'
+      ? !stops.includes(tokens[index].text.toUpperCase())
+      : expected.kind !== 'end' && isText(tokens[index], expected.text)
   );
 };
 
@@ -130,6 +128,10 @@ export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition 
         break;
       }
       if (depth === 0 && !isOpenEnded && SYMBOLS.includes(text)) {
+        break;
+      }
+      // One expression of a list ends at the comma before the next one.
+      if (depth === 0 && !list && text === ',') {
         break;
       }
 
@@ -235,7 +237,10 @@ export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition 
   if (!isBlocked && !position.isInvalid) {
     // Everything that had to be written is: the command can end, unless tokens are left over.
     position.isInvalid = end < tokens.length;
-    position.expected.push({ kind: 'end' });
+    // A command is never only its name: nothing written, nothing to end.
+    if (tokens.length > 0) {
+      position.expected.push({ kind: 'end' });
+    }
   }
 
   return position;

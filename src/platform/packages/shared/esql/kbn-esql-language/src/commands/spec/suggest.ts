@@ -14,11 +14,17 @@ import {
   withAutoSuggest,
 } from '../definitions/utils/autocomplete/helpers';
 import { suggestFieldsList } from '../definitions/utils/autocomplete/fields_list';
+import { suggestForExpression } from '../definitions/utils/autocomplete/expressions';
+import { getAllFunctions, getFunctionDefinition } from '../definitions/utils/functions';
+import { FunctionDefinitionTypes } from '../definitions/types';
+import { findExpressionRoot } from '../../language/autocomplete_v2/expressions/tree';
 import { buildFieldsDefinitions } from '../definitions/utils/functions';
 import {
   assignCompletionItem,
   commaCompleteItem,
+  getDateHistogramCompletionItem,
   getNewUserDefinedColumnSuggestion,
+  getTimeseriesDateHistogramCompletionItem,
   newLineAndPipeCompleteItems,
 } from '../registry/complete_items';
 import {
@@ -70,6 +76,7 @@ interface Environment {
   callbacks?: ICommandCallbacks;
   context?: ICommandContext;
   position: SpecPosition;
+  tokens: SpecToken[];
   /** The word being typed at the cursor. */
   typed?: string;
 }
@@ -169,7 +176,7 @@ const isKnown = ({ slot, text }: FilledSlot, { context, position }: Environment)
   const { role } = slot;
   const name = text.replace(/`/g, '');
 
-  if (role.kind === 'column') {
+  if (role.kind === 'column' || (role.kind === 'expression' && NAME.test(text))) {
     return context?.columns?.has(name) ?? false;
   }
   if (role.kind === 'entity' && ENTITY_FACTS[role.entityType].parent) {
@@ -228,6 +235,139 @@ const provideExpected = (expected: Expected): ISuggestionItem[] => {
   }
 };
 
+const NAME = /^[^\s()]+$/;
+const AGGREGATING = [FunctionDefinitionTypes.AGG, FunctionDefinitionTypes.TIME_SERIES_AGG];
+// The kinds of expression that read a column only as the argument of a function.
+const COLUMNS_IN_CALLS_ONLY: readonly ExpressionMode[] = ['aggregation', 'constant', 'full_text'];
+
+const namesOfType = (type: FunctionDefinitionTypes): string[] =>
+  getAllFunctions({ type }).map(({ name }) => name);
+
+/** The sequence of the spec a slot is in. */
+const sequenceOf = (nodes: SpecNode[], slot: SlotNode): SpecNode[] | undefined => {
+  if (nodes.includes(slot)) {
+    return nodes;
+  }
+
+  for (const node of nodes) {
+    const inner =
+      node.kind === 'optional' || node.kind === 'repeat' ? sequenceOf(node.nodes, slot) : undefined;
+
+    if (inner) {
+      return inner;
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * One expression: what continues it, and once it is whole, what the spec allows after it.
+ * The expression engine the commands share decides the first; the spec says the second.
+ */
+const provideExpression = async (slot: SlotNode, env: Environment): Promise<ISuggestionItem[]> => {
+  const { spec, query, cursorPosition, command, callbacks, context, position, tokens } = env;
+  const { role } = slot;
+
+  if (role.kind !== 'expression') {
+    return [];
+  }
+
+  const written = position.open?.slot === slot ? position.open : undefined;
+  const own = tokens.filter(({ start }) => written !== undefined && start >= written.start);
+  const depth = own.reduce(
+    (open, { text }) => open + (text === '(' ? 1 : text === ')' ? -1 : 0),
+    0
+  );
+  const sequence = sequenceOf(spec, slot) ?? [];
+  const before = sequence.slice(0, sequence.indexOf(slot));
+  const isAssigned = written !== undefined && tokens[tokens.indexOf(own[0]) - 1]?.text === '=';
+  // A filter that belongs to an aggregation takes what a filter of aggregations takes.
+  const follows = (mode: ExpressionMode): boolean =>
+    before.some(
+      (node) => node.kind === 'slot' && node.role.kind === 'expression' && node.role.mode === mode
+    );
+  const location =
+    role.mode === 'filter' && follows('aggregation')
+      ? Location.STATS_WHERE
+      : role.mode === 'aggregation' && context?.isTimeseriesSource && depth > 0
+      ? Location.STATS_TIMESERIES
+      : getLocation(role.mode);
+  // The functions written in the item, by the word before each bracket.
+  const readsColumns = !COLUMNS_IN_CALLS_ONLY.includes(role.mode) || depth > 0;
+  const calls = own
+    .filter((_, index) => own[index + 1]?.text === '(')
+    .map(({ text }) => text.toLowerCase());
+  const others = position.filled.filter((filled) => filled.slot === slot && filled !== written);
+
+  const { suggestions, computed } = await suggestForExpression({
+    query,
+    expressionRoot: written && findExpressionRoot(command, written.start),
+    command,
+    cursorPosition,
+    location,
+    context,
+    // Where a column can only be the argument of a function, none is listed outside one.
+    callbacks: readsColumns ? callbacks : { ...callbacks, getByType: undefined },
+    options: {
+      ...(role.types && { preferredExpressionType: [...role.types] }),
+      ...(role.subqueries && { allowSubquery: true }),
+      ...(!readsColumns && { suggestFields: false }),
+      // Where each item is listed once, the columns that are an item already are left out.
+      ...(role.unique && {
+        ignoredColumnsForEmptyExpression: others
+          .filter(({ text }) => NAME.test(text))
+          .map(({ text }) => text),
+      }),
+      getFunctionsToIgnore: (parameter) => {
+        const isGrouping = parameter?.functionDefinition?.type === FunctionDefinitionTypes.GROUPING;
+        const takesAggregation = parameter?.paramDefinitions.some(
+          ({ hint }) => hint?.kind === 'aggregation'
+        );
+        const usedKinds = AGGREGATING.filter((type) =>
+          calls.some((name) => getFunctionDefinition(name)?.type === type)
+        );
+
+        return {
+          names: [
+            // No grouping inside a grouping, and no aggregation inside an aggregation.
+            ...(isGrouping ? namesOfType(FunctionDefinitionTypes.GROUPING) : []),
+            ...(parameter && role.mode === 'aggregation'
+              ? [...calls, ...(takesAggregation ? [] : usedKinds.flatMap(namesOfType))]
+              : []),
+          ],
+        };
+      },
+    },
+  });
+
+  // A column alone computes nothing where the items are computed values: it is not whole
+  // yet, and it may still be the name of the item.
+  const isLoneName = written !== undefined && NAME.test(written.text);
+  const isWhole =
+    written !== undefined &&
+    computed.isComplete &&
+    (!role.completeAs || computed.expressionType === role.completeAs) &&
+    !computed.insideFunction &&
+    !(role.computes && isLoneName && !isAssigned);
+
+  // Where a grouping starts, the editor also offers a ready-made date histogram.
+  const histogram =
+    role.mode === 'grouping' && written === undefined
+      ? [
+          (context?.isTimeseriesSource
+            ? getTimeseriesDateHistogramCompletionItem
+            : getDateHistogramCompletionItem)(context?.histogramBarTarget),
+        ]
+      : [];
+
+  return [
+    ...suggestions,
+    ...histogram,
+    ...(isWhole ? position.expected.flatMap(provideExpected) : []),
+  ];
+};
+
 /** The items for a slot, by its role alone. */
 const provideSlot = async (slot: SlotNode, env: Environment): Promise<ISuggestionItem[]> => {
   const { spec, command, callbacks, context, position, query, cursorPosition } = env;
@@ -278,29 +418,32 @@ const provideSlot = async (slot: SlotNode, env: Environment): Promise<ISuggestio
       return items.length ? items : [noPoliciesAvailableSuggestion];
     }
     case 'expression':
-      return suggestFieldsList(
-        query,
-        command,
-        getFields(command, keywordBefore),
-        getLocation(role.mode),
-        callbacks,
-        context,
-        cursorPosition,
-        {
-          allowSingleColumnFields: role.computes !== true,
-          disableNewColumnSuggestion: role.computes !== true,
-          // Where each item is listed once, the columns that are an item already are left out.
-          ...(role.unique && {
-            ignoredColumnsForEmptyExpression: getFields(command, keywordBefore).flatMap((field) =>
-              !Array.isArray(field) && field.type === 'column' ? [field.parts.join('.')] : []
-            ),
-          }),
-          // What the spec allows after the list is offered once the last item is whole.
-          afterCompleteSuggestions: position.expected
-            .filter(({ kind }) => kind === 'keyword')
-            .flatMap(provideExpected),
-        }
-      );
+      return slot.list
+        ? suggestFieldsList(
+            query,
+            command,
+            getFields(command, keywordBefore),
+            getLocation(role.mode),
+            callbacks,
+            context,
+            cursorPosition,
+            {
+              allowSingleColumnFields: role.computes !== true,
+              disableNewColumnSuggestion: role.computes !== true,
+              // Where each item is listed once, the columns that are an item already are left out.
+              ...(role.unique && {
+                ignoredColumnsForEmptyExpression: getFields(command, keywordBefore).flatMap(
+                  (field) =>
+                    !Array.isArray(field) && field.type === 'column' ? [field.parts.join('.')] : []
+                ),
+              }),
+              // What the spec allows after the list is offered once the last item is whole.
+              afterCompleteSuggestions: position.expected
+                .filter(({ kind }) => kind === 'keyword')
+                .flatMap(provideExpected),
+            }
+          )
+        : provideExpression(slot, env);
     default:
       return [];
   }
@@ -321,8 +464,37 @@ export const createSpecAutocomplete =
       callbacks,
       context,
       position,
+      tokens,
       typed,
     };
+    // A column typed in full, where a column can stand: what follows it is offered with it.
+    const takesColumn = position.expected.some(
+      (expected) =>
+        expected.kind === 'slot' &&
+        (expected.slot.role.kind === 'column' || expected.slot.role.kind === 'expression')
+    );
+
+    if (typed !== undefined && takesColumn && !position.open && context?.columns?.has(typed)) {
+      const end = innerText.length;
+      const word: SpecToken = { text: typed, start: end - typed.length, end };
+      const after = matchSpec(spec, [...tokens, word]);
+      const followers = after.expected
+        .filter(({ kind }) => kind !== 'slot')
+        .flatMap(provideExpected);
+
+      if (!after.isInvalid && followers.length) {
+        return followers.map((item) =>
+          item.text === '\n'
+            ? item
+            : {
+                ...item,
+                text: `${typed}${item.text.startsWith(',') ? '' : ' '}${item.text}`,
+                filterText: typed,
+              }
+        );
+      }
+    }
+
     const last = position.filled.at(-1);
     const isAfterLast = last !== undefined && last.end === tokens.at(-1)?.end;
 
