@@ -95,6 +95,24 @@ const standaloneQuery = {
 export const fromScenarios: ScenarioTable = {
   command: 'from',
   scenarios: withSpacedComma([
+    {
+      group: SOURCES,
+      name: 'suggests a name bound to a subquery as a source',
+      query: 'LET top = (FROM index | LIMIT 2); FROM ',
+      expect: { contains: ['top'] },
+    },
+    {
+      group: SOURCES,
+      name: 'suggests a name bound to a subquery as the source of a subquery',
+      query: 'LET top = (FROM index | LIMIT 2); FROM index | WHERE keywordField IN (FROM ',
+      expect: { contains: ['top'] },
+    },
+    {
+      group: SOURCES,
+      name: 'does not suggest the name a subquery is being bound to inside that subquery',
+      query: 'LET top = (FROM ',
+      expect: { contains: ['index'], excludes: ['top'] },
+    },
     ...rows(
       SOURCES,
       'suggests Browse data sources in empty source slots when enabled',

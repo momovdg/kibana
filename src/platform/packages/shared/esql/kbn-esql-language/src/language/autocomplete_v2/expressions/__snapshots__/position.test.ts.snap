@@ -3,18 +3,20 @@
 exports[`the position inside an expression, from the grammar alone agrees with the expression engine of the current flow 1`] = `
 Object {
   "counts": Object {
-    "agree: after IS, IN or LIKE, which the engine handles apart": 17,
+    "agree: after IS, IN or LIKE, which the engine handles apart": 18,
     "agree: in a call of an unknown function": 3,
     "agree: in a string or a map, which the engine handles apart": 6,
-    "agree: no expression at the cursor": 438,
+    "agree: no expression at the cursor": 441,
     "agree: same position, function, argument and start": 271,
-    "differ: position": 1,
-    "differ: start": 1,
+    "differ: position": 2,
+    "differ: start": 2,
     "not comparable: the command did not ask the engine": 11,
     "not comparable: the engine ran where the signature has no expression": 22,
   },
   "differing": Array [
     "[highlight] from a | highlight \\"fo▮ (differ: position)",
+    "[where] from a | where (keywordField, ▮ (differ: position)",
+    "[where] from a | where (keywordField, textField) ▮ (differ: start)",
     "[where] from index | WHERE (doubleField) in ( textField, ▮ (differ: start)",
   ],
 }

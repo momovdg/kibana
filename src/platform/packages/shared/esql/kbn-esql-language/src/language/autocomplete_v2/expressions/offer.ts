@@ -6,7 +6,7 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import { logicalOperators } from '../../../commands/definitions/all_operators';
+import { inOperators, logicalOperators } from '../../../commands/definitions/all_operators';
 import {
   FunctionDefinitionTypes,
   isArrayType,
@@ -183,9 +183,17 @@ const offerAfterOperandOutsideCall = (input: OfferInput): Offer => {
   const openers = brackets.filter((item) => item.class === 'opener').length;
   const closers = brackets.filter((item) => item.class === 'closer').length;
 
-  // A list in brackets with no operator before it, as `(a, b)`, is not an operand.
+  // A list in brackets, as the `(a, b)` that is looked up in the rows of a subquery. While
+  // it is open, each value starts as an expression does, and a comma can follow a value.
+  // Once closed it can only be looked up.
   if (brackets.some(isOwnSeparator)) {
-    return NOTHING;
+    if (openers <= closers) {
+      return { operators: { allowed: namesOf(inOperators) } };
+    }
+
+    const isAfterValue = position.written.at(-1)?.class !== 'separator' && !ir.word;
+
+    return { ...offerOperandStart(input), items: isAfterValue ? [getSeparatorItem()] : [] };
   }
   // A null check is a complete condition: only another condition can be joined to it.
   if (position.operator === NULL_CHECK_END) {

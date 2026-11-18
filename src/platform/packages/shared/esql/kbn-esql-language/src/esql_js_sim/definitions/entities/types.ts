@@ -13,6 +13,11 @@ import type { EntityType } from '../signatures/types';
 export interface EntityFacts {
   /** The entity that has the values, for one that belongs to another: the policy of a field. */
   parent?: EntityType;
+  /**
+   * What a query can bind a name to that then stands for an entity of this kind: a subquery
+   * bound to a name is read as a source.
+   */
+  boundAs?: 'subquery';
   /** Words that may come before a name, joined to it by a colon, as `_any:policy`. */
   qualifiers?: readonly string[];
 }
