@@ -98,13 +98,22 @@ export const writtenWithRole = (written: WrittenArgument[], roleId: string | und
     .map(({ text }) => unquoted(text));
 
 const NEW_COLUMN_PREFIX = 'col';
+const NEW_SUBQUERY_PREFIX = 'subquery';
 
-/** A name for a new column that the query does not use yet: `col0`, `col1`, and so on. */
-export const pickColumnName = (usedNames: Set<string>): string => {
+/** The first name with a prefix and a number that is not used yet: `col0`, `col1`, and so on. */
+const pickName = (prefix: string, usedNames: Set<string>): string => {
   let index = 0;
-  while (usedNames.has(`${NEW_COLUMN_PREFIX}${index}`)) {
+  while (usedNames.has(`${prefix}${index}`)) {
     index++;
   }
 
-  return `${NEW_COLUMN_PREFIX}${index}`;
+  return `${prefix}${index}`;
 };
+
+/** A name for a new column that the query does not use yet. */
+export const pickColumnName = (usedNames: Set<string>): string =>
+  pickName(NEW_COLUMN_PREFIX, usedNames);
+
+/** A name for a new subquery that the query does not bind yet. */
+export const pickSubqueryName = (usedNames: Set<string>): string =>
+  pickName(NEW_SUBQUERY_PREFIX, usedNames);

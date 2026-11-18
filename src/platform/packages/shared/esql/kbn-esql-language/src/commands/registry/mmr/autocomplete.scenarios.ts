@@ -88,5 +88,17 @@ export const mmrScenarios: ScenarioTable = {
       ['FROM a | MMR ON denseField LIMIT 10 WITH { '],
       ['"lambda": ']
     ),
+    {
+      name: 'suggests the end of the command after the lambda key',
+      query: 'FROM a | MMR ON denseField LIMIT 10 WITH { "lambda": ',
+      status: 'replaced',
+      expect: { exact: ['\n', '| '] },
+    },
+    {
+      name: 'suggests the usual value after the lambda key',
+      query: 'FROM a | MMR ON denseField LIMIT 10 WITH { "lambda": ',
+      status: 'new',
+      expect: { exact: ['0.5'] },
+    },
   ],
 };

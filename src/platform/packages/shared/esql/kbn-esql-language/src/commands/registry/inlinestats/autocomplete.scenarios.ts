@@ -13,6 +13,7 @@ const rows = (group: string, name: string, queries: string[], exact: string[]): 
   queries.map((query) => ({ group, name, query, expect: { exact } }));
 
 const RECOGNITION = 'Multi-token command recognition';
+const FIELDS = 'INLINE STATS <aggregations> BY <groupings>';
 const WHERE = '... WHERE expression ...';
 
 export const inlineStatsScenarios: ScenarioTable = {
@@ -24,6 +25,24 @@ export const inlineStatsScenarios: ScenarioTable = {
       ['FROM a | INLINE ', 'FROM a | INLINE S'],
       ['STATS ']
     ),
+    {
+      group: FIELDS,
+      name: 'suggests a new name and functions where an aggregation starts',
+      query: 'FROM a | INLINE STATS ',
+      expect: { contains: ['col0 = ', 'AVG($0)'] },
+    },
+    {
+      group: FIELDS,
+      name: 'suggests columns inside an aggregation',
+      query: 'FROM a | INLINE STATS AVG(',
+      expect: { contains: ['doubleField'] },
+    },
+    {
+      group: FIELDS,
+      name: 'suggests a new name where a grouping starts',
+      query: 'FROM a | INLINE STATS col0 = AVG(doubleField) BY ',
+      expect: { contains: ['col1 = '] },
+    },
     ...rows(
       WHERE,
       'suggests subqueries after IN in WHERE',
