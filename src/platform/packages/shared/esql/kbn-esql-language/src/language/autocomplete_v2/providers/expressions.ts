@@ -65,7 +65,8 @@ const provideLambdaHead = (
  */
 export const provideExpression = async (
   request: Extract<SuggestionRequest, { kind: 'expression' }>,
-  context: SuggestionContext
+  context: SuggestionContext,
+  { withItems = true }: { withItems?: boolean } = {}
 ): Promise<ExpressionSuggestions> => {
   const { role, resolved, entry } = request;
   const { ir, offset, callbacks } = context;
@@ -79,6 +80,21 @@ export const provideExpression = async (
 
   if (!environment) {
     return { entry, items: [], isUnfinished: false };
+  }
+
+  const hasItsType = !role.completeAs || environment.expressionType === role.completeAs;
+  // Where the items are computed values that can be given a name, a column alone is not a
+  // finished item: it computes nothing, and it may still be the name.
+  const mayStillBeName =
+    role.computes === true &&
+    ir.followers.some(isAssignmentToken) &&
+    isLoneColumn(getCurrentItem(ir.written, entry));
+  const isUnfinished =
+    (environment.isStarted && !(environment.isComplete && hasItsType)) || mayStillBeName;
+
+  // Asked only whether the command can go on after the expression: no item is built.
+  if (!withItems) {
+    return { entry, items: [], isUnfinished };
   }
 
   const position = describeExpressionPosition(ir, entry);
@@ -112,18 +128,5 @@ export const provideExpression = async (
     startsExpression && !ir.word
       ? [...getValueSnippet(resolved.id), ...(starter ? [starter] : [])]
       : [];
-  const hasItsType = !role.completeAs || environment.expressionType === role.completeAs;
-  // Where the items are computed values that can be given a name, a column alone is not a
-  // finished item: it computes nothing, and it may still be the name.
-  const mayStillBeName =
-    role.computes === true &&
-    ir.followers.some(isAssignmentToken) &&
-    isLoneColumn(getCurrentItem(ir.written, entry));
-
-  return {
-    entry,
-    items: [...items, ...histogram, ...readyMade],
-    isUnfinished:
-      (environment.isStarted && !(environment.isComplete && hasItsType)) || mayStillBeName,
-  };
+  return { entry, items: [...items, ...histogram, ...readyMade], isUnfinished };
 };

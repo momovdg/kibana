@@ -11,7 +11,7 @@ import type { ESQLCallbacks } from '@kbn/esql-types';
 import type { ISuggestionItem } from '../../commands/registry/types';
 import { resolveRole } from '../../esql_js_sim/definitions';
 import type { CursorIR } from '../../esql_js_sim/grammar';
-import { collect, type Collected } from './collect';
+import { prepare, provideAll, type Located } from './collect';
 import { isEntity } from './providers/entities';
 import { startsLongerKeyword } from './providers/tokens';
 import { isOfExpression } from './resolve';
@@ -36,7 +36,7 @@ const LITERAL_WORDS: readonly string[] = ['true', 'false', 'null'];
 export const provideFollowUps = async (
   fullText: string,
   offset: number,
-  { ir, context }: Collected,
+  { ir, context }: Located,
   callbacks?: ESQLCallbacks
 ): Promise<ISuggestionItem[] | undefined> => {
   const { word } = ir;
@@ -69,7 +69,11 @@ export const provideFollowUps = async (
   }
 
   const spaced = `${fullText.slice(0, offset)}${SEPARATOR_GAP}${fullText.slice(offset)}`;
-  const { continuations } = await collect(spaced, offset + SEPARATOR_GAP.length, callbacks);
+  // One space later only what can follow in the command is asked for: no other item is built.
+  const { continuations } = await provideAll(
+    await prepare(spaced, offset + SEPARATOR_GAP.length, callbacks),
+    { continuationsOnly: true }
+  );
   const name = word.argument?.text ?? word.text;
 
   // A number can still go on, so only the end of its statement is offered with it. A string

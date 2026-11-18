@@ -24,32 +24,64 @@ import type { SuggestionContext, SuggestionRequest } from './types';
 /** The positions where nothing can be offered. */
 export const NOTHING_APPLIES: readonly string[] = ['inside_comment', 'invalid'];
 
-/** What is offered at a cursor, with the items that continue the command kept apart. */
-export interface Collected {
+/** The cursor in the grammar, with what the providers need to know about the editor. */
+export interface Located {
+  fullText: string;
+  offset: number;
   ir: CursorIR;
+  /** The cursor is at the value of an option that is read from the tokens. */
+  isAtOptionValue: boolean;
+  /** Nothing where nothing can be offered. */
   context: SuggestionContext | undefined;
+}
+
+/** What is offered at a cursor, with the items that continue the command kept apart. */
+export interface Provided {
   /** Everything offered, before it is presented. */
   items: ISuggestionItem[];
   /** The items for what can follow in the command: its keywords, separators and its end. */
   continuations: Array<{ request: SuggestionRequest; items: ISuggestionItem[] }>;
 }
 
-/**
- * Everything the grammar-driven flow offers at a cursor: locate the cursor, resolve what has
- * to be offered, drop what the written text rules out, and provide the rest.
- */
-export const collect = async (
+export type Collected = Located & Provided;
+
+const NOTHING: Provided = { items: [], continuations: [] };
+
+/** Locates the cursor and gathers the context. Nothing is offered yet. */
+export const prepare = async (
   fullText: string,
   offset: number,
   callbacks?: ESQLCallbacks
-): Promise<Collected> => {
+): Promise<Located> => {
   const located = locate(fullText, offset);
   // An option written before a text in another language is read from the tokens.
   const atValue = atOptionValue(located, fullText, offset);
   const ir = atValue ?? located;
+  const applies = !NOTHING_APPLIES.includes(ir.position) && !isQualifierAlone(ir);
 
-  if (NOTHING_APPLIES.includes(ir.position) || isQualifierAlone(ir)) {
-    return { ir, context: undefined, items: [], continuations: [] };
+  return {
+    fullText,
+    offset,
+    ir,
+    isAtOptionValue: atValue !== undefined,
+    context: applies ? await createContext(fullText, offset, ir, callbacks) : undefined,
+  };
+};
+
+const isContinuation = ({ kind }: SuggestionRequest): boolean =>
+  kind === 'token' || kind === 'end_of_command';
+
+/**
+ * Resolves what has to be offered at a located cursor, drops what the written text rules out
+ * and provides the rest. With `continuationsOnly`, only what can follow in the command is
+ * provided: the items of expressions and of arguments are not built.
+ */
+export const provideAll = async (
+  { fullText, offset, ir, isAtOptionValue, context }: Located,
+  { continuationsOnly = false }: { continuationsOnly?: boolean } = {}
+): Promise<Provided> => {
+  if (!context) {
+    return NOTHING;
   }
 
   // Inside a string only a value can be offered: no keyword and no command starts there.
@@ -57,32 +89,36 @@ export const collect = async (
   const requests = resolve(ir).filter(
     ({ kind }) => ir.position !== 'inside_string' || kind === 'argument' || kind === 'expression'
   );
-  const context = await createContext(fullText, offset, ir, callbacks);
 
   // A command that ends with a text in another language: the text has its own grammar.
-  const foreignBody = atValue ? undefined : getForeignBody(ir, fullText, offset);
+  const foreignBody = isAtOptionValue ? undefined : getForeignBody(ir, fullText, offset);
   if (foreignBody) {
-    const items = await provideSublanguage(foreignBody, context);
-
-    return { ir, context, items, continuations: [] };
+    return continuationsOnly
+      ? NOTHING
+      : { items: await provideSublanguage(foreignBody, context), continuations: [] };
   }
 
+  // An expression says whether the command can go on, also when its items are not wanted.
   const expressions: ExpressionSuggestions[] = await Promise.all(
     requests.flatMap((request) =>
-      request.kind === 'expression' ? [provideExpression(request, context)] : []
+      request.kind === 'expression'
+        ? [provideExpression(request, context, { withItems: !continuationsOnly })]
+        : []
     )
   );
   const state = await getPruneState(requests, expressions, context);
   const provided = await Promise.all(
-    prune(requests, state).map(async (request) => ({
-      request,
-      items: await provide(request, context),
-    }))
+    prune(requests, state)
+      .filter((request) => !continuationsOnly || isContinuation(request))
+      .map(async (request) => ({ request, items: await provide(request, context) }))
   );
+  const continuations = provided.filter(({ request }) => isContinuation(request));
+
+  if (continuationsOnly) {
+    return { items: [], continuations };
+  }
 
   return {
-    ir,
-    context,
     items: [
       ...expressions.flatMap((expression) => expression.items),
       ...state.assigned,
@@ -90,8 +126,20 @@ export const collect = async (
       ...(await provideExtras(context)),
       ...(await provideStartingQueries(context)),
     ],
-    continuations: provided.filter(
-      ({ request }) => request.kind === 'token' || request.kind === 'end_of_command'
-    ),
+    continuations,
   };
+};
+
+/**
+ * Everything the grammar-driven flow offers at a cursor: locate the cursor, resolve what has
+ * to be offered there, drop what the written text rules out, and provide the rest.
+ */
+export const collect = async (
+  fullText: string,
+  offset: number,
+  callbacks?: ESQLCallbacks
+): Promise<Collected> => {
+  const located = await prepare(fullText, offset, callbacks);
+
+  return { ...located, ...(await provideAll(located)) };
 };

@@ -46,6 +46,8 @@ const POSITIONS: Array<[name: string, query: string]> = [
   ['keyword position', 'FROM logs | SORT keywordField '],
   ['word being typed', 'FROM logs | WHERE doubleF'],
   ['whole word', 'FROM logs | KEEP keywordField'],
+  ['whole word in an expression', 'FROM logs | WHERE doubleField'],
+  ['whole keyword', 'FROM logs | SORT keywordField ASC'],
   ['map key', 'FROM logs | COMPLETION "p" WITH { '],
   ['join condition', 'FROM logs | LOOKUP JOIN join_index ON '],
   ['promql value', 'PROMQL index='],
