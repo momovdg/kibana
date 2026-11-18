@@ -11,6 +11,8 @@ import { FUNCTION_CALL, FUNCTION_LAMBDAS } from '../../../esql_js_sim/definition
 import type { CursorIR, WrittenAncestor, WrittenArgument } from '../../../esql_js_sim/grammar';
 import { isSamePlace, partOf, isDirectlyIn } from '../written';
 
+const ARROW = '->';
+
 interface Range {
   start: number;
   end: number;
@@ -123,6 +125,11 @@ export const getLambdas = (ir: CursorIR): WrittenLambda[] => {
 const lambdasByCursor = new WeakMap<CursorIR, WrittenLambda[]>();
 
 const readLambdas = (ir: CursorIR): WrittenLambda[] => {
+  // No arrow, no lambda: the usual case, and what is written is not walked for it.
+  if (!ir.written.some(({ text }) => text === ARROW)) {
+    return [];
+  }
+
   const around = ir.written.at(-1)?.ancestors ?? [];
   const lambdas = new Map<number, WrittenLambda>();
 

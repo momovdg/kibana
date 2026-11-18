@@ -393,6 +393,26 @@ const mostFrequent = (values: Array<string | undefined>): string | undefined => 
   return [...counts].sort(([, first], [, second]) => second - first)[0]?.[0];
 };
 
+/** What the grammar expects at a cursor, without what is written before it. */
+export type ExpectedAtCursor = Pick<CursorIR, 'position' | 'arguments' | 'followers'>;
+
+/**
+ * What the grammar expects at `offset`: the position, the arguments and the tokens that can
+ * come. It reads no written argument, so it costs a part of what `locate` does: for asking
+ * what would follow a text that is not the query, as a name put at the cursor.
+ */
+export const locateExpected = (text: string, offset: number): ExpectedAtCursor => {
+  const location = locateCursor(text, offset);
+  const expected = toArguments(location);
+  const followers = toFollowers(location);
+
+  return {
+    position: toPosition(location, expected, followers, toPrevious(location)),
+    arguments: expected,
+    followers,
+  };
+};
+
 /**
  * Describes the cursor at `offset` in terms of the grammar: where it is, which arguments and
  * tokens can come next, and the word being typed. It knows no command by name.

@@ -14,7 +14,12 @@ import type { ICommand } from '../../commands/registry/registry';
 import type { GetColumnsByTypeFn } from '../../commands/registry/types';
 import type { ColumnsMap } from '../shared/columns_retrieval_helpers';
 import type { CallSiteId, ExpressionRole, ResolvedRole } from '../../esql_js_sim/definitions';
-import type { CursorIR, ExpectedArgument, Follower } from '../../esql_js_sim/grammar';
+import type {
+  CursorIR,
+  ExpectedArgument,
+  ExpectedAtCursor,
+  Follower,
+} from '../../esql_js_sim/grammar';
 
 /**
  * What the engine has to offer at the cursor, before anything is fetched or shown. A request
@@ -47,7 +52,7 @@ export interface SuggestionContext {
    * The cursor as it would be after a name typed here and a space. It tells what has to
    * follow an argument, and so whether the item for it should move the cursor on.
    */
-  afterName: CursorIR;
+  afterName: ExpectedAtCursor;
   /**
    * The columns the command at the cursor can read, as items. They are computed from the
    * commands before it, and only when a provider asks.
