@@ -13,6 +13,7 @@ import { startsCommand } from '../cursor_location/command_rules';
 import { PREFERRED_RULES } from '../cursor_location/grammar_rules';
 import { guardModePops } from '../cursor_location/guard_mode_pops';
 import { getCalledRules } from '../grammar_labels/call_sites';
+import { TOKEN_TEXTS } from '../grammar_labels/grammar_labels.generated';
 import type { TokenClass } from './types';
 
 interface Vocabulary {
@@ -28,20 +29,18 @@ const CLOSERS = [')', ']', '}'];
 const WORD = /^[a-z][a-z_ ]*$/;
 const valueRules: readonly string[] = PREFERRED_RULES;
 
-let vocabulary: Vocabulary | undefined;
-
 /**
- * Reads the fixed texts from the grammar. A token defined once has its text in the grammar's
- * literal names. A token defined in several lexer modes (`(`, `STATS`) has none, so the lexer
- * is asked: what it makes of a bracket, and of the token's own name, in each of its modes.
+ * Reads the fixed text of every token from the grammar, by the name of the token. A token
+ * defined once has its text in the grammar's literal names. A token defined in several lexer
+ * modes (`(`, `STATS`) has none, so the lexer is asked: what it makes of a bracket, and of the
+ * token's own name, in each of its modes.
+ *
+ * This probes the lexer some thousands of times, so it runs when the table is generated and
+ * not in the editor: `getTokenText` reads the generated `TOKEN_TEXTS`.
  */
-const getVocabulary = (): Vocabulary => {
-  if (vocabulary) {
-    return vocabulary;
-  }
-
+export const readTokenTexts = (): Record<string, string> => {
   const { parser, lexer } = Parser.create('');
-  const { literalNames, symbolicNames, ruleNames } = parser;
+  const { literalNames, symbolicNames } = parser;
   const texts = new Map<number, string>();
 
   literalNames.forEach((literal, type) => {
@@ -105,6 +104,34 @@ const getVocabulary = (): Vocabulary => {
 
     if (spelling) {
       texts.set(type, spelling);
+    }
+  });
+
+  return Object.fromEntries(
+    [...texts].flatMap(([type, text]) => {
+      const name = symbolicNames[type];
+
+      return name ? [[name, text]] : [];
+    })
+  );
+};
+
+let vocabulary: Vocabulary | undefined;
+
+const getVocabulary = (): Vocabulary => {
+  if (vocabulary) {
+    return vocabulary;
+  }
+
+  const { parser } = Parser.create('');
+  const { symbolicNames, ruleNames } = parser;
+  const texts = new Map<number, string>();
+
+  symbolicNames.forEach((name, type) => {
+    const text = name ? TOKEN_TEXTS[name] : undefined;
+
+    if (text !== undefined) {
+      texts.set(type, text);
     }
   });
 

@@ -24,7 +24,9 @@ What `grammar/` holds so far:
   `@elastic/esql` uses. Given a token position, it collects the tokens and rules the grammar
   expects there.
 - `grammar_labels/`: every labelled rule call of the grammar (`oldName=qualifiedNamePattern`),
-  generated, with the tokens that can come right before and after it. `getCallSites` gives the
+  generated, with the tokens that can come right before and after it. The same generated
+  file holds the fixed text of every token (`TOKEN_TEXTS`): working it out probes the lexer
+  some thousands of times, which is done when the file is generated and not in the editor. `getCallSites` gives the
   same for any rule call, labelled or not, read from the parser at runtime.
 
 - `cursor_location/`: the raw locator. It runs the code completion on the command around the

@@ -12,7 +12,12 @@ import type { LicenseType } from '@kbn/licensing-types';
 import { EsqlQuery } from '@elastic/esql';
 import type { ICommand } from '../../commands/registry/registry';
 import type { ColumnsMap } from '../shared/columns_retrieval_helpers';
-import { getValuePlaceholder, locate, type CursorIR } from '../../esql_js_sim/grammar';
+import {
+  getValuePlaceholder,
+  locateExpected,
+  type CursorIR,
+  type ExpectedAtCursor,
+} from '../../esql_js_sim/grammar';
 import { getColumnsByTypeRetriever } from '../shared/columns_retrieval_helpers';
 import { getNesting, getQueryBeforeCursor } from './pipeline';
 import { getRegisteredCommand } from './command_metadata';
@@ -72,13 +77,19 @@ export const createContext = async (
   const [source] = pipeline;
   // What stands for the value typed here: a name where one can come, a literal otherwise.
   const afterNameText = `${text.slice(0, caret)}${getValuePlaceholder(ir.arguments)} `;
+  let afterName: ExpectedAtCursor | undefined;
 
   return {
     callbacks,
     text,
     offset,
     ir,
-    afterName: locate(afterNameText, afterNameText.length),
+    // Asked for by the providers of names and values only: located on the first read.
+    get afterName() {
+      afterName ??= locateExpected(afterNameText, afterNameText.length);
+
+      return afterName;
+    },
     ...createColumnsGetters(text, ir, callbacks),
     usedNames: new Set(
       ir.commands.flatMap(({ arguments: written }) =>
