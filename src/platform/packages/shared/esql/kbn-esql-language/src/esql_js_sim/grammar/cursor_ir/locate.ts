@@ -16,7 +16,7 @@ import {
 } from '../cursor_location/cursor_location';
 import type { CursorLocation } from '../cursor_location/types';
 import { callSiteId } from './call_site_id';
-import { describeCommands } from './describe_commands';
+import { describeCommands, describeParsed, type SyntaxTreeGetter } from './describe_commands';
 import { getCommandWindow, type CommandWindow } from './window';
 import { classifyToken, getTokenText, isExpressionRule } from './token_classes';
 import type {
@@ -181,7 +181,8 @@ const toNext = (text: string, from: number): NextToken | undefined => {
 };
 
 // A name no query contains, which the lexer reads as a name or a value in every mode.
-const CURSOR_MARKER = 'esql_cursor_marker';
+// The same text the editor's own parse marks the cursor with, so one cleaner serves both.
+const CURSOR_MARKER = 'marker_esql_editor';
 const CLOSER_OF: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
 
 /** The brackets that are open at the end of the text, innermost last. */
@@ -231,7 +232,7 @@ const toCommands = (
   requiredTokens: string,
   placeholder: string,
   { earlier, lastPipe = 0 }: CommandWindow
-): WrittenCommand[] => {
+): { commands: WrittenCommand[]; getSyntaxTree: SyntaxTreeGetter } => {
   const caret = textBefore.length;
   const unfinished = `${textBefore}${requiredTokens}`;
   const closers = openBrackets(unfinished)
@@ -242,15 +243,12 @@ const toCommands = (
   const expectsValue = placeholder !== '';
 
   // Where commands were blanked out, their description comes from their own text.
+  const parsed = describeParsed(finished);
   const described =
     earlier === undefined
-      ? describeCommands(finished)
-      : [
-          ...describeEarlier(earlier),
-          ...describeCommands(finished).filter(({ start }) => start > lastPipe),
-        ];
-
-  return described
+      ? parsed.commands
+      : [...describeEarlier(earlier), ...parsed.commands.filter(({ start }) => start > lastPipe)];
+  const commands = described
     .filter(({ start }) => start < caret)
     .map((command) => ({
       ...command,
@@ -269,6 +267,8 @@ const toCommands = (
           })),
         })),
     }));
+
+  return { commands, getSyntaxTree: parsed.getSyntaxTree };
 };
 
 const COMPLETE: readonly TokenClass[] = ['value', 'closer'];
@@ -444,6 +444,16 @@ export const locate = (fullText: string, offset: number): CursorIR =>
   // The text is read with the commands the cursor is not in blanked out.
   locateThrough(fullText, offset, getCommandWindow(fullText.slice(0, offset)));
 
+const syntaxTrees = new WeakMap<CursorIR, SyntaxTreeGetter>();
+
+/**
+ * The syntax tree of the text `locate` read for a cursor: the text before the cursor, finished
+ * so that it parses, with the commands the cursor is not in blanked out. It comes from the
+ * parse `locate` made, so asking for it parses nothing.
+ */
+export const getSyntaxTree = (ir: CursorIR): ReturnType<SyntaxTreeGetter> | undefined =>
+  syntaxTrees.get(ir)?.();
+
 /**
  * The same as `locate`, reading every command of the text. It is what `locate` has to agree
  * with, and it is slower by the length of the query: tests compare the two.
@@ -478,12 +488,13 @@ const locateThrough = (fullText: string, offset: number, window: CommandWindow):
   const required = location.inComment
     ? { text: textBefore, placeholder: '' }
     : withRequiredTokens(textBefore, { position, expected, followers });
-  const commands = location.inComment
-    ? []
+  const described = location.inComment
+    ? undefined
     : toCommands(textBefore, required.text.slice(caret), required.placeholder, window);
+  const commands = described?.commands ?? [];
   const written = getInnermost(commands, textBefore) ?? [];
 
-  return {
+  const ir: CursorIR = {
     position,
     command,
     enclosingCommands:
@@ -505,6 +516,14 @@ const locateThrough = (fullText: string, offset: number, window: CommandWindow):
     written,
     commands,
   };
+
+  // Tokens the grammar requires after the cursor change the shape of what is written: the
+  // syntax tree is given only where none was added.
+  if (described && required.text.length === caret) {
+    syntaxTrees.set(ir, described.getSyntaxTree);
+  }
+
+  return ir;
 };
 
 /** One way to read a command to its end. The positions of the arguments are those in `text`. */

@@ -47,10 +47,33 @@ const rangeOf = ({ start, stop }: ParserRuleContext): { start: number; end: numb
  * grammar call site that takes it. It reads the parse tree only, so it needs no cursor and
  * gives the same ids as `locate` gives for the arguments it expects.
  */
-export const describeCommands = (text: string): WrittenCommand[] => {
-  const { parser } = Parser.create(text);
+export const describeCommands = (text: string): WrittenCommand[] => describeParsed(text).commands;
+
+/** The syntax tree of a text that was parsed, built when it is first asked for. */
+export type SyntaxTreeGetter = () => ReturnType<Parser['parse']>['root'];
+
+/**
+ * The same, with the syntax tree of the text. The tree is built from the parse tree that was
+ * just read, so the text is lexed and parsed once for both.
+ */
+export const describeParsed = (
+  text: string
+): { commands: WrittenCommand[]; getSyntaxTree: SyntaxTreeGetter } => {
+  const instance = Parser.create(text);
+  const { parser } = instance;
   parser.removeErrorListeners();
   const tree = parser.statements();
+  let syntaxTree: ReturnType<SyntaxTreeGetter> | undefined;
+  // SPIKE: the parser does not return its parse tree, so the conversion is run again on the
+  // tree that is already there. With `tree` on the result of `parse()` this goes away.
+  const getSyntaxTree: SyntaxTreeGetter = () => {
+    if (!syntaxTree) {
+      parser.statements = () => tree;
+      syntaxTree = instance.parse().root;
+    }
+
+    return syntaxTree;
+  };
   const { ruleNames } = parser;
   const commandRules = getCommandRuleNames();
   const commands: WrittenCommand[] = [];
@@ -149,5 +172,5 @@ export const describeCommands = (text: string): WrittenCommand[] => {
 
   visit(tree, undefined, []);
 
-  return commands;
+  return { commands, getSyntaxTree };
 };
