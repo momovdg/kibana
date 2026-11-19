@@ -52,6 +52,7 @@ import {
   type SpecPosition,
   type SpecToken,
 } from './match';
+import { provideSublanguage } from './sublanguage';
 import type { CommandSpec, SlotNode, SpecNode } from './types';
 
 /*
@@ -587,6 +588,20 @@ export const createSpecAutocomplete =
   ): ICommandMethods<ICommandContext>['autocomplete'] =>
   async (query, command, callbacks, context, cursorPosition = query.length) => {
     const innerText = query.substring(0, cursorPosition);
+    // A text in another language ends the command: its options and the text are read apart.
+    const [body] = spec;
+
+    if (body?.kind === 'slot' && body.role.kind === 'sublanguage') {
+      return provideSublanguage({
+        slot: body,
+        query,
+        cursorPosition,
+        commandStart: command.location.min,
+        callbacks,
+        context,
+      });
+    }
+
     const { tokens, typed } = toTokens(innerText, command);
     const position = matchSpec(spec, tokens, options);
     const env: Environment = {
