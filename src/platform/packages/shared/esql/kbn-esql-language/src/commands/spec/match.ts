@@ -28,6 +28,7 @@ export type Expected =
   | { kind: 'keyword'; text: string; isWord?: boolean }
   | { kind: 'symbol'; text: string }
   | { kind: 'slot'; slot: SlotNode }
+  | { kind: 'branch' }
   | { kind: 'end' };
 
 /** Where the cursor is in the spec of a command. */
@@ -38,6 +39,8 @@ export interface SpecPosition {
   filled: FilledSlot[];
   /** The slot the last thing written belongs to, when it can still go on, as an expression. */
   open?: FilledSlot;
+  /** The cursor is inside a pipeline in brackets that starts at this offset. */
+  branchStart?: number;
   /** The text does not follow the spec: nothing is offered. */
   isInvalid: boolean;
 }
@@ -83,6 +86,9 @@ const firstOf = (nodes: SpecNode[]): Expected[] => {
 const toExpected = (
   node: Exclude<SpecNode, { kind: 'optional' | 'repeat' | 'choice' }>
 ): Expected => {
+  if (node.kind === 'branches') {
+    return { kind: 'branch' };
+  }
   if (node.kind === 'slot') {
     return { kind: 'slot', slot: node };
   }
@@ -137,7 +143,8 @@ const starts = (
   return firstOf(nodes).some((expected) =>
     expected.kind === 'slot'
       ? !stops.includes(tokens[index].text.toUpperCase())
-      : expected.kind !== 'end' && isText(tokens[index], expected.text)
+      : (expected.kind === 'keyword' || expected.kind === 'symbol') &&
+        isText(tokens[index], expected.text)
   );
 };
 
@@ -240,6 +247,30 @@ const matchForm = (
         case 'choice':
           // A form has no alternatives left: they were expanded before matching.
           break;
+        case 'branches': {
+          // Each bracket holds a pipeline of its own. One that is still open holds the cursor.
+          while (index < tokens.length && isText(tokens[index], '(')) {
+            const start = tokens[index].start;
+            let depth = 0;
+
+            do {
+              depth += OPENERS.includes(tokens[index].text) ? 1 : 0;
+              depth -= CLOSERS.includes(tokens[index].text) ? 1 : 0;
+              index++;
+            } while (depth > 0 && index < tokens.length);
+
+            if (depth > 0) {
+              position.branchStart = start;
+              isBlocked = true;
+
+              return index;
+            }
+          }
+          if (index >= tokens.length) {
+            position.expected.push({ kind: 'branch' });
+          }
+          break;
+        }
         case 'keyword':
         case 'word':
         case 'symbol':

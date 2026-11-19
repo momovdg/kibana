@@ -36,6 +36,11 @@ export interface ChoiceNode {
   alternatives: SpecNode[][];
 }
 
+/** One or more pipelines in brackets, one after the other, as the branches of a fork. */
+export interface BranchesNode {
+  kind: 'branches';
+}
+
 /** A symbol between two things, as the comma between two names or the `=` of an assignment. */
 export interface SymbolNode {
   kind: 'symbol';
@@ -75,7 +80,8 @@ export type SpecNode =
   | SlotNode
   | OptionalNode
   | RepeatNode
-  | ChoiceNode;
+  | ChoiceNode
+  | BranchesNode;
 
 /** The syntax of a command after its name. */
 export type CommandSpec = SpecNode[];
@@ -86,6 +92,7 @@ export const choice = (...alternatives: SpecNode[][]): ChoiceNode => ({
   kind: 'choice',
   alternatives,
 });
+export const branches = (): BranchesNode => ({ kind: 'branches' });
 export const symbol = (text: SymbolNode['text']): SymbolNode => ({ kind: 'symbol', text });
 export const slot = <Name extends string>(
   name: Name,

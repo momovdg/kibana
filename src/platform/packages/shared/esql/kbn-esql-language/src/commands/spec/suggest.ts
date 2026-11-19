@@ -6,7 +6,10 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
+import { i18n } from '@kbn/i18n';
+import { Walker } from '@elastic/esql';
 import type { ESQLAstAllCommands, ESQLAstField, ESQLCommandOption } from '@elastic/esql/types';
+import { esqlCommandRegistry } from '../registry';
 import { ENTITY_FACTS, type ExpressionMode } from '../../esql_js_sim/definitions';
 import { getEsqlLexerTokens, isVisibleToken } from '../../language/shared/lexer_scope';
 import {
@@ -27,6 +30,7 @@ import {
   assignCompletionItem,
   commaCompleteItem,
   buildMapValueCompleteItem,
+  getCommandAutocompleteDefinitions,
   getDateHistogramCompletionItem,
   getNewUserDefinedColumnSuggestion,
   getTimeseriesDateHistogramCompletionItem,
@@ -52,6 +56,7 @@ import {
   type SpecPosition,
   type SpecToken,
 } from './match';
+import { provideMetadataFields, provideSources } from './sources';
 import { provideSublanguage } from './sublanguage';
 import type { CommandSpec, SlotNode, SpecNode } from './types';
 
@@ -275,6 +280,20 @@ const provideKeyword = (text: string, spec: CommandSpec): ISuggestionItem => {
   return withAutoSuggest({ label: text, text: `${text}${suffix}`, kind: 'Reference', detail: '' });
 };
 
+/** The brackets of a new pipeline, the cursor inside. */
+const getNewBranchItem = (): ISuggestionItem =>
+  withAutoSuggest({
+    kind: 'Issue',
+    label: i18n.translate('esqlLanguage.esql.suggestions.newBranchLabel', {
+      defaultMessage: 'New branch',
+    }),
+    detail: i18n.translate('esqlLanguage.esql.suggestions.newBranchDetail', {
+      defaultMessage: 'Add a new branch to the fork',
+    }),
+    text: '($0)',
+    asSnippet: true,
+  });
+
 /** The items for what is not a slot: a keyword, a symbol, the end of the command. */
 const provideExpected = (expected: Expected, spec: CommandSpec): ISuggestionItem[] => {
   switch (expected.kind) {
@@ -286,6 +305,8 @@ const provideExpected = (expected: Expected, spec: CommandSpec): ISuggestionItem
         : [assignCompletionItem];
     case 'end':
       return newLineAndPipeCompleteItems;
+    case 'branch':
+      return [getNewBranchItem()];
     default:
       return [];
   }
@@ -531,6 +552,25 @@ const provideSlot = async (slot: SlotNode, env: Environment): Promise<ISuggestio
         : [];
     }
     case 'entity': {
+      const following = position.expected
+        .filter(({ kind }) => kind !== 'slot')
+        .flatMap((expected) => provideExpected(expected, spec));
+
+      if (role.entityType === 'source') {
+        return provideSources({
+          slot,
+          query,
+          cursorPosition,
+          command,
+          callbacks,
+          context,
+          following,
+        });
+      }
+      if (role.entityType === 'metadata_field') {
+        return provideMetadataFields({ query, cursorPosition, command, callbacks });
+      }
+
       const policies = context?.policies ?? new Map();
       const { parent } = ENTITY_FACTS[role.entityType];
 
@@ -672,6 +712,35 @@ export const createSpecAutocomplete =
     // operators, and what follows it once it is whole.
     const { open } = position;
     const lastToken = tokens.at(-1)?.text;
+
+    // Inside a pipeline in brackets: its commands at its start and after a pipe, and inside
+    // one of its commands, what that command offers.
+    if (position.branchStart !== undefined) {
+      const { branchStart } = position;
+      const inner = Walker.findAll(
+        command,
+        (node) => node.type === 'command' && node !== command && node.location.min > branchStart
+      ) as ESQLAstAllCommands[];
+      const current = inner.at(-1);
+      // The bracket of the pipeline itself, or a pipe: a command starts here.
+      const isAtCommandStart = tokens.at(-1)?.start === branchStart || lastToken === '|';
+
+      if (!current || isAtCommandStart) {
+        return getCommandAutocompleteDefinitions(
+          esqlCommandRegistry.getProcessingCommandNames().filter((name) => name !== command.name)
+        );
+      }
+
+      return (
+        (await esqlCommandRegistry
+          .getCommandMethods(current.name)
+          ?.autocomplete(innerText, current, callbacks, context, cursorPosition)) ?? []
+      );
+    }
+    // A list of entities knows what follows its names: the sources, with what the editor adds.
+    if (open && open.slot.role.kind === 'entity') {
+      return provideSlot(open.slot, env);
+    }
 
     // A map that is closed, or a list after one of its names: what the spec allows next.
     if (open && open.slot.role.kind !== 'expression' && typed === undefined) {
