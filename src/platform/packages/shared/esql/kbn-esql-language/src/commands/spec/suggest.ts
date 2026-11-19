@@ -14,6 +14,10 @@ import {
   withAutoSuggest,
 } from '../definitions/utils/autocomplete/helpers';
 import { suggestFieldsList } from '../definitions/utils/autocomplete/fields_list';
+import {
+  getCommandMapExpressionSuggestions,
+  type MapParameters,
+} from '../definitions/utils/autocomplete/map_expression';
 import { suggestForExpression } from '../definitions/utils/autocomplete/expressions';
 import { getAllFunctions, getFunctionDefinition } from '../definitions/utils/functions';
 import { FunctionDefinitionTypes } from '../definitions/types';
@@ -22,6 +26,7 @@ import { buildFieldsDefinitions } from '../definitions/utils/functions';
 import {
   assignCompletionItem,
   commaCompleteItem,
+  buildMapValueCompleteItem,
   getDateHistogramCompletionItem,
   getNewUserDefinedColumnSuggestion,
   getTimeseriesDateHistogramCompletionItem,
@@ -41,6 +46,7 @@ import {
 } from '../registry/types';
 import {
   matchSpec,
+  type MatchOptions,
   type Expected,
   type FilledSlot,
   type SpecPosition,
@@ -106,6 +112,15 @@ const toTokens = (
   return isTypingWord ? { tokens: tokens.slice(0, -1), typed: last.text } : { tokens };
 };
 
+/** The sequences a node holds: its own, or one per alternative. */
+const childrenOf = (node: SpecNode): SpecNode[][] => {
+  if (node.kind === 'optional' || node.kind === 'repeat') {
+    return [node.nodes];
+  }
+
+  return node.kind === 'choice' ? node.alternatives : [];
+};
+
 /** The node that comes right after a slot in the spec, and the keyword right before it. */
 const neighboursOf = (
   nodes: SpecNode[],
@@ -121,10 +136,9 @@ const neighboursOf = (
       };
     }
 
-    const inner =
-      node.kind === 'optional' || node.kind === 'repeat'
-        ? neighboursOf(node.nodes, slot)
-        : undefined;
+    const inner = childrenOf(node)
+      .map((nodes_) => neighboursOf(nodes_, slot))
+      .find(Boolean);
 
     if (inner) {
       return inner;
@@ -204,26 +218,67 @@ const getAssignmentBefore = (nodes: SpecNode[], slot: SlotNode): SpecNode[] | un
 
       return name?.kind === 'slot' && mark?.kind === 'symbol' ? prefix : undefined;
     }
-    if (node.kind === 'optional' || node.kind === 'repeat') {
-      const inner = getAssignmentBefore(node.nodes, slot);
+    const inner = childrenOf(node)
+      .map((nodes_) => getAssignmentBefore(nodes_, slot))
+      .find(Boolean);
 
-      if (inner) {
-        return inner;
-      }
+    if (inner) {
+      return inner;
     }
   }
 
   return undefined;
 };
 
-const provideKeyword = (text: string): ISuggestionItem =>
-  withAutoSuggest({ label: text, text: `${text} `, kind: 'Reference', detail: '' });
+/** The node that follows a keyword or a word in the spec. */
+const afterKeyword = (nodes: SpecNode[], text: string): SpecNode | undefined => {
+  for (const [index, node] of nodes.entries()) {
+    if ((node.kind === 'keyword' || node.kind === 'word') && node.text === text) {
+      return nodes[index + 1];
+    }
+
+    const inner =
+      node.kind === 'optional' || node.kind === 'repeat'
+        ? afterKeyword(node.nodes, text)
+        : node.kind === 'choice'
+        ? node.alternatives.map((nodes_) => afterKeyword(nodes_, text)).find(Boolean)
+        : undefined;
+
+    if (inner) {
+      return inner;
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * A keyword, by what the spec has right after it: with the braces of a map where only a map
+ * can follow, with its assignment where it is assigned a value, with a space otherwise.
+ */
+const provideKeyword = (text: string, spec: CommandSpec): ISuggestionItem => {
+  const next = afterKeyword(spec, text);
+
+  if (next?.kind === 'slot' && next.role.kind === 'map') {
+    return withAutoSuggest({
+      label: text,
+      text: `${text} { $0 }`,
+      asSnippet: true,
+      kind: 'Reference',
+      detail: '',
+    });
+  }
+
+  const suffix = next?.kind === 'symbol' ? ` ${next.text} ` : ' ';
+
+  return withAutoSuggest({ label: text, text: `${text}${suffix}`, kind: 'Reference', detail: '' });
+};
 
 /** The items for what is not a slot: a keyword, a symbol, the end of the command. */
-const provideExpected = (expected: Expected): ISuggestionItem[] => {
+const provideExpected = (expected: Expected, spec: CommandSpec): ISuggestionItem[] => {
   switch (expected.kind) {
     case 'keyword':
-      return [provideKeyword(expected.text)];
+      return [provideKeyword(expected.text, spec)];
     case 'symbol':
       return expected.text === ','
         ? [withAutoSuggest({ ...commaCompleteItem, text: ', ' })]
@@ -250,8 +305,9 @@ const sequenceOf = (nodes: SpecNode[], slot: SlotNode): SpecNode[] | undefined =
   }
 
   for (const node of nodes) {
-    const inner =
-      node.kind === 'optional' || node.kind === 'repeat' ? sequenceOf(node.nodes, slot) : undefined;
+    const inner = childrenOf(node)
+      .map((nodes_) => sequenceOf(nodes_, slot))
+      .find(Boolean);
 
     if (inner) {
       return inner;
@@ -361,10 +417,25 @@ const provideExpression = async (slot: SlotNode, env: Environment): Promise<ISug
         ]
       : [];
 
+  // A ready-made string the editor proposes where the expression starts, selected once inserted.
+  const placeholder =
+    slot.placeholder !== undefined && written === undefined && env.typed === undefined
+      ? [
+          {
+            label: slot.placeholder,
+            text: `"\${0:${slot.placeholder}}"`,
+            asSnippet: true,
+            kind: 'Constant' as const,
+            detail: '',
+          },
+        ]
+      : [];
+
   return [
+    ...placeholder,
     ...suggestions,
     ...histogram,
-    ...(isWhole ? position.expected.flatMap(provideExpected) : []),
+    ...(isWhole ? position.expected.flatMap((expected) => provideExpected(expected, spec)) : []),
   ];
 };
 
@@ -376,13 +447,72 @@ const provideSlot = async (slot: SlotNode, env: Environment): Promise<ISuggestio
   const isFollowedBy = (text: string) => next?.kind === 'symbol' && next.text === text;
 
   switch (role.kind) {
-    case 'column':
-      return (
-        (await callbacks?.getByType?.(role.types ? [...role.types] : 'any', [], {
-          advanceCursor: true,
-          openSuggestions: true,
-        })) ?? []
-      );
+    case 'column': {
+      // In a list the columns already listed are left out, and a comma can follow a name.
+      const written = position.open?.slot === slot ? position.open.text.split(',') : [];
+      const listed = written.map((name) => name.trim()).filter(Boolean);
+      const columns =
+        (await callbacks?.getByType?.(
+          role.types ? [...role.types] : 'any',
+          role.unique ? listed : [],
+          {
+            advanceCursor: !slot.list,
+            openSuggestions: true,
+          }
+        )) ?? [];
+      const everything =
+        role.wildcard === 'alone' && !listed.length
+          ? [{ label: '*', text: '*', kind: 'Variable' as const, detail: '' }]
+          : [];
+
+      return [...everything, ...columns];
+    }
+    case 'constant':
+      // The value Elasticsearch uses by default, in quotes and selected so typing replaces it.
+      return role.default !== undefined && role.valueType === 'string'
+        ? [
+            {
+              label: `"${role.default}"`,
+              text: `"\${0:${role.default}}"`,
+              asSnippet: true,
+              kind: 'Constant',
+              detail: '',
+            },
+          ]
+        : [];
+    case 'map': {
+      const parameters: MapParameters = Object.fromEntries(
+        Object.entries(role.parameters).map(([name, parameter]) => [
+          name,
+          {
+            type: ['integer', 'double', 'long'].includes(parameter.type) ? 'number' : 'string',
+            suggestions: [
+              // The values of a parameter that names an entity are the ones the editor has.
+              ...(parameter.entityType === 'inference_endpoint'
+                ? (context?.inferenceEndpoints ?? []).map(({ inference_id: id }) => id)
+                : parameter.values ?? (parameter.default ? [parameter.default] : [])),
+            ].map((value) => buildMapValueCompleteItem(value)),
+          },
+        ])
+      ) as MapParameters;
+
+      // Nothing of the map is written: its braces, opened with the parameter a query usually gives.
+      if (position.open?.slot !== slot) {
+        const content = slot.opensWith ? `"${slot.opensWith}": "$0"` : '$0';
+
+        return [
+          withAutoSuggest({
+            label: `{ ${content.replace('$0', '')} }`,
+            text: `{ ${content} }`,
+            asSnippet: true,
+            kind: 'Reference',
+            detail: '',
+          }),
+        ];
+      }
+
+      return getCommandMapExpressionSuggestions(query.substring(0, cursorPosition), parameters);
+    }
     case 'new_name': {
       // A name the editor proposes comes with the symbol that has to follow it.
       if (slot.suggestedName) {
@@ -440,7 +570,7 @@ const provideSlot = async (slot: SlotNode, env: Environment): Promise<ISuggestio
               // What the spec allows after the list is offered once the last item is whole.
               afterCompleteSuggestions: position.expected
                 .filter(({ kind }) => kind === 'keyword')
-                .flatMap(provideExpected),
+                .flatMap((expected) => provideExpected(expected, spec)),
             }
           )
         : provideExpression(slot, env);
@@ -451,11 +581,14 @@ const provideSlot = async (slot: SlotNode, env: Environment): Promise<ISuggestio
 
 /** The autocomplete of a command, from its spec. */
 export const createSpecAutocomplete =
-  (spec: CommandSpec): ICommandMethods<ICommandContext>['autocomplete'] =>
+  (
+    spec: CommandSpec,
+    options: MatchOptions = {}
+  ): ICommandMethods<ICommandContext>['autocomplete'] =>
   async (query, command, callbacks, context, cursorPosition = query.length) => {
     const innerText = query.substring(0, cursorPosition);
     const { tokens, typed } = toTokens(innerText, command);
-    const position = matchSpec(spec, tokens);
+    const position = matchSpec(spec, tokens, options);
     const env: Environment = {
       spec,
       query,
@@ -474,13 +607,15 @@ export const createSpecAutocomplete =
         (expected.slot.role.kind === 'column' || expected.slot.role.kind === 'expression')
     );
 
-    if (typed !== undefined && takesColumn && !position.open && context?.columns?.has(typed)) {
+    const isInExpression = position.open?.slot.role.kind === 'expression';
+
+    if (typed !== undefined && takesColumn && !isInExpression && context?.columns?.has(typed)) {
       const end = innerText.length;
       const word: SpecToken = { text: typed, start: end - typed.length, end };
-      const after = matchSpec(spec, [...tokens, word]);
+      const after = matchSpec(spec, [...tokens, word], options);
       const followers = after.expected
         .filter(({ kind }) => kind !== 'slot')
-        .flatMap(provideExpected);
+        .flatMap((expected) => provideExpected(expected, spec));
 
       if (!after.isInvalid && followers.length) {
         return followers.map((item) =>
@@ -502,7 +637,11 @@ export const createSpecAutocomplete =
       return [];
     }
     // A qualifier is written and its name is not: the name comes right after it, or nothing.
-    if (isAfterLast && last.text.endsWith(QUALIFIER_JOINER)) {
+    const hasQualifiers =
+      last?.slot.role.kind === 'entity' &&
+      (ENTITY_FACTS[last.slot.role.entityType].qualifiers?.length ?? 0) > 0;
+
+    if (isAfterLast && hasQualifiers && last.text.endsWith(QUALIFIER_JOINER)) {
       return last.end === innerText.length ? provideSlot(last.slot, env) : [];
     }
     // A name that is not one of the things expected there can only be a new name: the symbol
@@ -511,11 +650,30 @@ export const createSpecAutocomplete =
       const [, mark] = getAssignmentBefore(spec, last.slot) ?? [];
 
       if (mark?.kind === 'symbol') {
-        return provideExpected({ kind: 'symbol', text: mark.text });
+        return provideExpected({ kind: 'symbol', text: mark.text }, spec);
       }
     }
     // Inside an expression, or right after one, the expression says what comes next: its
     // operators, and what follows it once it is whole.
+    const { open } = position;
+    const lastToken = tokens.at(-1)?.text;
+
+    // A map that is closed, or a list after one of its names: what the spec allows next.
+    if (open && open.slot.role.kind !== 'expression' && typed === undefined) {
+      const braces = (text: string) => (open.text.match(new RegExp(`\\${text}`, 'g')) ?? []).length;
+      const isClosedMap = open.slot.role.kind === 'map' && braces('{') === braces('}');
+      const isAfterName = open.slot.role.kind !== 'map' && lastToken !== ',';
+
+      if (isClosedMap || isAfterName) {
+        return [
+          ...(isAfterName ? provideExpected({ kind: 'symbol', text: ',' }, spec) : []),
+          ...position.expected.flatMap((expected) => provideExpected(expected, spec)),
+        ];
+      }
+    }
+    if (open && open.slot.role.kind !== 'expression') {
+      return provideSlot(open.slot, env);
+    }
     if (position.open?.slot.role.kind === 'expression') {
       return provideSlot(position.open.slot, env);
     }
@@ -523,7 +681,7 @@ export const createSpecAutocomplete =
     const items = await Promise.all(
       position.expected.map(async (expected) => {
         if (expected.kind !== 'slot') {
-          return provideExpected(expected);
+          return provideExpected(expected, spec);
         }
 
         // A word that starts a qualifier is one: the names come after it.

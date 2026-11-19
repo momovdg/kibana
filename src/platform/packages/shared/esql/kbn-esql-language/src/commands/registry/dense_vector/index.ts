@@ -10,13 +10,14 @@
 import { i18n } from '@kbn/i18n';
 import type { ICommand, ICommandMethods } from '../registry';
 import type { ICommandContext } from '../types';
-import { autocomplete } from './autocomplete';
+import { createSpecAutocomplete } from '../../spec/suggest';
+import { denseVectorSpec } from './spec';
 import { validate } from './validate';
 import { columnsAfter } from './columns_after';
 import { summary } from './summary';
 
 const denseVectorCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
+  autocomplete: createSpecAutocomplete(denseVectorSpec),
   validate,
   columnsAfter,
   summary,

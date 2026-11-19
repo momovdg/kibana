@@ -24,6 +24,18 @@ export interface KeywordNode {
   text: KeywordText;
 }
 
+/** A word that acts as a keyword where it is written and is no token of the grammar. */
+export interface WordNode {
+  kind: 'word';
+  text: string;
+}
+
+/** One of several forms: the first one the text follows. */
+export interface ChoiceNode {
+  kind: 'choice';
+  alternatives: SpecNode[][];
+}
+
 /** A symbol between two things, as the comma between two names or the `=` of an assignment. */
 export interface SymbolNode {
   kind: 'symbol';
@@ -38,6 +50,10 @@ export interface SlotNode<Name extends string = string> {
   list?: boolean;
   /** The name the editor proposes where the user is free to choose one. */
   suggestedName?: string;
+  /** A ready-made string the editor proposes for the value, selected once inserted. */
+  placeholder?: string;
+  /** The parameter a map is opened with: the one a query usually gives. */
+  opensWith?: string;
 }
 
 /** What may be left out. It is there when its first keyword, or its assignment, is written. */
@@ -52,17 +68,29 @@ export interface RepeatNode {
   nodes: SpecNode[];
 }
 
-export type SpecNode = KeywordNode | SymbolNode | SlotNode | OptionalNode | RepeatNode;
+export type SpecNode =
+  | KeywordNode
+  | WordNode
+  | SymbolNode
+  | SlotNode
+  | OptionalNode
+  | RepeatNode
+  | ChoiceNode;
 
 /** The syntax of a command after its name. */
 export type CommandSpec = SpecNode[];
 
 export const keyword = (text: KeywordText): KeywordNode => ({ kind: 'keyword', text });
+export const word = (text: string): WordNode => ({ kind: 'word', text });
+export const choice = (...alternatives: SpecNode[][]): ChoiceNode => ({
+  kind: 'choice',
+  alternatives,
+});
 export const symbol = (text: SymbolNode['text']): SymbolNode => ({ kind: 'symbol', text });
 export const slot = <Name extends string>(
   name: Name,
   role: ArgumentRole,
-  options: Pick<SlotNode, 'list' | 'suggestedName'> = {}
+  options: Pick<SlotNode, 'list' | 'suggestedName' | 'placeholder' | 'opensWith'> = {}
 ): SlotNode<Name> => ({ kind: 'slot', name, role, ...options });
 export const optional = (...nodes: SpecNode[]): OptionalNode => ({ kind: 'optional', nodes });
 export const repeat = (...nodes: SpecNode[]): RepeatNode => ({ kind: 'repeat', nodes });

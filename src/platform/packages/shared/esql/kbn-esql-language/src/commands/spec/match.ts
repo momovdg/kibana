@@ -25,7 +25,7 @@ export interface FilledSlot {
 
 /** What the spec allows at the cursor. */
 export type Expected =
-  | { kind: 'keyword'; text: string }
+  | { kind: 'keyword'; text: string; isWord?: boolean }
   | { kind: 'symbol'; text: string }
   | { kind: 'slot'; slot: SlotNode }
   | { kind: 'end' };
@@ -69,6 +69,10 @@ const firstOf = (nodes: SpecNode[]): Expected[] => {
       continue;
     }
 
+    if (node.kind === 'choice') {
+      break;
+    }
+
     expected.push(...(node.kind === 'repeat' ? firstOf(node.nodes) : [toExpected(node)]));
     break;
   }
@@ -76,8 +80,36 @@ const firstOf = (nodes: SpecNode[]): Expected[] => {
   return expected;
 };
 
-const toExpected = (node: Exclude<SpecNode, { kind: 'optional' | 'repeat' }>): Expected =>
-  node.kind === 'slot' ? { kind: 'slot', slot: node } : { kind: node.kind, text: node.text };
+const toExpected = (
+  node: Exclude<SpecNode, { kind: 'optional' | 'repeat' | 'choice' }>
+): Expected => {
+  if (node.kind === 'slot') {
+    return { kind: 'slot', slot: node };
+  }
+
+  return node.kind === 'word'
+    ? { kind: 'keyword', text: node.text, isWord: true }
+    : { kind: node.kind, text: node.text };
+};
+
+/**
+ * The forms a spec stands for, each without alternatives: a spec with a choice of three forms
+ * is three specs, and the text is matched against each.
+ */
+const expand = (nodes: SpecNode[]): SpecNode[][] =>
+  nodes.reduce<SpecNode[][]>(
+    (forms, node) => {
+      const variants: SpecNode[][] =
+        node.kind === 'choice'
+          ? node.alternatives.flatMap(expand)
+          : node.kind === 'optional' || node.kind === 'repeat'
+          ? expand(node.nodes).map((inner) => [{ ...node, nodes: inner }])
+          : [[node]];
+
+      return forms.flatMap((form) => variants.map((variant) => [...form, ...variant]));
+    },
+    [[]]
+  );
 
 /** Whether a token can start what an optional part holds. */
 const starts = (
@@ -91,6 +123,13 @@ const starts = (
   // An assignment is there when the symbol follows the name.
   if (first?.kind === 'slot' && second?.kind === 'symbol') {
     return isText(tokens[index + 1], second.text);
+  }
+  // A word is a keyword only where what has to follow it does: elsewhere it is a name.
+  if (first?.kind === 'word' && second?.kind === 'symbol') {
+    return (
+      isText(tokens[index], first.text) &&
+      (index + 1 >= tokens.length || isText(tokens[index + 1], second.text))
+    );
   }
 
   // A value is there unless a keyword of the command is written in its place; a keyword or a
@@ -106,14 +145,49 @@ const starts = (
  * Finds where the end of the tokens is in the spec of a command. The tokens are what is
  * written of the command after its name, up to the cursor, without the word being typed.
  */
-export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition => {
+export const matchSpec = (
+  spec: CommandSpec,
+  tokens: SpecToken[],
+  options: MatchOptions = {}
+): SpecPosition => {
+  const forms = expand(spec).map((form) => matchForm(form, tokens, options));
+  const valid = forms.filter(({ isInvalid }) => !isInvalid);
+  const [first = forms[0]] = valid;
+  const seen = new Set<string>();
+
+  // What any of the forms allows can come; what is written is read by the first that fits.
+  return {
+    ...first,
+    expected: valid
+      .flatMap(({ expected }) => expected)
+      .filter((expected) => {
+        const key =
+          expected.kind === 'slot'
+            ? `slot:${expected.slot.name}`
+            : `${expected.kind}:${'text' in expected ? expected.text : ''}`;
+
+        return !seen.has(key) && Boolean(seen.add(key));
+      }),
+  };
+};
+
+export interface MatchOptions {
+  /** The command is whole with nothing after its name. */
+  canBeEmpty?: boolean;
+}
+
+const matchForm = (
+  spec: SpecNode[],
+  tokens: SpecToken[],
+  { canBeEmpty = false }: MatchOptions
+): SpecPosition => {
   const stops = keywordsOf(spec);
   const position: SpecPosition = { expected: [], filled: [], isInvalid: false };
   let isBlocked = false;
 
   /** The index after the value of a slot: one word, or everything up to what ends a list. */
   const endOfValue = ({ role, list }: SlotNode, from: number): number => {
-    const isOpenEnded = role.kind === 'expression' || list === true;
+    const isOpenEnded = role.kind === 'expression' || role.kind === 'map' || list === true;
     let depth = 0;
     let index = from;
 
@@ -131,7 +205,7 @@ export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition 
         break;
       }
       // One expression of a list ends at the comma before the next one.
-      if (depth === 0 && !list && text === ',') {
+      if (depth === 0 && !list && role.kind !== 'map' && text === ',') {
         break;
       }
 
@@ -163,7 +237,11 @@ export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition 
       }
 
       switch (node.kind) {
+        case 'choice':
+          // A form has no alternatives left: they were expanded before matching.
+          break;
         case 'keyword':
+        case 'word':
         case 'symbol':
           if (!isText(tokens[index], node.text)) {
             position.isInvalid = true;
@@ -194,7 +272,10 @@ export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition 
           index = end;
 
           // An expression, or a list read as one, can go on where the tokens end.
-          if (index >= tokens.length && (node.role.kind === 'expression' || node.list)) {
+          if (
+            index >= tokens.length &&
+            (node.role.kind === 'expression' || node.role.kind === 'map' || node.list)
+          ) {
             position.open = filled;
           }
           break;
@@ -238,7 +319,7 @@ export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition 
     // Everything that had to be written is: the command can end, unless tokens are left over.
     position.isInvalid = end < tokens.length;
     // A command is never only its name: nothing written, nothing to end.
-    if (tokens.length > 0) {
+    if (tokens.length > 0 || canBeEmpty) {
       position.expected.push({ kind: 'end' });
     }
   }

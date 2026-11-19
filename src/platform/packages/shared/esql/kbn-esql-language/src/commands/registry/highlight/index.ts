@@ -9,7 +9,8 @@
 
 import { i18n } from '@kbn/i18n';
 import type { ICommand, ICommandMethods } from '../registry';
-import { autocomplete } from './autocomplete';
+import { createSpecAutocomplete } from '../../spec/suggest';
+import { highlightSpec } from './spec';
 import { validate } from './validate';
 import { columnsAfter } from './columns_after';
 import { summary } from './summary';
@@ -17,7 +18,7 @@ import type { ICommandContext } from '../types';
 import { Commands } from '../../definitions/keywords';
 
 const highlightCommandMethods: ICommandMethods<ICommandContext> = {
-  autocomplete,
+  autocomplete: createSpecAutocomplete(highlightSpec, { canBeEmpty: true }),
   validate,
   columnsAfter,
   summary,
