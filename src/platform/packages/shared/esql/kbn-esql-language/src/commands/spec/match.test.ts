@@ -9,7 +9,7 @@
 
 import { matchSpec } from './match';
 import type { SpecToken } from './tokens';
-import { slot, type CommandSpec } from './types';
+import { listOf, slot, type CommandSpec } from './types';
 
 /** The tokens of a text, split at spaces: enough to say where each one starts and ends. */
 const tokensOf = (text: string): SpecToken[] =>
@@ -25,7 +25,7 @@ const spec: CommandSpec = [column];
 describe('matchSpec', () => {
   it('expects the first slot where nothing is written', () => {
     expect(matchSpec(spec, [])).toEqual({
-      expected: [{ kind: 'slot', slot: column }],
+      expected: [{ kind: 'slot', slot: column, listed: [] }],
       isInvalid: false,
     });
   });
@@ -51,6 +51,28 @@ describe('matchSpec', () => {
     expect(matchSpec(spec, tokensOf('bytes extension'))).toEqual({
       expected: [],
       isInvalid: true,
+    });
+  });
+
+  describe('a list', () => {
+    const columns = listOf(column);
+    const list: CommandSpec = [columns];
+
+    it('expects an item after a comma, with what is listed before it', () => {
+      expect(matchSpec(list, tokensOf('bytes , extension ,')).expected).toEqual([
+        { kind: 'slot', slot: columns, listed: ['bytes', 'extension'] },
+      ]);
+    });
+
+    it('expects the comma or the end of the command after an item', () => {
+      expect(matchSpec(list, tokensOf('bytes , extension')).expected).toEqual([
+        { kind: 'separator' },
+        { kind: 'end' },
+      ]);
+    });
+
+    it('offers nothing where an item is missing between two commas', () => {
+      expect(matchSpec(list, tokensOf('bytes , ,')).isInvalid).toBe(true);
     });
   });
 });

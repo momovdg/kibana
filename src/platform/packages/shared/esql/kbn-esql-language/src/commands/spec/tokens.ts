@@ -17,25 +17,27 @@ export interface SpecToken {
   end: number;
 }
 
-// Everything from the last space to the cursor.
-const TYPED = /\S+$/;
+// Everything from the last space or comma to the cursor.
+const TYPED = /[^\s,]+$/;
 
 /**
- * What is written of a command after its name, up to the cursor. What is being typed at the
- * cursor is left out: it is not written yet.
+ * What is written of a command after its name, up to the cursor, and apart from it what is
+ * being typed at the cursor: that is not written yet.
  */
-export const getTokensBeforeCursor = (
+export const readBeforeCursor = (
   innerText: string,
   { name, location }: ESQLAstAllCommands
-): SpecToken[] => {
+): { tokens: SpecToken[]; typed: string } => {
   // What touches the cursor is still being typed: the editor filters the suggestions by it.
   // It is read from the text, as the lexer gives no token for a character it does not know.
-  const typedFrom = innerText.length - (innerText.match(TYPED)?.[0].length ?? 0);
-
-  return getEsqlLexerTokens(innerText)
+  const [typed = ''] = innerText.match(TYPED) ?? [];
+  const typedFrom = innerText.length - typed.length;
+  const tokens = getEsqlLexerTokens(innerText)
     .filter(isVisibleToken)
     .filter(({ start }) => start >= location.min)
     .slice(name.split(' ').length)
     .map(({ text, start, stop }) => ({ text, start, end: stop + 1 }))
     .filter(({ end }) => end <= typedFrom);
+
+  return { tokens, typed };
 };

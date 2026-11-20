@@ -11,7 +11,7 @@ import type { ICommandMethods } from '../registry/registry';
 import type { ICommandContext } from '../registry/types';
 import { matchSpec } from './match';
 import { offer } from './offer';
-import { getTokensBeforeCursor } from './tokens';
+import { readBeforeCursor } from './tokens';
 import type { CommandSpec } from './types';
 
 /**
@@ -21,9 +21,9 @@ import type { CommandSpec } from './types';
 export const createSpecAutocomplete =
   (spec: CommandSpec): ICommandMethods<ICommandContext>['autocomplete'] =>
   async (query, command, callbacks, _context, cursorPosition = query.length) => {
-    const tokens = getTokensBeforeCursor(query.substring(0, cursorPosition), command);
+    const { tokens, typed } = readBeforeCursor(query.substring(0, cursorPosition), command);
     const { expected } = matchSpec(spec, tokens);
-    const items = await Promise.all(expected.map((item) => offer(item, callbacks)));
+    const items = await Promise.all(expected.map((item) => offer(item, { callbacks, typed })));
 
     return items.flat();
   };

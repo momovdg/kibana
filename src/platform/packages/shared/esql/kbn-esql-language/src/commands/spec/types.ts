@@ -12,10 +12,18 @@
  * means. A command adds one spec; the code that reads specs knows no command.
  */
 
+/** What a slot can be more than one of. */
+interface Listable {
+  /** One or more of them, separated by commas. Set with `listOf`. */
+  list?: boolean;
+}
+
 /** A slot that takes a column of the query. */
-export interface ColumnSlot {
+export interface ColumnSlot extends Listable {
   kind: 'slot';
   role: 'column';
+  /** In a list: a column is listed once. */
+  unique?: boolean;
 }
 
 /** A slot that takes a literal value, as a number. */
@@ -43,7 +51,7 @@ export type SpecNode = SlotNode;
 /** The syntax of a command after its name. */
 export type CommandSpec = readonly SpecNode[];
 
-type OptionsOf<Role extends SlotRole> = Omit<SlotOf<Role>, 'kind' | 'role'>;
+type OptionsOf<Role extends SlotRole> = Omit<SlotOf<Role>, 'kind' | 'role' | 'list'>;
 
 // A role that has no options takes none: anything passed for it is a mistake.
 type OptionsArgument<Role extends SlotRole> = keyof OptionsOf<Role> extends never
@@ -57,3 +65,9 @@ export const slot = <Role extends SlotRole>(
 ): SlotOf<Role> =>
   // The role and its own options make the slot of that role.
   ({ kind: 'slot', role, ...options } as SlotOf<Role>);
+
+/** One or more of a slot, separated by commas. */
+export const listOf = <Slot extends SlotNode & Listable>(node: Slot): Slot => ({
+  ...node,
+  list: true,
+});

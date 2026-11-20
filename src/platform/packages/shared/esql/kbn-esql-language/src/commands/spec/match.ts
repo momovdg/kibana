@@ -11,7 +11,12 @@ import type { SpecToken } from './tokens';
 import type { CommandSpec, SlotNode } from './types';
 
 /** What the spec allows at the cursor. */
-export type Expected = { kind: 'slot'; slot: SlotNode } | { kind: 'end' };
+export type Expected =
+  /** A slot, with what is already written of it where it is a list. */
+  | { kind: 'slot'; slot: SlotNode; listed: string[] }
+  /** The comma before the next item of a list. */
+  | { kind: 'separator' }
+  | { kind: 'end' };
 
 /** Where the cursor is in the spec of a command. */
 export interface SpecPosition {
@@ -21,11 +26,23 @@ export interface SpecPosition {
   isInvalid: boolean;
 }
 
+const SEPARATOR = ',';
+const INVALID: SpecPosition = { expected: [], isInvalid: true };
+
+const isSeparator = (token: SpecToken | undefined): boolean => token?.text === SEPARATOR;
+
+/** Whether a slot takes several values, separated by commas. */
+const isList = (slot: SlotNode): boolean => 'list' in slot && slot.list === true;
+
 /** The index after a value: its first token and the tokens written right against it. */
 const endOfValue = (tokens: SpecToken[], from: number): number => {
   let index = from + 1;
 
-  while (index < tokens.length && tokens[index].start === tokens[index - 1].end) {
+  while (
+    index < tokens.length &&
+    tokens[index].start === tokens[index - 1].end &&
+    !isSeparator(tokens[index])
+  ) {
     index++;
   }
 
@@ -37,19 +54,44 @@ const endOfValue = (tokens: SpecToken[], from: number): number => {
  * The tokens are what is written of the command after its name, up to the cursor.
  */
 export const matchSpec = (spec: CommandSpec, tokens: SpecToken[]): SpecPosition => {
+  const expected: Expected[] = [];
   let index = 0;
 
-  for (const node of spec) {
-    // The tokens are used up: this node is what comes next.
-    if (index >= tokens.length) {
-      return { expected: [{ kind: 'slot', slot: node }], isInvalid: false };
+  for (const slot of spec) {
+    const listed: string[] = [];
+
+    // One value, or for a list one value after each comma.
+    let hasMore = true;
+
+    while (hasMore) {
+      // The tokens are used up: a value of this slot is what comes next.
+      if (index >= tokens.length) {
+        return { expected: [...expected, { kind: 'slot', slot, listed }], isInvalid: false };
+      }
+      if (isSeparator(tokens[index])) {
+        return INVALID;
+      }
+
+      const end = endOfValue(tokens, index);
+
+      listed.push(
+        tokens
+          .slice(index, end)
+          .map(({ text }) => text)
+          .join('')
+      );
+      hasMore = isList(slot) && isSeparator(tokens[end]);
+      index = hasMore ? end + 1 : end;
     }
 
-    index = endOfValue(tokens, index);
+    // A list can go on after any of its items.
+    if (isList(slot) && index >= tokens.length) {
+      expected.push({ kind: 'separator' });
+    }
   }
 
   // Everything the spec has is written. Tokens that are left over do not belong to it.
   return index < tokens.length
-    ? { expected: [], isInvalid: true }
-    : { expected: [{ kind: 'end' }], isInvalid: false };
+    ? INVALID
+    : { expected: [...expected, { kind: 'end' }], isInvalid: false };
 };
