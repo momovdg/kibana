@@ -9,7 +9,8 @@
 
 import { matchSpec } from './match';
 import type { SpecToken } from './tokens';
-import { listOf, slot, type CommandSpec } from './types';
+import { Location } from '../registry/types';
+import { keyword, listOf, optional, slot, type CommandSpec } from './types';
 
 /** The tokens of a text, split at spaces: enough to say where each one starts and ends. */
 const tokensOf = (text: string): SpecToken[] =>
@@ -73,6 +74,51 @@ describe('matchSpec', () => {
 
     it('offers nothing where an item is missing between two commas', () => {
       expect(matchSpec(list, tokensOf('bytes , ,')).isInvalid).toBe(true);
+    });
+  });
+
+  describe('a part that may be left out', () => {
+    const constant = slot('constant');
+    const expressions = listOf(slot('expression', { functions: Location.SORT }));
+    const withOptional: CommandSpec = [constant, optional(keyword('BY'), expressions)];
+
+    it('expects its keyword or the end of the command where it can start', () => {
+      expect(matchSpec(withOptional, tokensOf('10')).expected).toEqual([
+        { kind: 'keyword', text: 'BY' },
+        { kind: 'end' },
+      ]);
+    });
+
+    it('reads its keyword in any case', () => {
+      expect(matchSpec(withOptional, tokensOf('10 by')).expected).toEqual([
+        { kind: 'slot', slot: expressions, listed: [], after: 'BY' },
+      ]);
+    });
+
+    it('leaves the rest of the command to an expression', () => {
+      expect(matchSpec(withOptional, tokensOf('10 BY bytes + 1 , extension')).expected).toEqual([
+        { kind: 'slot', slot: expressions, listed: [], after: 'BY' },
+      ]);
+    });
+
+    it('offers nothing where something else is written in its place', () => {
+      expect(matchSpec(withOptional, tokensOf('10 20')).isInvalid).toBe(true);
+    });
+
+    it('offers nothing where its keyword is written in the place of a value', () => {
+      expect(matchSpec(withOptional, tokensOf('by')).isInvalid).toBe(true);
+    });
+  });
+
+  describe('a keyword', () => {
+    const withKeyword: CommandSpec = [keyword('BY'), column];
+
+    it('is expected where it has to be written', () => {
+      expect(matchSpec(withKeyword, []).expected).toEqual([{ kind: 'keyword', text: 'BY' }]);
+    });
+
+    it('offers nothing where something else is written in its place', () => {
+      expect(matchSpec(withKeyword, tokensOf('bytes')).isInvalid).toBe(true);
     });
   });
 });

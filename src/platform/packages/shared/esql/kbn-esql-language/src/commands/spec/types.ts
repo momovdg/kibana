@@ -7,6 +7,8 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import type { Location } from '../registry/types';
+
 /*
  * The syntax of a command as data: what comes after its name, in order, and what each part
  * means. A command adds one spec; the code that reads specs knows no command.
@@ -35,28 +37,59 @@ export interface ConstantSlot {
 }
 
 /**
+ * A slot that takes an expression: columns, functions and operators. It goes on to the end
+ * of the command, so it is the last thing of a spec. Only a list of them so far.
+ */
+export interface ExpressionSlot extends Listable {
+  kind: 'slot';
+  role: 'expression';
+  /** Which functions an expression takes here, in the terms of the function definitions. */
+  functions: Location;
+  /** In a list: a column on its own is listed once. */
+  unique?: boolean;
+}
+
+/**
  * A place in a command where the user writes something. What a slot takes is its role, and
  * each role has its own options: what the language says about it, and the closed list of what
  * the editor adds there. A new option is a change here, not a condition in the code that
  * reads specs.
  */
-export type SlotNode = ColumnSlot | ConstantSlot;
+export type SlotNode = ColumnSlot | ConstantSlot | ExpressionSlot;
 
 export type SlotRole = SlotNode['role'];
 
 type SlotOf<Role extends SlotRole> = Extract<SlotNode, { role: Role }>;
 
-export type SpecNode = SlotNode;
+/** The keywords a spec can have: one that is not listed is a compile error. */
+export type Keyword = 'BY';
+
+/** A word of the language, written as it is. */
+export interface KeywordNode {
+  kind: 'keyword';
+  text: Keyword;
+}
+
+/** What may be left out. It starts with a keyword, and is there when that keyword is written. */
+export interface OptionalNode {
+  kind: 'optional';
+  nodes: readonly [KeywordNode, ...SpecNode[]];
+}
+
+export type SpecNode = SlotNode | KeywordNode | OptionalNode;
 
 /** The syntax of a command after its name. */
 export type CommandSpec = readonly SpecNode[];
 
 type OptionsOf<Role extends SlotRole> = Omit<SlotOf<Role>, 'kind' | 'role' | 'list'>;
 
-// A role that has no options takes none: anything passed for it is a mistake.
-type OptionsArgument<Role extends SlotRole> = keyof OptionsOf<Role> extends never
+// A role that has no options takes none: anything passed for it is a mistake. A role with an
+// option that has to be given takes its options always.
+export type OptionsArgument<Role extends SlotRole> = keyof OptionsOf<Role> extends never
   ? []
-  : [options?: OptionsOf<Role>];
+  : Partial<OptionsOf<Role>> extends OptionsOf<Role>
+  ? [options?: OptionsOf<Role>]
+  : [options: OptionsOf<Role>];
 
 /** A slot, by what it takes: the options are the ones of that role. */
 export const slot = <Role extends SlotRole>(
@@ -70,4 +103,15 @@ export const slot = <Role extends SlotRole>(
 export const listOf = <Slot extends SlotNode & Listable>(node: Slot): Slot => ({
   ...node,
   list: true,
+});
+
+export const keyword = <Text extends Keyword>(text: Text): KeywordNode & { text: Text } => ({
+  kind: 'keyword',
+  text,
+});
+
+/** A part that may be left out: a keyword, and what comes with it. */
+export const optional = (...nodes: OptionalNode['nodes']): OptionalNode => ({
+  kind: 'optional',
+  nodes,
 });
