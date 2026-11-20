@@ -19,7 +19,7 @@ const tokensOf = (text: string): SpecToken[] =>
     end: index + word.length,
   }));
 
-const column = slot('column', { kind: 'column' });
+const column = slot('column');
 const spec: CommandSpec = [column];
 
 describe('matchSpec', () => {

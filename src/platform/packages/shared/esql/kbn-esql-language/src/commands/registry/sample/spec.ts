@@ -11,5 +11,5 @@ import { slot, type CommandSpec } from '../../spec/types';
 
 /** `SAMPLE probability` */
 export const sampleSpec: CommandSpec = [
-  slot('probability', { kind: 'constant' }, { suggestedValues: ['.1', '.01', '.001'] }),
+  slot('constant', { suggestedValues: ['.1', '.01', '.001'] }),
 ];

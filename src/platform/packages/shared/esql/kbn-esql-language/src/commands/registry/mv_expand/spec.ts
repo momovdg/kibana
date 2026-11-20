@@ -10,4 +10,4 @@
 import { slot, type CommandSpec } from '../../spec/types';
 
 /** `MV_EXPAND column` */
-export const mvExpandSpec: CommandSpec = [slot('column', { kind: 'column' })];
+export const mvExpandSpec: CommandSpec = [slot('column')];

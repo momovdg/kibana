@@ -9,8 +9,8 @@
 
 import { buildConstantsDefinitions } from '../../definitions/utils/literals';
 import type { ISuggestionItem } from '../../registry/types';
-import type { SlotNode } from '../types';
+import type { ConstantSlot } from '../types';
 
 /** The values the editor proposes for a constant. One is followed by a space. */
-export const offerConstants = ({ suggestedValues = [] }: SlotNode): ISuggestionItem[] =>
+export const offerConstants = ({ suggestedValues = [] }: ConstantSlot): ISuggestionItem[] =>
   buildConstantsDefinitions([...suggestedValues], '', { advanceCursorAndOpenSuggestions: true });

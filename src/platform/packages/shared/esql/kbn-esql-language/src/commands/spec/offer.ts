@@ -22,7 +22,7 @@ export const offer = (
     return newLineAndPipeCompleteItems;
   }
 
-  switch (expected.slot.role.kind) {
+  switch (expected.slot.role) {
     case 'column':
       return offerColumns(callbacks);
     case 'constant':
