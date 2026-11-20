@@ -11,6 +11,7 @@ import { newLineAndPipeCompleteItems } from '../registry/complete_items';
 import type { ICommandCallbacks, ISuggestionItem } from '../registry/types';
 import type { Expected } from './match';
 import { offerColumns } from './slots/column';
+import { offerConstants } from './slots/constant';
 
 /** The suggestions for one thing the spec allows at the cursor, by what kind of thing it is. */
 export const offer = (
@@ -24,5 +25,7 @@ export const offer = (
   switch (expected.slot.role.kind) {
     case 'column':
       return offerColumns(callbacks);
+    case 'constant':
+      return offerConstants(expected.slot);
   }
 };
