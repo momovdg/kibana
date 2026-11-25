@@ -21,6 +21,19 @@ const categorizeQuery =
   'FROM kibana_sample_data_logs | STATS Count = COUNT(*), Sparkline = SPARKLINE(COUNT(*), @timestamp) BY Pattern = CATEGORIZE(message)';
 
 describe('getEmbeddableDisplayColumns', () => {
+  it('uses Summary when STATS only supplies values to IN', () => {
+    expect(
+      getEmbeddableDisplayColumns({
+        autoApplyDiscoverColumnDefaults: true,
+        persistedColumns: [],
+        dataView: dataViewMock,
+        isEsql: true,
+        esql: 'FROM logs | WHERE bytes IN (FROM logs | STATS total = COUNT(*))',
+        esqlResultColumnNames: ['bytes', 'host'],
+      }).columns
+    ).toEqual([]);
+  });
+
   it.each([
     {
       esql: 'FROM logs | STATS count = COUNT(*) BY Pattern = CATEGORIZE(message) | SORT count DESC',

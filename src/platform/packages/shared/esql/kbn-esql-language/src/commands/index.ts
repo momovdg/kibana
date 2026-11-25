@@ -18,6 +18,8 @@ export * from './definitions/all_operators';
 export * from './definitions/utils/promql';
 export * from './definitions/utils/named_subqueries';
 export {
+  analyzeResultPipeline,
+  type EsqlResultPipeline,
   analyzeResultRows,
   hasSchemaDerivedRows,
   isSchemaTableResult,

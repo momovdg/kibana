@@ -28,6 +28,7 @@ export {
   hasAggregatingCommand,
   hasESQLSchemaDerivedRows,
   hasESQLSchemaTableResult,
+  hasESQLAggregateRows,
   hasTransformationalCommand,
   parseTimeFieldFromESQLQuery,
   prettifyQuery,

@@ -19,7 +19,8 @@ import {
 import {
   CommandNames,
   esqlCommandRegistry,
-  analyzeResultRows,
+  analyzeResultPipeline,
+  type EsqlResultPipeline,
   hasSchemaDerivedRows,
   isSchemaTableResult,
   getNamedSubqueries,
@@ -37,7 +38,6 @@ import type {
   ESQLSingleAstItem,
   ESQLInlineCast,
   ESQLCommandOption,
-  ESQLAstForkCommand,
   ESQLAstQueryExpression,
 } from '@elastic/esql/types';
 import type { VariableNamePrefix } from '@kbn/esql-types';
@@ -90,22 +90,22 @@ export function getRemoteClustersFromESQLQuery(esql?: string): string[] | undefi
   return clustersSet.size > 0 ? [...clustersSet] : undefined;
 }
 
-const resultRowsCache = new WeakMap<ESQLAstQueryExpression, EsqlResultRows>();
+const resultPipelineCache = new WeakMap<ESQLAstQueryExpression, EsqlResultPipeline>();
 
-function getResultRowsFromAst(root: ESQLAstQueryExpression): EsqlResultRows {
-  const cached = resultRowsCache.get(root);
+function getResultPipelineFromAst(root: ESQLAstQueryExpression): EsqlResultPipeline {
+  const cached = resultPipelineCache.get(root);
   if (cached) {
     return cached;
   }
 
-  const result = analyzeResultRows(root.commands, getNamedSubqueries(root.header));
-  resultRowsCache.set(root, result);
+  const result = analyzeResultPipeline(root.commands, getNamedSubqueries(root.header));
+  resultPipelineCache.set(root, result);
   return result;
 }
 
 /** Analyzes the pipelines that supply the query results. */
 export function getESQLResultRows(esql: string): EsqlResultRows {
-  return getResultRowsFromAst(parseEsqlCached(esql).root);
+  return getResultPipelineFromAst(parseEsqlCached(esql).root).rows;
 }
 
 /**
@@ -133,31 +133,19 @@ export function hasESQLSchemaTableResult(esql: string): boolean {
   return isSchemaTableResult(getESQLResultRows(esql));
 }
 
-/** Detects schema table results and preserves the legacy transformational classification. */
+/** Checks whether an aggregate row can reach the query output. */
+export function hasESQLAggregateRows(esql: string): boolean {
+  const rows = getESQLResultRows(esql);
+  return rows.has('aggregate') || rows.has('schema-aggregate');
+}
+
+/** Detects table results and preserves the top-level KEEP and result-producing FORK rules. */
 export function hasTransformationalCommand(esql?: string): boolean {
   if (!esql) return false;
   const { root } = parseEsqlCached(esql);
-  if (root.commands.some(({ name }) => TRANSFORMATIONAL_COMMANDS.includes(name))) {
-    return true;
-  }
-
-  if (isSchemaTableResult(getResultRowsFromAst(root))) {
-    return true;
-  }
-
-  const forks = Walker.findAll(
-    root,
-    (node) => node.type === 'command' && node.name === 'fork'
-  ) as ESQLAstForkCommand[];
-  return forks.some(
-    ({ args }) =>
-      args.length > 0 &&
-      args.every(
-        ({ child }) =>
-          child.type === 'query' &&
-          child.commands.length > 0 &&
-          child.commands.every(({ name }) => TRANSFORMATIONAL_COMMANDS.includes(name))
-      )
+  return (
+    root.commands.some(({ name }) => TRANSFORMATIONAL_COMMANDS.includes(name)) ||
+    getResultPipelineFromAst(root).usesResultColumns
   );
 }
 

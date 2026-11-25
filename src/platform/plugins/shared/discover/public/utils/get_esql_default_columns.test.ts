@@ -32,6 +32,13 @@ describe('getEsqlDefaultColumns', () => {
     ).toEqual(responseColumns);
   });
 
+  it('shows wide aggregate results from a FROM subquery', () => {
+    const responseColumns = ['total', 'host', 'service', 'region', 'status', 'method'];
+    const esql =
+      'FROM (FROM logs | STATS total = COUNT(*) BY host, service, region, status, method)';
+    expect(getEsqlDefaultColumns({ esql, responseColumns })).toEqual(responseColumns);
+  });
+
   it('uses non-transformational response columns when there are at most five', () => {
     expect(
       getEsqlDefaultColumns({

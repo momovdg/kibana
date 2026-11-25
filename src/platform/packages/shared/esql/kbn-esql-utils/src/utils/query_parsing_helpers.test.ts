@@ -82,7 +82,11 @@ describe('esql query helpers', () => {
     });
   });
 
-  describe('DESCRIBE result pipelines', () => {
+  describe('result pipelines', () => {
+    const stats = 'FROM logs | STATS c = COUNT(*)';
+    const fork = 'FROM logs | FORK (KEEP host) (STATS c = COUNT(*))';
+    const binding = `LET x = (${fork});`;
+
     it.each`
       query                                                                                | rows                                 | transformational
       ${'FROM logs | DESCRIBE'}                                                            | ${['schema']}                        | ${true}
@@ -101,8 +105,26 @@ describe('esql query helpers', () => {
       ${'LET schema = (FROM logs | DESCRIBE); FROM logs'}                                  | ${['document']}                      | ${false}
       ${'LET schema = (FROM logs | DESCRIBE); FROM logs | WHERE host IN (FROM schema)'}    | ${['document']}                      | ${false}
       ${'FROM logs | WHERE host IN (FROM other | FORK (DESCRIBE) (DESCRIBE) | KEEP name)'} | ${['document']}                      | ${false}
-      ${'FROM (FROM logs | STATS c = COUNT(*))'}                                           | ${['aggregate']}                     | ${false}
-      ${'LET x = (FROM logs | STATS c = COUNT(*)); FROM x'}                                | ${['aggregate']}                     | ${false}
+      ${'FROM (FROM logs | STATS c = COUNT(*))'}                                           | ${['aggregate']}                     | ${true}
+      ${'LET x = (FROM logs | STATS c = COUNT(*)); FROM x'}                                | ${['aggregate']}                     | ${true}
+      ${`LET x = (${stats}); LET y = (FROM x); FROM y`}                                    | ${['aggregate']}                     | ${true}
+      ${`LET x = (${stats}); FROM logs`}                                                   | ${['document']}                      | ${false}
+      ${`FROM logs | WHERE bytes IN (${stats})`}                                           | ${['document']}                      | ${false}
+      ${`EXPLAIN (${stats})`}                                                              | ${['unknown']}                       | ${false}
+      ${'FROM logs | INLINE STATS total = COUNT(*) BY host'}                               | ${['document']}                      | ${false}
+      ${'FROM (FROM logs | KEEP host)'}                                                    | ${['document']}                      | ${false}
+      ${'FROM logs | FORK (KEEP host) (KEEP bytes)'}                                       | ${['document']}                      | ${true}
+      ${`FROM (${fork})`}                                                                  | ${['document', 'aggregate']}         | ${true}
+      ${`${binding} FROM x`}                                                               | ${['document', 'aggregate']}         | ${true}
+      ${`${binding} FROM x, (${stats})`}                                                   | ${['document', 'aggregate']}         | ${true}
+      ${`FROM logs, (${stats})`}                                                           | ${['document', 'aggregate']}         | ${false}
+      ${`${binding} FROM x, logs`}                                                         | ${['document', 'aggregate']}         | ${false}
+      ${`${binding} FROM logs, x`}                                                         | ${['document', 'aggregate']}         | ${false}
+      ${`${binding} LET y = (FROM x); FROM y`}                                             | ${['document', 'aggregate']}         | ${true}
+      ${`${binding} FROM (FROM x)`}                                                        | ${['document', 'aggregate']}         | ${true}
+      ${`${binding} FROM logs`}                                                            | ${['document']}                      | ${false}
+      ${`${binding} FROM logs | WHERE host IN (FROM x | KEEP host)`}                       | ${['document']}                      | ${false}
+      ${`FROM logs | WHERE host IN (${fork} | KEEP host)`}                                 | ${['document']}                      | ${false}
     `('analyzes $query', ({ query, rows, transformational }) => {
       expect(getESQLResultRows(query)).toEqual(new Set(rows));
       expect(hasTransformationalCommand(query)).toBe(transformational);
